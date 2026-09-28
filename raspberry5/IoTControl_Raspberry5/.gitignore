@@ -1,2 +1,9 @@
 /build/
 /.vscode/
+
+# Compiled objects
+*.o
+
+# Project executables
+/iot_client
+/iot_server
