@@ -1,23 +1,33 @@
 #include "WiFiEsp.h"
 #include <Arduino.h>
 #include <DHT.h>
+#include <ACLI.h>
+#include <AIntervalMS.h>
 
-// put function declarations here:
-int myFunction(int, int);
+void loop()
+{
+    // 내부에서만 사용
+    static constexpr uint32_t INTERVAL_MS_2Sec = 2000;
+    static constexpr uint32_t INTERVAL_MS_5Sec = 5000;
+
+    static IntervalMS interval2Sec(INTERVAL_MS_2Sec);
+    static IntervalMS interval5Sec(INTERVAL_MS_5Sec);
+
+    uint32_t currentTime = millis();
+
+    if (interval2Sec.Elapsed(currentTime))
+    { 
+        //readDht();
+    }
+
+    if (interval5Sec.Elapsed(currentTime))
+    {
+        //sendStatus();
+    }
+}
 
 void setup()
 {
     // put your setup code here, to run once:
-    int result = myFunction(2, 3);
     Serial.begin(115200);
 }
-
-void loop()
-{
-    // put your main code here, to run repeatedly:
-    Serial.println(myFunction(2, 3));
-    delay(1000);
-}
-
-// put function definitions here:
-int myFunction(int x, int y) { return x + y; }
