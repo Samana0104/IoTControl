@@ -56,9 +56,9 @@ int main(int argc, char *argv[])
 		pthread_t t_id[MAX_CLNT] = {0};
 		int str_len = 0;
 		int i=0;
-		char idpasswd[(ID_SIZE*2)+3];
-		char *pToken;
-		char *pArray[ARR_CNT]={0};
+		// char idpasswd[(ID_SIZE*2)+3];
+		// char *pToken;
+		// char *pArray[ARR_CNT]={0};
 		char msg[BUF_SIZE];
 /*
 		CLIENT_INFO client_info[MAX_CLNT] = {{0,-1,"","1","PASSWD"}, \
@@ -79,36 +79,36 @@ int main(int argc, char *argv[])
 				{0,-1,"","30","PASSWD"},  {0,-1,"","31","PASSWD"}, \
 				{0,-1,"","KSH_SQL","PASSWD"}, {0,-1,"","HM_CON","PASSWD"}};
 */
-		FILE * idFd = fopen("idpasswd.txt","r");
-		if(idFd == NULL)
-		{
-			perror("fopen(\"idpasswd.txt\",\"r\") ");
-			exit(1);
-		}
-		char id[ID_SIZE];
-		char pw[ID_SIZE];
+		// FILE * idFd = fopen("idpasswd.txt","r");
+		// if(idFd == NULL)
+		// {
+			// perror("fopen(\"idpasswd.txt\",\"r\") ");
+			// exit(1);
+		// }
+		// char id[ID_SIZE];
+		// char pw[ID_SIZE];
 		CLIENT_INFO * client_info = (CLIENT_INFO *)calloc(sizeof(CLIENT_INFO),MAX_CLNT);
 		if(client_info == NULL)
 		{
 			perror("calloc()");
 			exit(1);
 		}
-		do {
-			str_len = fscanf(idFd,"%s %s",id,pw);	
-			if(str_len <= 0)
-				break;
-			client_info[i].fd=-1;
-			strcpy(client_info[i].id,id);
-			strcpy(client_info[i].pw,pw);
-			i++;
-//			printf("i:%d, %s %s\n",i,client_info[i].id,client_info[i].pw);
-			if(i > MAX_CLNT)
-			{
-				printf("error client_info pull(Max:%d)\n",MAX_CLNT);			
-				break;
-			}
-		} while(1);
-		fclose(idFd);
+// 		// do {
+// 			str_len = fscanf(idFd,"%s %s",id,pw);	
+// 			if(str_len <= 0)
+// 				break;
+// 			client_info[i].fd=-1;
+// 			strcpy(client_info[i].id,id);
+// 			strcpy(client_info[i].pw,pw);
+// 			i++;
+// //			printf("i:%d, %s %s\n",i,client_info[i].id,client_info[i].pw);
+// 			if(i > MAX_CLNT)
+// 			{
+// 				printf("error client_info pull(Max:%d)\n",MAX_CLNT);			
+// 				break;
+// 			}
+// 		} while(1);
+		// fclose(idFd);
 
 		if(argc != 2) {
 				printf("Usage : %s <port>\n",argv[0]);

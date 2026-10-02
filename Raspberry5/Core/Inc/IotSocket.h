@@ -19,7 +19,7 @@
 #define BUF_SIZE 100
 #define ID_SIZE 10
 #define HEADER_SIZE 4
-
+#define MAX_CLNT 30
 typedef struct {
 		int index;
 		int fd;
