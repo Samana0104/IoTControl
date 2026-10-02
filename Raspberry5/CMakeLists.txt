@@ -10,29 +10,16 @@ find_package(Threads REQUIRED)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-# The existing sources use a GNU extension (arithmetic on void pointers).
 set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(IOTCONTROL_ENABLE_WARNINGS "Enable common compiler warnings" ON)
 
-function(iotcontrol_add_executable target source)
-    
-# 실행 파일 및 소스 등록
-    add_executable(${target}
-        ${source}
-        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/IoTSocket.c"
-    )
-
-        # 헤더 탐색 경로 등록
+function(iotcontrol_configure_target target)
+    # 헤더 탐색 경로 등록
     target_include_directories(${target} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
         "${CMAKE_CURRENT_SOURCE_DIR}/../common"
-    )
-
-    # pthread 연결
-    target_link_libraries(${target} PRIVATE
-        Threads::Threads
     )
 
     if(IOTCONTROL_ENABLE_WARNINGS)
@@ -46,10 +33,18 @@ function(iotcontrol_add_executable target source)
     endif()
 endfunction()
 
-# iotcontrol_add_executable(iot_server IoTMain.c)
+add_executable(iot_server
+    "${CMAKE_CURRENT_SOURCE_DIR}/IotMain.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/IotSocket.c"
+)
+iotcontrol_configure_target(iot_server)
+target_link_libraries(iot_server PRIVATE Threads::Threads)
 
-# iotcontrol_add_executable(iot_server iot_server.c)
-# iotcontrol_add_executable(iot_client iot_client.c)
+add_executable(iot_client
+    "${CMAKE_CURRENT_SOURCE_DIR}/iot_client.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/IotClient.c"
+)
+iotcontrol_configure_target(iot_client)
 
 # iot_server reads this file relative to its current working directory.
 # configure_file(
