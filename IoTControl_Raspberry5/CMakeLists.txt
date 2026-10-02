@@ -17,8 +17,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(IOTCONTROL_ENABLE_WARNINGS "Enable common compiler warnings" ON)
 
 function(iotcontrol_add_executable target source)
-    add_executable(${target} ${source})
-    target_link_libraries(${target} PRIVATE Threads::Threads)
+    
+# 실행 파일 및 소스 등록
+    add_executable(${target}
+        ${source}
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/IoTSocket.c"
+    )
+
+        # 헤더 탐색 경로 등록
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../common"
+    )
+
+    # pthread 연결
+    target_link_libraries(${target} PRIVATE
+        Threads::Threads
+    )
 
     if(IOTCONTROL_ENABLE_WARNINGS)
         if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -31,12 +46,14 @@ function(iotcontrol_add_executable target source)
     endif()
 endfunction()
 
-iotcontrol_add_executable(iot_server iot_server.c)
-iotcontrol_add_executable(iot_client iot_client.c)
+# iotcontrol_add_executable(iot_server IoTMain.c)
+
+# iotcontrol_add_executable(iot_server iot_server.c)
+# iotcontrol_add_executable(iot_client iot_client.c)
 
 # iot_server reads this file relative to its current working directory.
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/idpasswd.txt"
-    "${CMAKE_CURRENT_BINARY_DIR}/idpasswd.txt"
-    COPYONLY
-)
+# configure_file(
+#     "${CMAKE_CURRENT_SOURCE_DIR}/idpasswd.txt"
+#     "${CMAKE_CURRENT_BINARY_DIR}/idpasswd.txt"
+#     COPYONLY
+# )
