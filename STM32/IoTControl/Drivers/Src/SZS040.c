@@ -119,7 +119,6 @@ bool SZS040Write(const uint8_t *data, uint16_t length)
     if (bt.huart == NULL)
     {
         SLOG_ERROR("bt not initialized");
-
         return false;
     }
 
