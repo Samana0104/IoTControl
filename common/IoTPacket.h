@@ -24,6 +24,6 @@ typedef struct _ConData
 typedef struct _MemData
 {
     /* Fixed-width fields; they are not guaranteed to be null-terminated. */
-    char ID[MEM_ID_SIZE];
-    char PW[MEM_PW_SIZE];
+    char id[MEM_ID_SIZE];
+    char pw[MEM_PW_SIZE];
 } MemData;
