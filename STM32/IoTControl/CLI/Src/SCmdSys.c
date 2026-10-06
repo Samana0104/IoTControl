@@ -35,7 +35,7 @@ static void SysReset(const char *args)
     NVIC_SystemReset();
 }
 
-static const SSubCommand sysCommands[] = {
+static const SCommand sysCommands[] = {
     {"tick", SysUptime},
     {"log", SysLog},
     {"reset", SysReset},

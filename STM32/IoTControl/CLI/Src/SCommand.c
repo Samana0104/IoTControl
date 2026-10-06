@@ -26,7 +26,7 @@ const char *SCommandNextToken(const char *p, char *token, uint8_t size)
     return truncated ? NULL : p;
 }
 
-void SCommandDispatch(const char *args, const char *group, const SSubCommand *subs, uint8_t count)
+void SCommandDispatch(const char *args, const char *group, const SCommand *commands, uint8_t count)
 {
     char token[SCOMMAND_TOKEN_SIZE];
     const char *p = SCommandNextToken(args, token, SCOMMAND_TOKEN_SIZE);
@@ -35,21 +35,29 @@ void SCommandDispatch(const char *args, const char *group, const SSubCommand *su
     {
         for (uint8_t i = 0; i < count; ++i)
         {
-            if (strcasecmp(token, subs[i].name) == 0)
+            if (strcasecmp(token, commands[i].name) == 0)
             {
                 while (*p == ' ')
                 {
                     ++p;
                 }
-                subs[i].handler(p);
+                commands[i].handler(p);
                 return;
             }
         }
     }
 
-    SCLIPrintf("usage: %s <command>\r\n", group);
+    if (group == NULL)
+    {
+        SCLIPrintf("commands:\r\n");
+    }
+    else
+    {
+        SCLIPrintf("usage: %s <command>\r\n", group);
+    }
+
     for (uint8_t i = 0; i < count; ++i)
     {
-        SCLIPrintf("  %s\r\n", subs[i].name);
+        SCLIPrintf("  %s\r\n", commands[i].name);
     }
 }

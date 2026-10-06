@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 // 주기 실행 타이머 (아두이노 AIntervalMS의 C 버전)
-typedef struct
+typedef struct _SIntervalMS
 {
     uint32_t periodMs;
     uint32_t lastMs;

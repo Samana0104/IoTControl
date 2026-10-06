@@ -6,7 +6,7 @@
 // GPIO 헬퍼
 // ---------------------------------------------------------------------------
 
-typedef struct
+typedef struct _SPin
 {
     GPIO_TypeDef *port;
     char name;
@@ -260,7 +260,7 @@ static void GpioPins(const char *args)
     PrintPortPins((char)(token[0] & ~0x20));
 }
 
-static const SSubCommand gpioCommands[] = {
+static const SCommand gpioCommands[] = {
     {"mode", GpioMode},
     {"write", GpioWrite},
     {"toggle", GpioToggle},

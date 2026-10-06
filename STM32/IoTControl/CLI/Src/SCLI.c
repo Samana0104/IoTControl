@@ -9,18 +9,10 @@
 #define SCLI_PRINT_SIZE 128
 #define SCLI_TX_TIMEOUT_MS 100
 
-typedef struct
-{
-    const char *name;
-    SCommandHandler handler;
-} SCLICommand;
-
-static const SCLICommand commands[] = {
+static const SCommand commands[] = {
     {"gpio", SCmdGpio},
     {"sys", SCmdSys},
 };
-
-static const uint8_t commandCount = sizeof(commands) / sizeof(commands[0]);
 
 static UART_HandleTypeDef *const cliUart = &huart2;
 
@@ -85,34 +77,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 // 메인 루프 처리
 // ---------------------------------------------------------------------------
 
-static void PrintCommandList(void)
-{
-    SCLIPrintf("commands:\r\n");
-    for (uint8_t i = 0; i < commandCount; ++i)
-    {
-        SCLIPrintf("  %s\r\n", commands[i].name);
-    }
-}
-
-static void ExecuteLine(const char *command)
-{
-    const char *space = strchr(command, ' ');
-    size_t length = space ? (size_t)(space - command) : strlen(command);
-    const char *args = space ? space + 1 : "";
-
-    for (uint8_t i = 0; i < commandCount; ++i)
-    {
-        const SCLICommand *cmd = &commands[i];
-        if (strlen(cmd->name) == length && strncasecmp(cmd->name, command, length) == 0)
-        {
-            cmd->handler(args);
-            return;
-        }
-    }
-
-    PrintCommandList();
-}
-
 static void Echo(const char *text, uint16_t length)
 {
     HAL_UART_Transmit(cliUart, (const uint8_t *)text, length, SCLI_TX_TIMEOUT_MS);
@@ -149,7 +113,7 @@ static void ProcessChar(char c)
         }
         else if (lineLength > 0)
         {
-            ExecuteLine(line);
+            SCommandDispatch(line, NULL, commands, SCOMMAND_COUNT(commands));
         }
         lineLength = 0;
         lineOverflow = false;
