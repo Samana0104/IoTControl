@@ -1,9 +1,12 @@
 #include "ACLI.h"
-#include "ACommand.h"
+#include "ACmdSys.h"
+#include "ACmdGpio.h"
+#include "ACmdWiFi.h"
 
 #include <string.h>
 
 const ACLI::Command ACLI::commands[] = {
+    {"sys", CmdSys},
     {"gpio", CmdGpio},
     {"wifi", CmdWiFi},
 };

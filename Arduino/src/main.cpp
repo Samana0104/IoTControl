@@ -7,7 +7,7 @@
 
 #ifdef DEBUG_CLI
 #include <ACLI.h>
-#include <ACommand.h>
+#include <ACmdWiFi.h>
 #endif
 
 // ESP8266 연결용 (SoftwareSerial)
