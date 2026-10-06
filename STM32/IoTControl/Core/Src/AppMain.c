@@ -20,10 +20,13 @@ void AppMain(void)
 {
     AppInit();
 
+    SLOG_INFO("AppMain started");
     while (1)
     {
         AppUpdate();
     }
+    
+    SLOG_INFO("AppMain exited");
 }
 
 void AppInit(void)
