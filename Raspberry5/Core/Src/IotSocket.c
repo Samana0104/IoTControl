@@ -74,11 +74,7 @@ int StartServer(const char *port)
         return -1;
     }
 
-    if(setsockopt(serverSocket,
-                  SOL_SOCKET,
-                  SO_REUSEADDR,
-                  &socketOption,
-                  sizeof(socketOption)) < 0)
+    if(setsockopt(serverSocket,SOL_SOCKET,SO_REUSEADDR,&socketOption,sizeof(socketOption)) < 0)
     {
         perror("setsockopt()");
         close(serverSocket);
@@ -90,9 +86,7 @@ int StartServer(const char *port)
     serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
     serverAddress.sin_port = htons((uint16_t)serverPort);
 
-    if(bind(serverSocket,
-            (struct sockaddr *)&serverAddress,
-            sizeof(serverAddress)) < 0)
+    if(bind(serverSocket,(struct sockaddr *)&serverAddress,sizeof(serverAddress)) < 0)
     {
         perror("bind()");
         close(serverSocket);
@@ -118,9 +112,7 @@ int StartServer(const char *port)
         pthread_t receiveThread;
         int createResult;
 
-        clientSocket = accept(serverSocket,
-                              (struct sockaddr *)&clientAddress,
-                              &clientAddressSize);
+        clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressSize);
         if(clientSocket < 0)
         {
             if(errno == EINTR)
@@ -477,12 +469,8 @@ static void *ReceiveClient(void *arg)
 
         if(header.head0 != HEADER_OK_0 || header.head1 != HEADER_OK_1)
         {
-            snprintf(logBuffer,
-                     sizeof(logBuffer),
-                     "Invalid header from %s: %c%c\n",
-                     client->ip,
-                     header.head0,
-                     header.head1);
+            snprintf(logBuffer,sizeof(logBuffer),"Invalid header from %s: %c%c\n",
+                    client->ip, header.head0, header.head1);
             LogFile(logBuffer);
             break;
         }
