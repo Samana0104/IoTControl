@@ -20,7 +20,7 @@ static SFan fan;
 static void ApplyDuty(uint8_t percent)
 {
     uint32_t period = __HAL_TIM_GET_AUTORELOAD(fan.htim) + 1U;
-    __HAL_TIM_SET_COMPARE(fan.htim, fan.channel, period * percent * 0.01);
+    __HAL_TIM_SET_COMPARE(fan.htim, fan.channel, period * percent / 100U);
 }
 
 bool SFanInit(TIM_HandleTypeDef *htim, uint32_t channel)
