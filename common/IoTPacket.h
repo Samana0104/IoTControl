@@ -3,7 +3,9 @@
 #include <stdint.h>
 
 #define MEM_ID_SIZE 8
-#define MEM_PW_SIZE 8
+#define MEM_PW_SIZE 64
+#define BLUETOOTH_MAC_SIZE 17
+#define BLUETOOTH_PIN_SIZE 16
 
 typedef struct _DhtData
 {
@@ -27,3 +29,10 @@ typedef struct _MemData
     char id[MEM_ID_SIZE];
     char pw[MEM_PW_SIZE];
 } MemData;
+
+typedef struct _BluetoothRegisterData
+{
+    /* Fixed-width fields; they are not guaranteed to be null-terminated. */
+    char mac[BLUETOOTH_MAC_SIZE];
+    char pin[BLUETOOTH_PIN_SIZE];
+} BluetoothRegisterData;

@@ -176,6 +176,35 @@ int AuthenticateClient(IotClient *client, const char *memberId, const char *pass
     return result;
 }
 
+int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const char *pin)
+{
+    BluetoothRegisterData registerData;
+    size_t macLength;
+    size_t pinLength;
+    int result;
+
+    if(client == NULL || client->fd < 0 || bluetoothMac == NULL || pin == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    macLength = strlen(bluetoothMac);
+    pinLength = strlen(pin);
+    if(macLength != BLUETOOTH_MAC_SIZE || pinLength == 0 || pinLength > BLUETOOTH_PIN_SIZE)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(&registerData, 0, sizeof(registerData));
+    memcpy(registerData.mac, bluetoothMac, macLength);
+    memcpy(registerData.pin, pin, pinLength);
+    result = SendPacket(client, CMD_BLUETOOTH_REGISTER, &registerData, sizeof(registerData));
+    sodium_memzero(&registerData, sizeof(registerData));
+    return result;
+}
+
 int SendChatMessage(IotClient *client, const char *message)
 {
     size_t messageLength;

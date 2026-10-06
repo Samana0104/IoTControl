@@ -24,5 +24,6 @@ typedef enum
     CMD_FAN_DATA,
     CMD_CON_DATA,
     CMD_MEM_DATA,
-    CMD_CHAT_DATA
+    CMD_CHAT_DATA,
+    CMD_BLUETOOTH_REGISTER
 } CmdList;

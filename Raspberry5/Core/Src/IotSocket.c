@@ -1,4 +1,5 @@
 #include "IotSocket.h"
+#include "IotBluetooth.h"
 #include "IotDatabase.h"
 #include "IoTPacket.h"
 
@@ -21,6 +22,8 @@
 #define SEND_BUFFER_SIZE (MAX_MESSAGE_SIZE + HEADER_SIZE)
 #define DATA_WAIT_TIMEOUT_MS 5000
 #define TLS_HANDSHAKE_TIMEOUT_SECONDS 5
+#define BLUETOOTH_CONNECT_TIMEOUT_MS 5000
+#define BLUETOOTH_PAIR_TIMEOUT_SECONDS 30
 
 typedef struct _ClientInfo
 {
@@ -29,6 +32,8 @@ typedef struct _ClientInfo
     SSL *tls;
     char ip[INET_ADDRSTRLEN];
     char memberId[MEM_ID_SIZE + 1];
+    char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
+    int bluetoothFd;
     int authenticated;
     int inUse;
     int threadCount;
@@ -56,6 +61,7 @@ typedef struct _PacketHandler
 static ClientInfo clientInfo[MAX_CLNT];
 static int clientCount;
 static pthread_mutex_t clientMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t bluetoothPairMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int ParsePort(const char *port);
 static int SetSocketTimeout(int socketFd, int timeoutSeconds);
@@ -75,6 +81,8 @@ static int ProcessFanData(ClientInfo *client, const uint8_t *data, size_t length
 static int ProcessConData(ClientInfo *client, const uint8_t *data, size_t length);
 static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length);
 static int ProcessChatData(ClientInfo *client, const uint8_t *data, size_t length);
+static int ProcessBluetoothRegisterData(ClientInfo *client, const uint8_t *data, size_t length);
+static int ConnectMemberBluetoothDevice(ClientInfo *client);
 static void *SendClient(void *arg);
 static void *ReceiveClient(void *arg);
 static void LogFile(const char *message);
@@ -85,7 +93,8 @@ static const PacketHandler PACKET_HANDLERS[] =
     {CMD_FAN_DATA, sizeof(FanData), sizeof(FanData), ProcessFanData},
     {CMD_CON_DATA, sizeof(ConData), sizeof(ConData), ProcessConData},
     {CMD_MEM_DATA, sizeof(MemData), sizeof(MemData), ProcessMemData},
-    {CMD_CHAT_DATA, 0, MAX_MESSAGE_SIZE, ProcessChatData}
+    {CMD_CHAT_DATA, 0, MAX_MESSAGE_SIZE, ProcessChatData},
+    {CMD_BLUETOOTH_REGISTER, sizeof(BluetoothRegisterData), sizeof(BluetoothRegisterData), ProcessBluetoothRegisterData}
 };
 
 int StartServer(const char *port)
@@ -281,6 +290,7 @@ static int InitializeClients(void)
     {
         clientInfo[i].index = i;
         clientInfo[i].fd = -1;
+        clientInfo[i].bluetoothFd = -1;
 
         if(pthread_mutex_init(&clientInfo[i].sendMutex, NULL) != 0)
         {
@@ -333,7 +343,9 @@ static ClientInfo *RegisterClient(int clientSocket, SSL *tls, const struct socka
             client->sendComplete = 0;
             client->sendResult = 0;
             client->authenticated = 0;
+            client->bluetoothFd = -1;
             memset(client->memberId, 0, sizeof(client->memberId));
+            memset(client->bluetoothMac, 0, sizeof(client->bluetoothMac));
             inet_ntop(AF_INET,&clientAddress->sin_addr,client->ip,sizeof(client->ip));
             clientCount++;
             break;
@@ -347,6 +359,7 @@ static ClientInfo *RegisterClient(int clientSocket, SSL *tls, const struct socka
 static void UnregisterClientThread(ClientInfo *client)
 {
     int socketToClose = -1;
+    int bluetoothToClose = -1;
     SSL *tlsToFree = NULL;
     int remainingClients = 0;
 
@@ -355,8 +368,10 @@ static void UnregisterClientThread(ClientInfo *client)
     if(client->threadCount == 0)
     {
         socketToClose = client->fd;
+        bluetoothToClose = client->bluetoothFd;
         tlsToFree = client->tls;
         client->fd = -1;
+        client->bluetoothFd = -1;
         client->tls = NULL;
         client->inUse = 0;
         clientCount--;
@@ -366,6 +381,7 @@ static void UnregisterClientThread(ClientInfo *client)
 
     if(socketToClose >= 0)
     {
+        DisconnectBluetoothDevice(bluetoothToClose);
         SSL_free(tlsToFree);
         close(socketToClose);
         printf("Client disconnected: ip=%s, clients=%d\n", client->ip, remainingClients);
@@ -625,6 +641,7 @@ static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length
     size_t memberIdLength;
     size_t passwordLength;
     int verifyResult;
+    int bluetoothResult;
 
     (void)length;
     memcpy(&memData, data, sizeof(memData));
@@ -636,12 +653,17 @@ static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length
     {
         memcpy(client->memberId, memData.id, memberIdLength);
         client->memberId[memberIdLength] = '\0';
-        client->authenticated = 1;
+        bluetoothResult = ConnectMemberBluetoothDevice(client);
+        verifyResult = bluetoothResult >= 0 ? 1 : 0;
+        client->authenticated = verifyResult == 1;
     }
 
     sodium_memzero(&memData, sizeof(memData));
     if(verifyResult != 1)
     {
+        DisconnectBluetoothDevice(client->bluetoothFd);
+        client->bluetoothFd = -1;
+        memset(client->bluetoothMac, 0, sizeof(client->bluetoothMac));
         client->memberId[0] = '\0';
         client->authenticated = 0;
         printf("[%s] Member authentication failed\n", client->ip);
@@ -649,6 +671,102 @@ static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length
     }
 
     printf("[%s] Member authenticated: id=%s\n", client->ip, client->memberId);
+    return 0;
+}
+
+static int ProcessBluetoothRegisterData(ClientInfo *client, const uint8_t *data, size_t length)
+{
+    BluetoothRegisterData registerData;
+    BluetoothDeviceRecord existingDevice;
+    char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
+    char pin[BLUETOOTH_PIN_SIZE + 1];
+    size_t macLength;
+    size_t pinLength;
+    int queryResult;
+    int registerResult;
+    int processResult = -1;
+
+    (void)length;
+    memcpy(&registerData, data, sizeof(registerData));
+    pthread_mutex_lock(&bluetoothPairMutex);
+    macLength = strnlen(registerData.mac, BLUETOOTH_MAC_SIZE);
+    pinLength = strnlen(registerData.pin, BLUETOOTH_PIN_SIZE);
+    if(macLength != BLUETOOTH_MAC_SIZE || pinLength == 0)
+    {
+        fprintf(stderr, "[%s] Invalid HC-05 registration data: id=%s\n", client->ip, client->memberId);
+        goto cleanup;
+    }
+
+    memcpy(bluetoothMac, registerData.mac, macLength);
+    bluetoothMac[macLength] = '\0';
+    memcpy(pin, registerData.pin, pinLength);
+    pin[pinLength] = '\0';
+
+    queryResult = GetMemberBluetoothDevice(client->memberId, strlen(client->memberId), &existingDevice);
+    if(queryResult != 0)
+    {
+        fprintf(stderr, "[%s] HC-05 registration rejected: id=%s, reason=%s\n", client->ip, client->memberId, queryResult > 0 ? "already registered" : "database error");
+        goto cleanup;
+    }
+
+    if(PairBluetoothDevice(bluetoothMac, pin, BLUETOOTH_PAIR_TIMEOUT_SECONDS) != 0)
+    {
+        fprintf(stderr, "[%s] HC-05 pairing failed: id=%s, mac=%s: %s\n", client->ip, client->memberId, bluetoothMac, strerror(errno));
+        goto cleanup;
+    }
+
+    registerResult = RegisterMemberBluetoothDevice(client->memberId, strlen(client->memberId), bluetoothMac, macLength);
+    if(registerResult != 1)
+    {
+        fprintf(stderr, "[%s] HC-05 database registration failed: id=%s, reason=%s\n", client->ip, client->memberId, registerResult == 0 ? "already registered" : "database error");
+        goto cleanup;
+    }
+
+    if(ConnectMemberBluetoothDevice(client) != 0)
+    {
+        goto cleanup;
+    }
+
+    printf("[%s] HC-05 registered: id=%s, mac=%s\n", client->ip, client->memberId, bluetoothMac);
+    processResult = 0;
+
+cleanup:
+    pthread_mutex_unlock(&bluetoothPairMutex);
+    sodium_memzero(pin, sizeof(pin));
+    sodium_memzero(&registerData, sizeof(registerData));
+    return processResult;
+}
+
+static int ConnectMemberBluetoothDevice(ClientInfo *client)
+{
+    BluetoothDeviceRecord deviceRecord;
+    uint8_t rfcommChannel;
+    int queryResult;
+    int bluetoothFd;
+
+    queryResult = GetMemberBluetoothDevice(client->memberId, strlen(client->memberId), &deviceRecord);
+    if(queryResult == 0)
+    {
+        printf("[%s] HC-05 registration required: id=%s\n", client->ip, client->memberId);
+        return 1;
+    }
+    if(queryResult < 0)
+    {
+        fprintf(stderr, "[%s] HC-05 database lookup failed: id=%s\n", client->ip, client->memberId);
+        return -1;
+    }
+
+    bluetoothFd = ConnectBluetoothDevice(deviceRecord.mac, BLUETOOTH_CONNECT_TIMEOUT_MS, &rfcommChannel);
+    if(bluetoothFd < 0)
+    {
+        fprintf(stderr, "[%s] HC-05 connection failed: id=%s, mac=%s: %s\n", client->ip, client->memberId, deviceRecord.mac, strerror(errno));
+        return -1;
+    }
+
+    DisconnectBluetoothDevice(client->bluetoothFd);
+    client->bluetoothFd = bluetoothFd;
+    memcpy(client->bluetoothMac, deviceRecord.mac, sizeof(client->bluetoothMac));
+    printf("[%s] HC-05 connected: id=%s, mac=%s, channel=%u\n", client->ip, client->memberId, client->bluetoothMac, (unsigned int)rfcommChannel);
     return 0;
 }
 
@@ -763,6 +881,12 @@ static void *ReceiveClient(void *arg)
             LogFile(logBuffer);
             break;
         }
+        if(header.cmd != CMD_MEM_DATA && header.cmd != CMD_BLUETOOTH_REGISTER && client->bluetoothFd < 0)
+        {
+            snprintf(logBuffer, sizeof(logBuffer), "Bluetooth registration required from %s: cmd=%u\n", client->ip, header.cmd);
+            LogFile(logBuffer);
+            break;
+        }
 
         requestHeader[0] = HEADER_REQUEST_0;
         requestHeader[1] = HEADER_REQUEST_1;
@@ -796,9 +920,17 @@ static void *ReceiveClient(void *arg)
             break;
         }
 
-        if(packetHandler->processData(client, receiveData, header.dataLen) != 0)
         {
-            break;
+            int processResult = packetHandler->processData(client, receiveData, header.dataLen);
+
+            if(header.cmd == CMD_MEM_DATA || header.cmd == CMD_BLUETOOTH_REGISTER)
+            {
+                sodium_memzero(receiveData, header.dataLen);
+            }
+            if(processResult != 0)
+            {
+                break;
+            }
         }
     }
 
