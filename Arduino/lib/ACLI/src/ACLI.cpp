@@ -4,7 +4,10 @@
 #include <string.h>
 
 const ACLI::Command ACLI::commands[] = {
-    {"echo", CmdEcho},
+    {"pinmode", CmdPinMode},
+    {"write", CmdWrite},
+    {"read", CmdRead},
+    {"pins", CmdPins},
 };
 
 const uint8_t ACLI::commandCount = sizeof(commands) / sizeof(commands[0]);
@@ -74,7 +77,7 @@ void ACLI::ParseCommand(const char* command)
     for (uint8_t i = 0; i < commandCount; ++i)
     {
         const Command &cmd = commands[i];
-        if (strlen(cmd.name) == len && strncmp(cmd.name, command, len) == 0)
+        if (strlen(cmd.name) == len && strncasecmp(cmd.name, command, len) == 0)
         {
             cmd.handler(serial, args);
             return;
