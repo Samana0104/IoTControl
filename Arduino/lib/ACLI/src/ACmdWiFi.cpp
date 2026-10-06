@@ -101,7 +101,7 @@ static void WiFiBaud(Print &out, const char *args)
     out.println(wifi->SetModuleBaud(baud) ? F("module OK") : F("module not found"));
 }
 
-static const SubCommand wifiCommands[] = {
+static const ACommand wifiCommands[] = {
     {"status", WiFiStatus},
     {"scan", WiFiScan},
     {"connect", WiFiConnect},

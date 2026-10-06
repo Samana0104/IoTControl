@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "ACommand.h"
 
 class ACLI final
 {
@@ -20,15 +21,7 @@ class ACLI final
     void PrintCommandList();
 
   private:
-    using Handler = void (*)(Print &out, const char *args);
-
-    struct Command
-    {
-        const char *name;
-        Handler handler;
-    };
-
-    static const Command commands[];
+    static const ACommand commands[];
     static const uint8_t commandCount;
 
   private:

@@ -30,8 +30,7 @@ const char *NextToken(const char *p, char *token, uint8_t size)
 }
 
 // 첫 토큰으로 하위 커맨드를 찾아 나머지 인자를 넘김, 없으면 하위 목록 출력
-void Dispatch(Print &out, const char *args, const __FlashStringHelper *group,
-                     const SubCommand *subs, uint8_t count)
+void Dispatch(Print &out, const char *args, const __FlashStringHelper *group, const ACommand *subs, uint8_t count)
 {
     char token[TOKEN_SIZE];
     const char *p = NextToken(args, token, TOKEN_SIZE);

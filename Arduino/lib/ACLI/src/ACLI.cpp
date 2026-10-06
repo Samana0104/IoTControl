@@ -5,7 +5,7 @@
 
 #include <string.h>
 
-const ACLI::Command ACLI::commands[] = {
+const ACommand ACLI::commands[] = {
     {"sys", CmdSys},
     {"gpio", CmdGpio},
     {"wifi", CmdWiFi},
@@ -77,7 +77,7 @@ void ACLI::ParseCommand(const char* command)
 
     for (uint8_t i = 0; i < commandCount; ++i)
     {
-        const Command &cmd = commands[i];
+        const ACommand &cmd = commands[i];
         if (strlen(cmd.name) == len && strncasecmp(cmd.name, command, len) == 0)
         {
             cmd.handler(serial, args);

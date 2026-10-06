@@ -212,7 +212,7 @@ static void GpioList(Print &out, const char *args)
     }
 }
 
-static const SubCommand gpioCommands[] = {
+static const ACommand gpioCommands[] = {
     {"mode", GpioMode},
     {"write", GpioWrite},
     {"read", GpioRead},

@@ -150,7 +150,7 @@ static void SysReset(Print &out, const char *args)
     }
 }
 
-static const SubCommand sysCommands[] = {
+static const ACommand sysCommands[] = {
     {"info", SysInfo},
     {"mem", SysMem},
     {"log", SysLog},
