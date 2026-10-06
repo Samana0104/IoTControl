@@ -59,6 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     ${USER_INCLUDE_DIRS}
+    IoTControl/Common
 )
 
 # Add project symbols (macros)

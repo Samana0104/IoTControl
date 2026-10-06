@@ -1,5 +1,10 @@
 #include "AppMain.h"
 #include "SIntervalMS.h"
+#include "SLog.h"
+
+#ifdef DEBUG_BUILD
+#include "SCLI.h"
+#endif
 
 // 내부에서만 사용
 #define INTERVAL_MS_500MS 500
@@ -22,6 +27,13 @@ void AppMain(void)
 
 void AppInit(void)
 {
+    SLOG_INFO("Boot STM32");
+
+#ifdef DEBUG_BUILD
+    SCLIInit();
+    SLOG_INFO("Debug CLI initialized");
+#endif
+
     SIntervalMSInit(&interval500MS, INTERVAL_MS_500MS);
     SIntervalMSInit(&interval2Sec, INTERVAL_MS_2SEC);
     SIntervalMSInit(&interval5Sec, INTERVAL_MS_5SEC);
@@ -29,6 +41,10 @@ void AppInit(void)
 
 void AppUpdate(void)
 {
+#ifdef DEBUG_BUILD
+    SCLIUpdate();
+#endif
+
     uint32_t currentTime = HAL_GetTick();
 
     if (SIntervalMSElapsed(&interval500MS, currentTime))
