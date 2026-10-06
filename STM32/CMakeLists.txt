@@ -42,14 +42,23 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
 )
 
+file(GLOB_RECURSE USER_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/IoTControl/*.c
+)
+file(GLOB USER_INCLUDE_DIRS LIST_DIRECTORIES true
+    ${CMAKE_SOURCE_DIR}/IoTControl/*/Inc
+)
+
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    ${USER_SOURCES}
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    ${USER_INCLUDE_DIRS}
 )
 
 # Add project symbols (macros)
