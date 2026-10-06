@@ -3,6 +3,7 @@
 #include <DHT.h>
 #include <AWiFi.h>
 #include <AIntervalMS.h>
+#include <ALog.h>
 
 #ifdef DEBUG_CLI
 #include <ACLI.h>
@@ -18,7 +19,7 @@ const long ESP_BAUD_RATE = 38400;
 static AWiFi WiFiModule(RX_PIN, TX_PIN);
 
 #ifdef DEBUG_CLI
-static ACLI CLIHandler(Serial);
+static ACLI CLIHandler(GetLogSerial());
 #endif
 
 void loop()
@@ -50,11 +51,17 @@ void loop()
 void setup()
 {
     // put your setup code here, to run once:
-    Serial.begin(BAUD_RATE);
+    BeginLog(BAUD_RATE);
 
-    WiFiModule.Begin(ESP_BAUD_RATE);
+    ALOG_INFO("Boot Arduino");
+
+    if (!WiFiModule.Begin(ESP_BAUD_RATE))
+    {
+        ALOG_WARN("wifi module not found, baud=", ESP_BAUD_RATE);
+    }
 
 #ifdef DEBUG_CLI
     BindWiFi(WiFiModule);
+    ALOG_INFO("Debug CLI initialized");
 #endif
 }
