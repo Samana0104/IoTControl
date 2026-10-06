@@ -4,10 +4,8 @@
 #include <string.h>
 
 const ACLI::Command ACLI::commands[] = {
-    {"pinmode", CmdPinMode},
-    {"write", CmdWrite},
-    {"read", CmdRead},
-    {"pins", CmdPins},
+    {"gpio", CmdGpio},
+    {"wifi", CmdWiFi},
 };
 
 const uint8_t ACLI::commandCount = sizeof(commands) / sizeof(commands[0]);

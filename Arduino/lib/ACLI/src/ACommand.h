@@ -2,8 +2,12 @@
 
 #include <Arduino.h>
 
-// GPIO
-void CmdPinMode(Print &out, const char *args); // pinmode <pin> <in|out|pullup>
-void CmdWrite(Print &out, const char *args);   // write <pin> <0|1|low|high>
-void CmdRead(Print &out, const char *args);    // read <pin>
-void CmdPins(Print &out, const char *args);    // pins
+class AWiFi;
+
+// gpio <mode|write|read|list> ...
+void CmdGpio(Print &out, const char *args);
+
+// wifi <status|scan|connect|disconnect|autoconnect|init|baud> ...
+// 사용 전 BindWiFi()로 모듈 연결
+void BindWiFi(AWiFi &wifi);
+void CmdWiFi(Print &out, const char *args);

@@ -10,6 +10,7 @@ class ACLI final
     void ReadSerial();
     void ParseCommand(const char *command);
 
+    ACLI() = delete;
     ACLI(const ACLI &) = delete;
     ACLI &operator=(const ACLI &) = delete;
     ACLI(ACLI &&) = delete;
@@ -31,7 +32,7 @@ class ACLI final
     static const uint8_t commandCount;
 
   private:
-    static constexpr uint8_t BUFFER_SIZE = 128;
+    static constexpr uint8_t BUFFER_SIZE = 64;
 
     Stream &serial;
 
