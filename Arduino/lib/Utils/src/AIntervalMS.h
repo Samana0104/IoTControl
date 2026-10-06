@@ -6,6 +6,8 @@ class IntervalMS
 {
 public:
     explicit IntervalMS(uint32_t _periodMs) : periodMs(_periodMs) {}
+    IntervalMS() = delete;
+
     bool Elapsed(uint32_t nowMs) noexcept
     {
         if (nowMs - lastMs < periodMs) 
