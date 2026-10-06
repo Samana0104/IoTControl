@@ -195,11 +195,20 @@ void SUsartFlush(UART_HandleTypeDef *huart)
     }
 }
 
-void SUsartWrite(UART_HandleTypeDef *huart, const uint8_t *data, uint16_t length)
+bool SUsartWrite(UART_HandleTypeDef *huart, const uint8_t *data, uint16_t length)
 {
+    if (huart == NULL || huart->Init.BaudRate == 0 || (data == NULL && length > 0))
+    {
+        return false;
+    }
+    if (length == 0)
+    {
+        return true;
+    }
+
     // 1바이트 = 10비트(start + 8 + stop), 여유 10ms
     uint32_t timeoutMs = (uint32_t)length * 10U * 1000U / huart->Init.BaudRate + 10U;
-    HAL_UART_Transmit(huart, data, length, timeoutMs);
+    return HAL_UART_Transmit(huart, data, length, timeoutMs) == HAL_OK;
 }
 
 void SUsartVPrintf(UART_HandleTypeDef *huart, const char *format, va_list args)

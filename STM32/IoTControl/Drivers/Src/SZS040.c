@@ -114,15 +114,16 @@ const char *SZS040ReadLine(void)
     return NULL;
 }
 
-void SZS040Write(const uint8_t *data, uint16_t length)
+bool SZS040Write(const uint8_t *data, uint16_t length)
 {
     if (bt.huart == NULL)
     {
         SLOG_ERROR("bt not initialized");
-        return;
+
+        return false;
     }
 
-    SUsartWrite(bt.huart, data, length);
+    return SUsartWrite(bt.huart, data, length);
 }
 
 void SZS040Printf(const char *format, ...)

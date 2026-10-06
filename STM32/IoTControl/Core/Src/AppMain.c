@@ -4,6 +4,7 @@
 #include "SFan.h"
 #include "SZS040.h"
 #include "tim.h"
+#include "SIotProtocol.h"
 #include "usart.h"
 
 #ifdef DEBUG_BUILD
@@ -15,6 +16,31 @@
 
 static SIntervalMS interval500MS;
 static SIntervalMS interval5Sec;
+
+static void HandleBluetoothPacket(uint8_t cmd, const uint8_t *data, uint8_t length)
+{
+    if (cmd == CMD_CHAT_DATA)
+    {
+        SLOG_INFO("bt chat rx (%u bytes): %.*s", (unsigned int)length, (int)length, (const char *)data);
+    }
+    else
+    {
+        // 센서/제어 명령의 응용 동작은 해당 cmd의 처리부에서 연결.
+        SLOG_INFO("bt packet rx: cmd=%u, length=%u", (unsigned int)cmd, (unsigned int)length);
+    }
+}
+
+static void HandleBluetoothSend(uint8_t cmd, bool success)
+{
+    if (success)
+    {
+        SLOG_INFO("bt DATA transmitted: cmd=%u", (unsigned int)cmd);
+    }
+    else
+    {
+        SLOG_ERROR("bt send failed: cmd=%u (RQ timeout/mismatch or UART error)", (unsigned int)cmd);
+    }
+}
 
 void AppMain(void)
 {
@@ -42,6 +68,11 @@ void AppInit(void)
     {
         SLOG_ERROR("bluetooth uart init failed");
     }
+    else
+    {
+        const SIotProtocolIo io = {SZS040ReadByte, SZS040Write, HAL_GetTick};
+        SIotProtocolInit(&io, HandleBluetoothPacket, HandleBluetoothSend);
+    }
 
     // TIM3 CH1 PWM (25kHz) = 팬
     if (!SFanInit(&htim3, TIM_CHANNEL_1))
@@ -56,6 +87,8 @@ void AppInit(void)
 void AppUpdate(void)
 {
     uint32_t currentTime = HAL_GetTick();
+
+    SIotProtocolUpdate();
 
 #ifdef DEBUG_BUILD
     SCLIUpdate();

@@ -28,7 +28,8 @@ bool SZS040ReadByte(uint8_t *byte);
 // 반환된 문자열은 다음 ReadLine 호출 전까지만 유효
 const char *SZS040ReadLine(void);
 
-void SZS040Write(const uint8_t *data, uint16_t length);
+// UART 전송 완료 시 true. Bluetooth 상대의 수신 확인은 아님.
+bool SZS040Write(const uint8_t *data, uint16_t length);
 void SZS040Printf(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
 // AT 명령을 그대로 보내고 응답을 받음 (줄바꿈 안 붙임, 블로킹)

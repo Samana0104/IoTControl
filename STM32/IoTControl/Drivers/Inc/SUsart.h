@@ -19,6 +19,7 @@ bool SUsartReadByte(UART_HandleTypeDef *huart, uint8_t *byte);
 void SUsartFlush(UART_HandleTypeDef *huart);
 
 // 블로킹 전송 (타임아웃은 보레이트 기준으로 계산, Begin 없이도 사용 가능)
-void SUsartWrite(UART_HandleTypeDef *huart, const uint8_t *data, uint16_t length);
+// UART 전송 완료 시 true. 상대 기기의 수신 확인은 아님.
+bool SUsartWrite(UART_HandleTypeDef *huart, const uint8_t *data, uint16_t length);
 void SUsartPrintf(UART_HandleTypeDef *huart, const char *format, ...) __attribute__((format(printf, 2, 3)));
 void SUsartVPrintf(UART_HandleTypeDef *huart, const char *format, va_list args);

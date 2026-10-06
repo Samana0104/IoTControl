@@ -2,6 +2,7 @@
 #include "SCommand.h"
 #include "SCLI.h"
 #include "SZS040.h"
+#include "SIotProtocol.h"
 
 #define SCMDBT_VALUE_SIZE 48
 
@@ -39,8 +40,12 @@ static void BtSend(const char *args)
         return;
     }
 
-    SZS040Printf("%s\r\n", args);
-    SCLIPrintf("sent\r\n");
+    if (!SIotProtocolSendPacket(CMD_CHAT_DATA, args, (uint16_t)strlen(args)))
+    {
+        SCLIPrintf("send failed (busy, invalid length or UART error)\r\n");
+        return;
+    }
+    SCLIPrintf("OK header sent; waiting for initial RQ\r\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -135,5 +140,13 @@ static const SCommand btCommands[] = {
 
 void SCmdBt(const char *args)
 {
+    // AT 응답 수신/보레이트 변경이 진행 중인 바이너리 패킷을 가로채지 않도록 함.
+    char command[SCOMMAND_TOKEN_SIZE];
+    if (SIotProtocolIsBusy() &&
+        (SCommandNextToken(args, command, sizeof(command)) == NULL || strcasecmp(command, "status") != 0))
+    {
+        SCLIPrintf("bt protocol busy; wait for transfer to finish\r\n");
+        return;
+    }
     SCommandDispatch(args, "bt", btCommands, SCOMMAND_COUNT(btCommands));
 }
