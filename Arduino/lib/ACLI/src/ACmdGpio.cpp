@@ -202,7 +202,7 @@ static void GpioRead(Print &out, const char *args)
     PrintPinState(out, pin);
 }
 
-static void GpioList(Print &out, const char *args)
+static void GpioPins(Print &out, const char *args)
 {
     (void)args;
     out.println(F("pin\tmode\tlevel"));
@@ -216,7 +216,7 @@ static const ACommand gpioCommands[] = {
     {"mode", GpioMode},
     {"write", GpioWrite},
     {"read", GpioRead},
-    {"list", GpioList},
+    {"pins", GpioPins},
 };
 
 void CmdGpio(Print &out, const char *args)
