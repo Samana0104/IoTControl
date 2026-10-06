@@ -15,11 +15,8 @@
 #define ALOG_LEVEL ALOG_LEVEL_INFO
 #endif
 
-// 디버그 시리얼(하드웨어 Serial) 시작 + 로그 출력 연결
-void BeginLog(long baudRate);
-
-// 디버그 시리얼이 필요한 곳(CLI 등)은 Serial 대신 이걸로 받아 씀
-Stream &GetLogSerial();
+// 로그 출력 대상 연결 (출력 대상의 begin은 호출하는 쪽에서)
+void BeginLog(Print &output);
 
 // 런타임 레벨: 컴파일 레벨 안에서 추가로 거름
 void SetLogLevel(uint8_t level);

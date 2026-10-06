@@ -19,17 +19,15 @@ const long ESP_BAUD_RATE = 38400;
 static AWiFi WiFiModule(RX_PIN, TX_PIN);
 
 #ifdef DEBUG_CLI
-static ACLI CLIHandler(GetLogSerial());
+static ACLI CLIHandler(Serial);
 #endif
 
 void loop()
 {
     // 내부에서만 사용
     static constexpr uint32_t INTERVAL_MS_2Sec = 2000;
-    static constexpr uint32_t INTERVAL_MS_5Sec = 5000;
 
     static IntervalMS interval2Sec(INTERVAL_MS_2Sec);
-    static IntervalMS interval5Sec(INTERVAL_MS_5Sec);
 
 #ifdef DEBUG_CLI
     CLIHandler.ReadSerial();
@@ -42,16 +40,13 @@ void loop()
         //readDht();
     }
 
-    if (interval5Sec.Elapsed(currentTime))
-    {
-        //sendStatus();
-    }
 }
 
 void setup()
 {
     // put your setup code here, to run once:
-    BeginLog(BAUD_RATE);
+    Serial.begin(BAUD_RATE);
+    BeginLog(Serial);
 
     ALOG_INFO("Boot Arduino");
 

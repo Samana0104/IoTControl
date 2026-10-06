@@ -1,19 +1,11 @@
 #include "ALog.h"
 
-// 디버그 시리얼 관리 주체: 시작은 BeginLog()에서만, 다른 곳은 GetLogSerial()로 받아 씀
-static Stream &logSerial = Serial;
 static Print *logOutput = nullptr;
 static uint8_t logLevel = ALOG_LEVEL;
 
-void BeginLog(long baudRate)
+void BeginLog(Print &output)
 {
-    Serial.begin(baudRate);
-    logOutput = &logSerial;
-}
-
-Stream &GetLogSerial()
-{
-    return logSerial;
+    logOutput = &output;
 }
 
 void SetLogLevel(uint8_t level)
