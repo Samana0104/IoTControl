@@ -1,4 +1,5 @@
 #include "SZS040.h"
+#include "SLog.h"
 #include "SUsart.h"
 
 typedef struct _SZS040
@@ -20,6 +21,12 @@ static SZS040 bt;
 
 bool SZS040Init(UART_HandleTypeDef *huart, GPIO_TypeDef *statePort, uint16_t statePin)
 {
+    if (huart == NULL)
+    {
+        SLOG_ERROR("huart is NULL");
+        return false;
+    }
+
     bt.huart = huart;
     bt.statePort = statePort;
     bt.statePin = statePin;
@@ -33,6 +40,7 @@ bool SZS040SetUartBaud(uint32_t baud)
 {
     if (bt.huart == NULL)
     {
+        SLOG_ERROR("bt not initialized");
         return false;
     }
 
@@ -110,6 +118,7 @@ void SZS040Write(const uint8_t *data, uint16_t length)
 {
     if (bt.huart == NULL)
     {
+        SLOG_ERROR("bt not initialized");
         return;
     }
 
@@ -120,6 +129,7 @@ void SZS040Printf(const char *format, ...)
 {
     if (bt.huart == NULL)
     {
+        SLOG_ERROR("bt not initialized");
         return;
     }
 
@@ -138,6 +148,7 @@ bool SZS040SendAT(const char *command, char *response, uint16_t responseSize)
 
     if (bt.huart == NULL)
     {
+        SLOG_ERROR("bt not initialized");
         return false;
     }
 

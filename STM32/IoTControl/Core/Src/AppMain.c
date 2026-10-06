@@ -1,20 +1,19 @@
 #include "AppMain.h"
 #include "SIntervalMS.h"
 #include "SLog.h"
+#include "SFan.h"
 #include "SZS040.h"
+#include "tim.h"
 #include "usart.h"
 
 #ifdef DEBUG_BUILD
 #include "SCLI.h"
 #endif
 
-// 내부에서만 사용
 #define INTERVAL_MS_500MS 500
-#define INTERVAL_MS_2SEC 2000
 #define INTERVAL_MS_5SEC 5000
 
 static SIntervalMS interval500MS;
-static SIntervalMS interval2Sec;
 static SIntervalMS interval5Sec;
 
 void AppMain(void)
@@ -41,8 +40,13 @@ void AppInit(void)
         SLOG_ERROR("bluetooth uart init failed");
     }
 
+    // TIM3 CH1 PWM (25kHz) = 팬
+    if (!SFanInit(&htim3, TIM_CHANNEL_1))
+    {
+        SLOG_ERROR("fan pwm init failed");
+    }
+
     SIntervalMSInit(&interval500MS, INTERVAL_MS_500MS);
-    SIntervalMSInit(&interval2Sec, INTERVAL_MS_2SEC);
     SIntervalMSInit(&interval5Sec, INTERVAL_MS_5SEC);
 }
 
@@ -60,13 +64,9 @@ void AppUpdate(void)
         SLOG_INFO("bt rx: %s", btLine);
     }
 
-
     if (SIntervalMSElapsed(&interval500MS, currentTime))
     {
-    }
-
-    if (SIntervalMSElapsed(&interval2Sec, currentTime))
-    {
+        SFanUpdate();
         // readDht();
     }
 

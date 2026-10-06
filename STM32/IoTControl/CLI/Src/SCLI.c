@@ -1,14 +1,17 @@
 #include "SCLI.h"
 #include "SCommand.h"
 #include "SCmdBt.h"
+#include "SCmdFan.h"
 #include "SCmdGpio.h"
 #include "SCmdSys.h"
+#include "SLog.h"
 #include "SUsart.h"
 
 #define SCLI_LINE_SIZE 64
 
 static const SCommand commands[] = {
     {"bt", SCmdBt},
+    {"fan", SCmdFan},
     {"gpio", SCmdGpio},
     {"sys", SCmdSys},
 };
@@ -23,8 +26,17 @@ static bool lastWasCR = false;
 
 void SCLIInit(UART_HandleTypeDef *huart)
 {
+    if (huart == NULL)
+    {
+        SLOG_ERROR("huart is NULL");
+        return;
+    }
+
     cliUart = huart;
-    SUsartBegin(huart);
+    if (!SUsartBegin(huart))
+    {
+        SLOG_ERROR("cli uart begin failed");
+    }
 }
 
 static void Echo(const char *text, uint16_t length)
@@ -101,6 +113,7 @@ void SCLIPrintf(const char *format, ...)
 {
     if (cliUart == NULL)
     {
+        SLOG_ERROR("cli not initialized");
         return;
     }
 

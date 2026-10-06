@@ -1,4 +1,5 @@
 #include "SUsart.h"
+#include "SLog.h"
 
 #define SUSART_SLOT_COUNT 3
 #define SUSART_PRINT_SIZE 128
@@ -62,8 +63,21 @@ static void StartReceive(SUsart *usart)
 bool SUsartBegin(UART_HandleTypeDef *huart)
 {
     SUsart *usart = GetSlot(huart);
-    if (usart == NULL || usart->huart != NULL || huart->hdmarx == NULL)
+    if (usart == NULL)
     {
+        SLOG_ERROR("usart not supported (only USART1/2/6)");
+        return false;
+    }
+
+    if (usart->huart != NULL)
+    {
+        SLOG_ERROR("usart already begun");
+        return false;
+    }
+
+    if (huart->hdmarx == NULL)
+    {
+        SLOG_ERROR("usart rx dma not linked (CubeMX DMA RX Circular)");
         return false;
     }
 
