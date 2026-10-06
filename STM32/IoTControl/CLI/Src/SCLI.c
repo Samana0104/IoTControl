@@ -1,5 +1,6 @@
 #include "SCLI.h"
 #include "SCommand.h"
+#include "SCmdBt.h"
 #include "SCmdGpio.h"
 #include "SCmdSys.h"
 #include "SUsart.h"
@@ -7,6 +8,7 @@
 #define SCLI_LINE_SIZE 64
 
 static const SCommand commands[] = {
+    {"bt", SCmdBt},
     {"gpio", SCmdGpio},
     {"sys", SCmdSys},
 };

@@ -9,6 +9,9 @@
 // 이미 시작한 UART나 F411에 없는 UART면 false
 bool SUsartBegin(UART_HandleTypeDef *huart);
 
+// 실행 중 보레이트 변경 (수신 중이면 버퍼를 비우고 다시 시작)
+bool SUsartSetBaud(UART_HandleTypeDef *huart, uint32_t baud);
+
 // 받은 바이트 하나 꺼냄, 없거나 Begin 안 했으면 false
 bool SUsartReadByte(UART_HandleTypeDef *huart, uint8_t *byte);
 

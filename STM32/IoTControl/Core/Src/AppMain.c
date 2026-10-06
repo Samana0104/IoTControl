@@ -48,6 +48,8 @@ void AppInit(void)
 
 void AppUpdate(void)
 {
+    uint32_t currentTime = HAL_GetTick();
+
 #ifdef DEBUG_BUILD
     SCLIUpdate();
 #endif
@@ -58,12 +60,9 @@ void AppUpdate(void)
         SLOG_INFO("bt rx: %s", btLine);
     }
 
-    uint32_t currentTime = HAL_GetTick();
 
     if (SIntervalMSElapsed(&interval500MS, currentTime))
     {
-        // 동작 확인용 보드 LED 깜빡임
-        // HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
     }
 
     if (SIntervalMSElapsed(&interval2Sec, currentTime))

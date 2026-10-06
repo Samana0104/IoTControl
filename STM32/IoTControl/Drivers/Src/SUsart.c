@@ -74,6 +74,31 @@ bool SUsartBegin(UART_HandleTypeDef *huart)
     return true;
 }
 
+bool SUsartSetBaud(UART_HandleTypeDef *huart, uint32_t baud)
+{
+    SUsart *usart = FindUsart(huart);
+
+    if (usart != NULL)
+    {
+        HAL_UART_AbortReceive(huart);
+    }
+
+    // 이미 초기화된 핸들이라 MspInit(GPIO/DMA)은 다시 안 타고 BRR만 다시 계산됨
+    huart->Init.BaudRate = baud;
+    if (HAL_UART_Init(huart) != HAL_OK)
+    {
+        return false;
+    }
+
+    if (usart != NULL)
+    {
+        usart->rxFlag = false;
+        usart->rxRestartFlag = false;
+        StartReceive(usart);
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // HAL 콜백 (프로젝트에서 여기만 정의): 위치와 플래그만 기록
 // ---------------------------------------------------------------------------
