@@ -1,29 +1,40 @@
 #include "IotSocket.h"
+#include "IotDatabase.h"
 #include "IoTPacket.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
 #include <poll.h>
 #include <pthread.h>
+#include <signal.h>
+#include <sodium.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #define LISTEN_BACKLOG 5
 #define SEND_BUFFER_SIZE (MAX_MESSAGE_SIZE + HEADER_SIZE)
 #define DATA_WAIT_TIMEOUT_MS 5000
+#define TLS_HANDSHAKE_TIMEOUT_SECONDS 5
 
 typedef struct _ClientInfo
 {
     int index;
     int fd;
+    SSL *tls;
     char ip[INET_ADDRSTRLEN];
+    char memberId[MEM_ID_SIZE + 1];
+    int authenticated;
     int inUse;
     int threadCount;
     int connected;
     pthread_mutex_t sendMutex;
+    pthread_mutex_t tlsMutex;
     pthread_cond_t sendCond;
     uint8_t sendData[SEND_BUFFER_SIZE];
     size_t sendLength;
@@ -32,7 +43,7 @@ typedef struct _ClientInfo
     int sendResult;
 } ClientInfo;
 
-typedef void (*ProcessPacketData)(const ClientInfo *client, const uint8_t *data, size_t length);
+typedef int (*ProcessPacketData)(ClientInfo *client, const uint8_t *data, size_t length);
 
 typedef struct _PacketHandler
 {
@@ -47,21 +58,23 @@ static int clientCount;
 static pthread_mutex_t clientMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int ParsePort(const char *port);
+static int SetSocketTimeout(int socketFd, int timeoutSeconds);
 static int InitializeClients(void);
 static int GetClientCount(void);
-static ClientInfo *RegisterClient(int clientSocket, const struct sockaddr_in *clientAddress);
+static ClientInfo *RegisterClient(int clientSocket, SSL *tls, const struct sockaddr_in *clientAddress);
 static void UnregisterClientThread(ClientInfo *client);
 static void StopClient(ClientInfo *client);
-static int ReceiveAll(int socketFd, void *buffer, size_t length);
-static int WaitForReceiveData(int socketFd, int timeoutMs);
-static int SendAll(int socketFd, const void *buffer, size_t length);
+static SSL_CTX *CreateTlsServerContext(void);
+static int ReceiveAll(ClientInfo *client, void *buffer, size_t length);
+static int WaitForReceiveData(ClientInfo *client, int timeoutMs);
+static int SendAll(ClientInfo *client, const void *buffer, size_t length);
 static int RequestSend(ClientInfo *client, const void *data, size_t length);
 static const PacketHandler *FindPacketHandler(uint8_t cmd);
-static void ProcessDhtData(const ClientInfo *client, const uint8_t *data, size_t length);
-static void ProcessFanData(const ClientInfo *client, const uint8_t *data, size_t length);
-static void ProcessConData(const ClientInfo *client, const uint8_t *data, size_t length);
-static void ProcessMemData(const ClientInfo *client, const uint8_t *data, size_t length);
-static void ProcessChatData(const ClientInfo *client, const uint8_t *data, size_t length);
+static int ProcessDhtData(ClientInfo *client, const uint8_t *data, size_t length);
+static int ProcessFanData(ClientInfo *client, const uint8_t *data, size_t length);
+static int ProcessConData(ClientInfo *client, const uint8_t *data, size_t length);
+static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length);
+static int ProcessChatData(ClientInfo *client, const uint8_t *data, size_t length);
 static void *SendClient(void *arg);
 static void *ReceiveClient(void *arg);
 static void LogFile(const char *message);
@@ -81,6 +94,7 @@ int StartServer(const char *port)
     int serverPort;
     int socketOption = 1;
     struct sockaddr_in serverAddress;
+    SSL_CTX *tlsContext;
 
     serverPort = ParsePort(port);
     if(serverPort < 0)
@@ -94,6 +108,19 @@ int StartServer(const char *port)
         fputs("client synchronization initialization failed\n", stderr);
         return -1;
     }
+
+    if(InitializeDatabase() != 0)
+    {
+        return -1;
+    }
+
+    tlsContext = CreateTlsServerContext();
+    if(tlsContext == NULL)
+    {
+        return -1;
+    }
+
+    signal(SIGPIPE, SIG_IGN);
 
     serverSocket = socket(PF_INET, SOCK_STREAM, 0);
     if(serverSocket < 0)
@@ -136,6 +163,7 @@ int StartServer(const char *port)
         socklen_t clientAddressSize = sizeof(struct sockaddr_in);
         struct sockaddr_in clientAddress;
         ClientInfo *client;
+        SSL *tls;
         pthread_t sendThread;
         pthread_t receiveThread;
         int createResult;
@@ -152,10 +180,38 @@ int StartServer(const char *port)
             continue;
         }
 
-        client = RegisterClient(clientSocket, &clientAddress);
+        if(SetSocketTimeout(clientSocket, TLS_HANDSHAKE_TIMEOUT_SECONDS) != 0)
+        {
+            perror("setsockopt(client timeout)");
+            close(clientSocket);
+            continue;
+        }
+
+        tls = SSL_new(tlsContext);
+        if(tls == NULL || SSL_set_fd(tls, clientSocket) != 1 || SSL_accept(tls) != 1)
+        {
+            fputs("TLS handshake failed\n", stderr);
+            ERR_print_errors_fp(stderr);
+            SSL_free(tls);
+            close(clientSocket);
+            continue;
+        }
+
+        if(SetSocketTimeout(clientSocket, 0) != 0)
+        {
+            perror("setsockopt(client timeout reset)");
+            SSL_shutdown(tls);
+            SSL_free(tls);
+            close(clientSocket);
+            continue;
+        }
+
+        client = RegisterClient(clientSocket, tls, &clientAddress);
         if(client == NULL)
         {
             fputs("socket full\n", stderr);
+            SSL_shutdown(tls);
+            SSL_free(tls);
             close(clientSocket);
             continue;
         }
@@ -207,6 +263,15 @@ static int ParsePort(const char *port)
     return (int)parsedPort;
 }
 
+static int SetSocketTimeout(int socketFd, int timeoutSeconds)
+{
+    struct timeval timeout;
+
+    timeout.tv_sec = timeoutSeconds;
+    timeout.tv_usec = 0;
+    return setsockopt(socketFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == 0 && setsockopt(socketFd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == 0 ? 0 : -1;
+}
+
 static int InitializeClients(void)
 {
     int i;
@@ -218,6 +283,11 @@ static int InitializeClients(void)
         clientInfo[i].fd = -1;
 
         if(pthread_mutex_init(&clientInfo[i].sendMutex, NULL) != 0)
+        {
+            return -1;
+        }
+
+        if(pthread_mutex_init(&clientInfo[i].tlsMutex, NULL) != 0)
         {
             return -1;
         }
@@ -242,7 +312,7 @@ static int GetClientCount(void)
     return count;
 }
 
-static ClientInfo *RegisterClient(int clientSocket, const struct sockaddr_in *clientAddress)
+static ClientInfo *RegisterClient(int clientSocket, SSL *tls, const struct sockaddr_in *clientAddress)
 {
     ClientInfo *client = NULL;
     int i;
@@ -254,6 +324,7 @@ static ClientInfo *RegisterClient(int clientSocket, const struct sockaddr_in *cl
         {
             client = &clientInfo[i];
             client->fd = clientSocket;
+            client->tls = tls;
             client->inUse = 1;
             client->threadCount = 2;
             client->connected = 1;
@@ -261,6 +332,8 @@ static ClientInfo *RegisterClient(int clientSocket, const struct sockaddr_in *cl
             client->sendPending = 0;
             client->sendComplete = 0;
             client->sendResult = 0;
+            client->authenticated = 0;
+            memset(client->memberId, 0, sizeof(client->memberId));
             inet_ntop(AF_INET,&clientAddress->sin_addr,client->ip,sizeof(client->ip));
             clientCount++;
             break;
@@ -274,6 +347,7 @@ static ClientInfo *RegisterClient(int clientSocket, const struct sockaddr_in *cl
 static void UnregisterClientThread(ClientInfo *client)
 {
     int socketToClose = -1;
+    SSL *tlsToFree = NULL;
     int remainingClients = 0;
 
     pthread_mutex_lock(&clientMutex);
@@ -281,7 +355,9 @@ static void UnregisterClientThread(ClientInfo *client)
     if(client->threadCount == 0)
     {
         socketToClose = client->fd;
+        tlsToFree = client->tls;
         client->fd = -1;
+        client->tls = NULL;
         client->inUse = 0;
         clientCount--;
         remainingClients = clientCount;
@@ -290,6 +366,7 @@ static void UnregisterClientThread(ClientInfo *client)
 
     if(socketToClose >= 0)
     {
+        SSL_free(tlsToFree);
         close(socketToClose);
         printf("Client disconnected: ip=%s, clients=%d\n", client->ip, remainingClients);
     }
@@ -314,21 +391,61 @@ static void StopClient(ClientInfo *client)
     }
 }
 
-static int ReceiveAll(int socketFd, void *buffer, size_t length)
+static SSL_CTX *CreateTlsServerContext(void)
+{
+    const char *certificateFile = getenv("IOT_TLS_CERT_FILE");
+    const char *privateKeyFile = getenv("IOT_TLS_KEY_FILE");
+    SSL_CTX *tlsContext;
+
+    if(certificateFile == NULL || privateKeyFile == NULL)
+    {
+        fputs("IOT_TLS_CERT_FILE and IOT_TLS_KEY_FILE must be set\n", stderr);
+        return NULL;
+    }
+
+    tlsContext = SSL_CTX_new(TLS_server_method());
+    if(tlsContext == NULL)
+    {
+        ERR_print_errors_fp(stderr);
+        return NULL;
+    }
+
+    if(SSL_CTX_set_min_proto_version(tlsContext, TLS1_2_VERSION) != 1 || SSL_CTX_use_certificate_chain_file(tlsContext, certificateFile) != 1 || SSL_CTX_use_PrivateKey_file(tlsContext, privateKeyFile, SSL_FILETYPE_PEM) != 1 || SSL_CTX_check_private_key(tlsContext) != 1)
+    {
+        fputs("TLS certificate initialization failed\n", stderr);
+        ERR_print_errors_fp(stderr);
+        SSL_CTX_free(tlsContext);
+        return NULL;
+    }
+
+    SSL_CTX_set_options(tlsContext, SSL_OP_NO_COMPRESSION | SSL_OP_NO_RENEGOTIATION);
+    SSL_CTX_set_mode(tlsContext, SSL_MODE_AUTO_RETRY);
+    return tlsContext;
+}
+
+static int ReceiveAll(ClientInfo *client, void *buffer, size_t length)
 {
     uint8_t *current = (uint8_t *)buffer;
     size_t receivedLength = 0;
 
     while(receivedLength < length)
     {
-        ssize_t result = recv(socketFd, current + receivedLength, length - receivedLength, 0);
+        int result;
+        int tlsError;
+
+        pthread_mutex_lock(&client->tlsMutex);
+        ERR_clear_error();
+        result = SSL_read(client->tls, current + receivedLength, (int)(length - receivedLength));
+        tlsError = result > 0 ? SSL_ERROR_NONE : SSL_get_error(client->tls, result);
+        pthread_mutex_unlock(&client->tlsMutex);
+
         if(result == 0)
         {
             return -1;
         }
         if(result < 0)
         {
-            if(errno == EINTR)
+            if(tlsError == SSL_ERROR_WANT_READ || tlsError == SSL_ERROR_WANT_WRITE || (tlsError == SSL_ERROR_SYSCALL && errno == EINTR))
             {
                 continue;
             }
@@ -341,11 +458,20 @@ static int ReceiveAll(int socketFd, void *buffer, size_t length)
     return 0;
 }
 
-static int WaitForReceiveData(int socketFd, int timeoutMs)
+static int WaitForReceiveData(ClientInfo *client, int timeoutMs)
 {
     struct pollfd socketEvent;
+    int pendingData;
 
-    socketEvent.fd = socketFd;
+    pthread_mutex_lock(&client->tlsMutex);
+    pendingData = SSL_pending(client->tls);
+    pthread_mutex_unlock(&client->tlsMutex);
+    if(pendingData > 0)
+    {
+        return 1;
+    }
+
+    socketEvent.fd = client->fd;
     socketEvent.events = POLLIN;
     socketEvent.revents = 0;
 
@@ -375,21 +501,29 @@ static int WaitForReceiveData(int socketFd, int timeoutMs)
     }
 }
 
-static int SendAll(int socketFd, const void *buffer, size_t length)
+static int SendAll(ClientInfo *client, const void *buffer, size_t length)
 {
     const uint8_t *current = (const uint8_t *)buffer;
     size_t sentLength = 0;
 
     while(sentLength < length)
     {
-        ssize_t result = send(socketFd, current + sentLength, length - sentLength, MSG_NOSIGNAL);
+        int result;
+        int tlsError;
+
+        pthread_mutex_lock(&client->tlsMutex);
+        ERR_clear_error();
+        result = SSL_write(client->tls, current + sentLength, (int)(length - sentLength));
+        tlsError = result > 0 ? SSL_ERROR_NONE : SSL_get_error(client->tls, result);
+        pthread_mutex_unlock(&client->tlsMutex);
+
         if(result == 0)
         {
             return -1;
         }
         if(result < 0)
         {
-            if(errno == EINTR)
+            if(tlsError == SSL_ERROR_WANT_READ || tlsError == SSL_ERROR_WANT_WRITE || (tlsError == SSL_ERROR_SYSCALL && errno == EINTR))
             {
                 continue;
             }
@@ -455,45 +589,73 @@ static const PacketHandler *FindPacketHandler(uint8_t cmd)
     return NULL;
 }
 
-static void ProcessDhtData(const ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessDhtData(ClientInfo *client, const uint8_t *data, size_t length)
 {
     DhtData dhtData;
 
     (void)length;
     memcpy(&dhtData, data, sizeof(dhtData));
     printf("[%s] DHT: temp=%u, humi=%u\n", client->ip, (unsigned int)dhtData.temp, (unsigned int)dhtData.humi);
+    return 0;
 }
 
-static void ProcessFanData(const ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessFanData(ClientInfo *client, const uint8_t *data, size_t length)
 {
     FanData fanData;
 
     (void)length;
     memcpy(&fanData, data, sizeof(fanData));
     printf("[%s] FAN: fanSpeed=%u\n", client->ip, (unsigned int)fanData.fanSpeed);
+    return 0;
 }
 
-static void ProcessConData(const ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessConData(ClientInfo *client, const uint8_t *data, size_t length)
 {
     ConData conData;
 
     (void)length;
     memcpy(&conData, data, sizeof(conData));
     printf("[%s] CON: tempData=%u\n", client->ip, (unsigned int)conData.tempData);
+    return 0;
 }
 
-static void ProcessMemData(const ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length)
 {
     MemData memData;
+    size_t memberIdLength;
+    size_t passwordLength;
+    int verifyResult;
 
     (void)length;
     memcpy(&memData, data, sizeof(memData));
-    printf("[%s] MEM: id=%.*s, pw=********\n", client->ip, MEM_ID_SIZE, memData.id);
+    memberIdLength = strnlen(memData.id, MEM_ID_SIZE);
+    passwordLength = strnlen(memData.pw, MEM_PW_SIZE);
+    verifyResult = VerifyMember(memData.id, memberIdLength, memData.pw, passwordLength);
+
+    if(verifyResult == 1)
+    {
+        memcpy(client->memberId, memData.id, memberIdLength);
+        client->memberId[memberIdLength] = '\0';
+        client->authenticated = 1;
+    }
+
+    sodium_memzero(&memData, sizeof(memData));
+    if(verifyResult != 1)
+    {
+        client->memberId[0] = '\0';
+        client->authenticated = 0;
+        printf("[%s] Member authentication failed\n", client->ip);
+        return -1;
+    }
+
+    printf("[%s] Member authenticated: id=%s\n", client->ip, client->memberId);
+    return 0;
 }
 
-static void ProcessChatData(const ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessChatData(ClientInfo *client, const uint8_t *data, size_t length)
 {
     printf("[%s] %.*s\n", client->ip, (int)length, (const char *)data);
+    return 0;
 }
 
 static void *SendClient(void *arg)
@@ -524,7 +686,7 @@ static void *SendClient(void *arg)
         memcpy(sendBuffer, client->sendData, sendLength);
         pthread_mutex_unlock(&client->sendMutex);
 
-        sendResult = SendAll(socketFd, sendBuffer, sendLength);
+        sendResult = SendAll(client, sendBuffer, sendLength);
 
         pthread_mutex_lock(&client->sendMutex);
         client->sendResult = sendResult;
@@ -562,7 +724,7 @@ static void *ReceiveClient(void *arg)
         const PacketHandler *packetHandler;
         int waitResult = 1;
 
-        if(ReceiveAll(client->fd, headerData, sizeof(headerData)) != 0)
+        if(ReceiveAll(client, headerData, sizeof(headerData)) != 0)
         {
             break;
         }
@@ -595,6 +757,13 @@ static void *ReceiveClient(void *arg)
             break;
         }
 
+        if(header.cmd != CMD_MEM_DATA && !client->authenticated)
+        {
+            snprintf(logBuffer, sizeof(logBuffer), "Unauthenticated command from %s: %u\n", client->ip, header.cmd);
+            LogFile(logBuffer);
+            break;
+        }
+
         requestHeader[0] = HEADER_REQUEST_0;
         requestHeader[1] = HEADER_REQUEST_1;
         requestHeader[2] = header.cmd;
@@ -613,7 +782,7 @@ static void *ReceiveClient(void *arg)
                 break;
             }
 
-            waitResult = WaitForReceiveData(client->fd, DATA_WAIT_TIMEOUT_MS);
+            waitResult = WaitForReceiveData(client, DATA_WAIT_TIMEOUT_MS);
             if(waitResult == 0)
             {
                 snprintf(logBuffer, sizeof(logBuffer), "Data timeout from %s: resend RQ\n", client->ip);
@@ -622,12 +791,15 @@ static void *ReceiveClient(void *arg)
         }
         while(waitResult == 0);
 
-        if(waitResult < 0 || ReceiveAll(client->fd, receiveData, header.dataLen) != 0)
+        if(waitResult < 0 || ReceiveAll(client, receiveData, header.dataLen) != 0)
         {
             break;
         }
 
-        packetHandler->processData(client, receiveData, header.dataLen);
+        if(packetHandler->processData(client, receiveData, header.dataLen) != 0)
+        {
+            break;
+        }
     }
 
     StopClient(client);
