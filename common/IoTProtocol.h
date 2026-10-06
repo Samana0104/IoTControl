@@ -10,6 +10,10 @@
 #define HEADER_REQUEST_0 'R'
 #define HEADER_REQUEST_1 'Q'
 
+/* RQ.dataLen carries a flag; OK.dataLen carries the payload length. */
+#define RQ_FLAG_INITIAL 0
+#define RQ_FLAG_RETRY 1
+
 typedef struct _HeaderData
 {
     char head0;

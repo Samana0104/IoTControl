@@ -287,18 +287,38 @@ static int SendPacket(IotClient *client, uint8_t cmd, const void *data, size_t l
     sendHeader[2] = cmd;
     sendHeader[3] = (uint8_t)length;
 
-    if(SendAll(client, sendHeader, sizeof(sendHeader)) != 0 || ReceiveAll(client, responseHeader, sizeof(responseHeader)) != 0)
+    if(SendAll(client, sendHeader, sizeof(sendHeader)) != 0)
     {
         return -1;
     }
 
-    if(responseHeader[0] != HEADER_REQUEST_0 || responseHeader[1] != HEADER_REQUEST_1 || responseHeader[2] != cmd || responseHeader[3] != 0)
+    while(1)
     {
-        errno = EPROTO;
-        return -1;
-    }
+        if(ReceiveAll(client, responseHeader, sizeof(responseHeader)) != 0)
+        {
+            return -1;
+        }
 
-    return SendAll(client, data, length);
+        if(responseHeader[0] != HEADER_REQUEST_0 || responseHeader[1] != HEADER_REQUEST_1 || (responseHeader[3] != RQ_FLAG_INITIAL && responseHeader[3] != RQ_FLAG_RETRY))
+        {
+            errno = EPROTO;
+            return -1;
+        }
+
+        /* Discard queued retries before checking the current command. */
+        if(responseHeader[3] == RQ_FLAG_RETRY)
+        {
+            continue;
+        }
+
+        if(responseHeader[2] != cmd)
+        {
+            errno = EPROTO;
+            return -1;
+        }
+
+        return SendAll(client, data, length);
+    }
 }
 
 static int SendAll(IotClient *client, const void *buffer, size_t length)

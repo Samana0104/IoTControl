@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -25,6 +26,14 @@
 #define BLUETOOTH_CONNECT_TIMEOUT_MS 5000
 #define BLUETOOTH_PAIR_TIMEOUT_SECONDS 30
 
+typedef struct _BluetoothReceiveContext
+{
+    int bluetoothFd;
+    int stopFd;
+    char memberId[MEM_ID_SIZE + 1];
+    char mac[BLUETOOTH_MAC_TEXT_SIZE];
+} BluetoothReceiveContext;
+
 typedef struct _ClientInfo
 {
     int index;
@@ -34,6 +43,9 @@ typedef struct _ClientInfo
     char memberId[MEM_ID_SIZE + 1];
     char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
     int bluetoothFd;
+    int bluetoothStopFd;
+    int bluetoothReceiveStarted;
+    pthread_t bluetoothReceiveThread;
     int authenticated;
     int inUse;
     int threadCount;
@@ -48,7 +60,23 @@ typedef struct _ClientInfo
     int sendResult;
 } ClientInfo;
 
-typedef int (*ProcessPacketData)(ClientInfo *client, const uint8_t *data, size_t length);
+typedef enum
+{
+    PACKET_TRANSPORT_TCP,
+    PACKET_TRANSPORT_BLUETOOTH
+} PacketTransport;
+
+typedef struct _PacketConnection
+{
+    PacketTransport transport;
+    void *context;
+    const char *label;
+    int (*receiveAll)(void *context, void *buffer, size_t length);
+    int (*sendAll)(void *context, const void *buffer, size_t length);
+    int (*waitForData)(void *context, int timeoutMs);
+} PacketConnection;
+
+typedef int (*ProcessPacketData)(PacketConnection *connection, const uint8_t *data, size_t length);
 
 typedef struct _PacketHandler
 {
@@ -75,14 +103,28 @@ static int ReceiveAll(ClientInfo *client, void *buffer, size_t length);
 static int WaitForReceiveData(ClientInfo *client, int timeoutMs);
 static int SendAll(ClientInfo *client, const void *buffer, size_t length);
 static int RequestSend(ClientInfo *client, const void *data, size_t length);
+static int ReceiveTcpPacketData(void *context, void *buffer, size_t length);
+static int SendTcpPacketData(void *context, const void *buffer, size_t length);
+static int WaitForTcpPacketData(void *context, int timeoutMs);
+static int WaitForBluetoothEvent(BluetoothReceiveContext *context, short events, int timeoutMs);
+static int ReceiveBluetoothPacketData(void *context, void *buffer, size_t length);
+static int SendBluetoothPacketData(void *context, const void *buffer, size_t length);
+static int WaitForBluetoothPacketData(void *context, int timeoutMs);
+static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd);
+static void ReceivePackets(PacketConnection *connection);
 static const PacketHandler *FindPacketHandler(uint8_t cmd);
-static int ProcessDhtData(ClientInfo *client, const uint8_t *data, size_t length);
-static int ProcessFanData(ClientInfo *client, const uint8_t *data, size_t length);
-static int ProcessConData(ClientInfo *client, const uint8_t *data, size_t length);
-static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length);
-static int ProcessChatData(ClientInfo *client, const uint8_t *data, size_t length);
-static int ProcessBluetoothRegisterData(ClientInfo *client, const uint8_t *data, size_t length);
+static int ProcessDhtData(PacketConnection *connection, const uint8_t *data, size_t length);
+static int ProcessFanData(PacketConnection *connection, const uint8_t *data, size_t length);
+static int ProcessConData(PacketConnection *connection, const uint8_t *data, size_t length);
+static int ProcessMemData(PacketConnection *connection, const uint8_t *data, size_t length);
+static int ProcessChatData(PacketConnection *connection, const uint8_t *data, size_t length);
+static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ConnectMemberBluetoothDevice(ClientInfo *client);
+static int StartBluetoothReceive(ClientInfo *client);
+static void StopBluetoothReceive(int bluetoothFd, int stopFd, pthread_t receiveThread, int receiveStarted);
+static void DisconnectClientBluetooth(ClientInfo *client);
+static void *ReceiveBluetooth(void *arg);
+static void LogBluetoothData(const BluetoothReceiveContext *context, const uint8_t *data, size_t length);
 static void *SendClient(void *arg);
 static void *ReceiveClient(void *arg);
 static void LogFile(const char *message);
@@ -291,6 +333,7 @@ static int InitializeClients(void)
         clientInfo[i].index = i;
         clientInfo[i].fd = -1;
         clientInfo[i].bluetoothFd = -1;
+        clientInfo[i].bluetoothStopFd = -1;
 
         if(pthread_mutex_init(&clientInfo[i].sendMutex, NULL) != 0)
         {
@@ -344,6 +387,8 @@ static ClientInfo *RegisterClient(int clientSocket, SSL *tls, const struct socka
             client->sendResult = 0;
             client->authenticated = 0;
             client->bluetoothFd = -1;
+            client->bluetoothStopFd = -1;
+            client->bluetoothReceiveStarted = 0;
             memset(client->memberId, 0, sizeof(client->memberId));
             memset(client->bluetoothMac, 0, sizeof(client->bluetoothMac));
             inet_ntop(AF_INET,&clientAddress->sin_addr,client->ip,sizeof(client->ip));
@@ -360,6 +405,9 @@ static void UnregisterClientThread(ClientInfo *client)
 {
     int socketToClose = -1;
     int bluetoothToClose = -1;
+    int bluetoothStopFd = -1;
+    int bluetoothReceiveStarted = 0;
+    pthread_t bluetoothReceiveThread = 0;
     SSL *tlsToFree = NULL;
     int remainingClients = 0;
 
@@ -369,9 +417,14 @@ static void UnregisterClientThread(ClientInfo *client)
     {
         socketToClose = client->fd;
         bluetoothToClose = client->bluetoothFd;
+        bluetoothStopFd = client->bluetoothStopFd;
+        bluetoothReceiveStarted = client->bluetoothReceiveStarted;
+        bluetoothReceiveThread = client->bluetoothReceiveThread;
         tlsToFree = client->tls;
         client->fd = -1;
         client->bluetoothFd = -1;
+        client->bluetoothStopFd = -1;
+        client->bluetoothReceiveStarted = 0;
         client->tls = NULL;
         client->inUse = 0;
         clientCount--;
@@ -381,7 +434,7 @@ static void UnregisterClientThread(ClientInfo *client)
 
     if(socketToClose >= 0)
     {
-        DisconnectBluetoothDevice(bluetoothToClose);
+        StopBluetoothReceive(bluetoothToClose, bluetoothStopFd, bluetoothReceiveThread, bluetoothReceiveStarted);
         SSL_free(tlsToFree);
         close(socketToClose);
         printf("Client disconnected: ip=%s, clients=%d\n", client->ip, remainingClients);
@@ -590,6 +643,134 @@ static int RequestSend(ClientInfo *client, const void *data, size_t length)
     return result;
 }
 
+static int ReceiveTcpPacketData(void *context, void *buffer, size_t length)
+{
+    return ReceiveAll((ClientInfo *)context, buffer, length);
+}
+
+static int SendTcpPacketData(void *context, const void *buffer, size_t length)
+{
+    return RequestSend((ClientInfo *)context, buffer, length);
+}
+
+static int WaitForTcpPacketData(void *context, int timeoutMs)
+{
+    return WaitForReceiveData((ClientInfo *)context, timeoutMs);
+}
+
+static int WaitForBluetoothEvent(BluetoothReceiveContext *context, short events, int timeoutMs)
+{
+    struct pollfd pollEvents[2] =
+    {
+        {.fd = context->bluetoothFd, .events = events},
+        {.fd = context->stopFd, .events = POLLIN}
+    };
+
+    while(1)
+    {
+        int result = poll(pollEvents, sizeof(pollEvents) / sizeof(pollEvents[0]), timeoutMs);
+
+        if(result < 0)
+        {
+            if(errno == EINTR)
+            {
+                continue;
+            }
+            return -1;
+        }
+        if(result == 0)
+        {
+            return 0;
+        }
+        if(pollEvents[1].revents != 0)
+        {
+            errno = ECANCELED;
+            return -1;
+        }
+        if(pollEvents[0].revents & events)
+        {
+            return 1;
+        }
+        if(pollEvents[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+        {
+            errno = ECONNRESET;
+            return -1;
+        }
+    }
+}
+
+static int ReceiveBluetoothPacketData(void *context, void *buffer, size_t length)
+{
+    BluetoothReceiveContext *bluetooth = (BluetoothReceiveContext *)context;
+    uint8_t *current = (uint8_t *)buffer;
+    size_t receivedLength = 0;
+
+    while(receivedLength < length)
+    {
+        ssize_t result;
+
+        if(WaitForBluetoothEvent(bluetooth, POLLIN, -1) < 0)
+        {
+            return -1;
+        }
+        result = recv(bluetooth->bluetoothFd, current + receivedLength, length - receivedLength, MSG_DONTWAIT);
+        if(result > 0)
+        {
+            LogBluetoothData(bluetooth, current + receivedLength, (size_t)result);
+            receivedLength += (size_t)result;
+            continue;
+        }
+        if(result < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            continue;
+        }
+        if(result == 0)
+        {
+            errno = ECONNRESET;
+        }
+        return -1;
+    }
+    return 0;
+}
+
+static int SendBluetoothPacketData(void *context, const void *buffer, size_t length)
+{
+    BluetoothReceiveContext *bluetooth = (BluetoothReceiveContext *)context;
+    const uint8_t *current = (const uint8_t *)buffer;
+    size_t sentLength = 0;
+
+    while(sentLength < length)
+    {
+        ssize_t result;
+
+        if(WaitForBluetoothEvent(bluetooth, POLLOUT, -1) < 0)
+        {
+            return -1;
+        }
+        result = send(bluetooth->bluetoothFd, current + sentLength, length - sentLength, MSG_DONTWAIT | MSG_NOSIGNAL);
+        if(result > 0)
+        {
+            sentLength += (size_t)result;
+            continue;
+        }
+        if(result < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            continue;
+        }
+        if(result == 0)
+        {
+            errno = ECONNRESET;
+        }
+        return -1;
+    }
+    return 0;
+}
+
+static int WaitForBluetoothPacketData(void *context, int timeoutMs)
+{
+    return WaitForBluetoothEvent((BluetoothReceiveContext *)context, POLLIN, timeoutMs);
+}
+
 static const PacketHandler *FindPacketHandler(uint8_t cmd)
 {
     size_t i;
@@ -605,38 +786,39 @@ static const PacketHandler *FindPacketHandler(uint8_t cmd)
     return NULL;
 }
 
-static int ProcessDhtData(ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessDhtData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     DhtData dhtData;
 
     (void)length;
     memcpy(&dhtData, data, sizeof(dhtData));
-    printf("[%s] DHT: temp=%u, humi=%u\n", client->ip, (unsigned int)dhtData.temp, (unsigned int)dhtData.humi);
+    printf("[%s] DHT: temp=%u, humi=%u\n", connection->label, (unsigned int)dhtData.temp, (unsigned int)dhtData.humi);
     return 0;
 }
 
-static int ProcessFanData(ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessFanData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     FanData fanData;
 
     (void)length;
     memcpy(&fanData, data, sizeof(fanData));
-    printf("[%s] FAN: fanSpeed=%u\n", client->ip, (unsigned int)fanData.fanSpeed);
+    printf("[%s] FAN: fanSpeed=%u\n", connection->label, (unsigned int)fanData.fanSpeed);
     return 0;
 }
 
-static int ProcessConData(ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessConData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     ConData conData;
 
     (void)length;
     memcpy(&conData, data, sizeof(conData));
-    printf("[%s] CON: tempData=%u\n", client->ip, (unsigned int)conData.tempData);
+    printf("[%s] CON: tempData=%u\n", connection->label, (unsigned int)conData.tempData);
     return 0;
 }
 
-static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessMemData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
+    ClientInfo *client = (ClientInfo *)connection->context;
     MemData memData;
     size_t memberIdLength;
     size_t passwordLength;
@@ -661,9 +843,7 @@ static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length
     sodium_memzero(&memData, sizeof(memData));
     if(verifyResult != 1)
     {
-        DisconnectBluetoothDevice(client->bluetoothFd);
-        client->bluetoothFd = -1;
-        memset(client->bluetoothMac, 0, sizeof(client->bluetoothMac));
+        DisconnectClientBluetooth(client);
         client->memberId[0] = '\0';
         client->authenticated = 0;
         printf("[%s] Member authentication failed\n", client->ip);
@@ -674,8 +854,9 @@ static int ProcessMemData(ClientInfo *client, const uint8_t *data, size_t length
     return 0;
 }
 
-static int ProcessBluetoothRegisterData(ClientInfo *client, const uint8_t *data, size_t length)
+static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
+    ClientInfo *client = (ClientInfo *)connection->context;
     BluetoothRegisterData registerData;
     BluetoothDeviceRecord existingDevice;
     char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
@@ -763,16 +944,155 @@ static int ConnectMemberBluetoothDevice(ClientInfo *client)
         return -1;
     }
 
-    DisconnectBluetoothDevice(client->bluetoothFd);
+    DisconnectClientBluetooth(client);
     client->bluetoothFd = bluetoothFd;
     memcpy(client->bluetoothMac, deviceRecord.mac, sizeof(client->bluetoothMac));
+    if(StartBluetoothReceive(client) != 0)
+    {
+        int receiveError = errno;
+
+        DisconnectClientBluetooth(client);
+        fprintf(stderr, "[%s] Bluetooth receiver initialization failed: id=%s, mac=%s: %s\n", client->ip, client->memberId, deviceRecord.mac, strerror(receiveError));
+        errno = receiveError;
+        return -1;
+    }
     printf("[%s] HC-05 connected: id=%s, mac=%s, channel=%u\n", client->ip, client->memberId, client->bluetoothMac, (unsigned int)rfcommChannel);
     return 0;
 }
 
-static int ProcessChatData(ClientInfo *client, const uint8_t *data, size_t length)
+static int StartBluetoothReceive(ClientInfo *client)
 {
-    printf("[%s] %.*s\n", client->ip, (int)length, (const char *)data);
+    BluetoothReceiveContext *context;
+    int createResult;
+
+    context = malloc(sizeof(*context));
+    if(context == NULL)
+    {
+        return -1;
+    }
+
+    context->stopFd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if(context->stopFd < 0)
+    {
+        free(context);
+        return -1;
+    }
+    context->bluetoothFd = client->bluetoothFd;
+    memcpy(context->memberId, client->memberId, sizeof(context->memberId));
+    memcpy(context->mac, client->bluetoothMac, sizeof(context->mac));
+    client->bluetoothStopFd = context->stopFd;
+
+    createResult = pthread_create(&client->bluetoothReceiveThread, NULL, ReceiveBluetooth, context);
+    if(createResult != 0)
+    {
+        close(context->stopFd);
+        client->bluetoothStopFd = -1;
+        free(context);
+        errno = createResult;
+        return -1;
+    }
+    client->bluetoothReceiveStarted = 1;
+    return 0;
+}
+
+static void StopBluetoothReceive(int bluetoothFd, int stopFd, pthread_t receiveThread, int receiveStarted)
+{
+    if(receiveStarted)
+    {
+        uint64_t stopSignal = 1;
+        ssize_t writeResult;
+
+        do
+        {
+            writeResult = write(stopFd, &stopSignal, sizeof(stopSignal));
+        }
+        while(writeResult < 0 && errno == EINTR);
+
+        if(writeResult < 0 && errno != EAGAIN)
+        {
+            perror("Bluetooth receiver stop signal");
+            shutdown(bluetoothFd, SHUT_RDWR);
+        }
+        pthread_join(receiveThread, NULL);
+    }
+
+    if(stopFd >= 0)
+    {
+        close(stopFd);
+    }
+    DisconnectBluetoothDevice(bluetoothFd);
+}
+
+static void DisconnectClientBluetooth(ClientInfo *client)
+{
+    StopBluetoothReceive(client->bluetoothFd, client->bluetoothStopFd, client->bluetoothReceiveThread, client->bluetoothReceiveStarted);
+    client->bluetoothFd = -1;
+    client->bluetoothStopFd = -1;
+    client->bluetoothReceiveStarted = 0;
+    memset(client->bluetoothMac, 0, sizeof(client->bluetoothMac));
+}
+
+static void *ReceiveBluetooth(void *arg)
+{
+    BluetoothReceiveContext *context = (BluetoothReceiveContext *)arg;
+    char label[BUF_SIZE];
+    PacketConnection connection =
+    {
+        .transport = PACKET_TRANSPORT_BLUETOOTH,
+        .context = context,
+        .label = label,
+        .receiveAll = ReceiveBluetoothPacketData,
+        .sendAll = SendBluetoothPacketData,
+        .waitForData = WaitForBluetoothPacketData
+    };
+
+    snprintf(label, sizeof(label), "BT id=%s mac=%s", context->memberId, context->mac);
+    ReceivePackets(&connection);
+
+    printf("[BT id=%s mac=%s] Receiver stopped\n", context->memberId, context->mac);
+    fflush(stdout);
+    free(context);
+    return NULL;
+}
+
+static void LogBluetoothData(const BluetoothReceiveContext *context, const uint8_t *data, size_t length)
+{
+    size_t i;
+
+    /* Byte logging is separate from the shared OK/RQ/DATA packet decoder. */
+    flockfile(stdout);
+    printf("[BT id=%s mac=%s] RX %zu bytes: ", context->memberId, context->mac, length);
+    for(i = 0; i < length; i++)
+    {
+        if(data[i] >= ' ' && data[i] <= '~' && data[i] != '\\')
+        {
+            fputc(data[i], stdout);
+        }
+        else if(data[i] == '\r')
+        {
+            fputs("\\r", stdout);
+        }
+        else if(data[i] == '\n')
+        {
+            fputs("\\n", stdout);
+        }
+        else if(data[i] == '\\')
+        {
+            fputs("\\\\", stdout);
+        }
+        else
+        {
+            printf("\\x%02X", (unsigned int)data[i]);
+        }
+    }
+    fputc('\n', stdout);
+    fflush(stdout);
+    funlockfile(stdout);
+}
+
+static int ProcessChatData(PacketConnection *connection, const uint8_t *data, size_t length)
+{
+    printf("[%s] %.*s\n", connection->label, (int)length, (const char *)data);
     return 0;
 }
 
@@ -831,8 +1151,54 @@ static void *SendClient(void *arg)
 static void *ReceiveClient(void *arg)
 {
     ClientInfo *client = (ClientInfo *)arg;
+    PacketConnection connection =
+    {
+        .transport = PACKET_TRANSPORT_TCP,
+        .context = client,
+        .label = client->ip,
+        .receiveAll = ReceiveTcpPacketData,
+        .sendAll = SendTcpPacketData,
+        .waitForData = WaitForTcpPacketData
+    };
+
+    ReceivePackets(&connection);
+    StopClient(client);
+    UnregisterClientThread(client);
+    return NULL;
+}
+
+static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd)
+{
+    char logBuffer[BUF_SIZE];
+
+    if(connection->transport == PACKET_TRANSPORT_BLUETOOTH)
+    {
+        /* This link belongs to an already registered member/MAC binding. */
+        if(cmd == CMD_MEM_DATA || cmd == CMD_BLUETOOTH_REGISTER)
+        {
+            snprintf(logBuffer, sizeof(logBuffer), "Management command not allowed from %s: cmd=%u\n", connection->label, cmd);
+            LogFile(logBuffer);
+            return -1;
+        }
+    }
+    else
+    {
+        ClientInfo *client = (ClientInfo *)connection->context;
+
+        if(cmd != CMD_MEM_DATA && !client->authenticated)
+        {
+            snprintf(logBuffer, sizeof(logBuffer), "Unauthenticated command from %s: %u\n", connection->label, cmd);
+            LogFile(logBuffer);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void ReceivePackets(PacketConnection *connection)
+{
     uint8_t headerData[HEADER_SIZE];
-    uint8_t receiveData[MAX_MESSAGE_SIZE];
+    uint8_t receiveData[MAX_MESSAGE_SIZE] = {0};
     char logBuffer[BUF_SIZE];
 
     while(1)
@@ -842,7 +1208,7 @@ static void *ReceiveClient(void *arg)
         const PacketHandler *packetHandler;
         int waitResult = 1;
 
-        if(ReceiveAll(client, headerData, sizeof(headerData)) != 0)
+        if(connection->receiveAll(connection->context, headerData, sizeof(headerData)) != 0)
         {
             break;
         }
@@ -854,7 +1220,7 @@ static void *ReceiveClient(void *arg)
 
         if(header.head0 != HEADER_OK_0 || header.head1 != HEADER_OK_1)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Invalid header from %s: %c%c\n", client->ip, header.head0, header.head1);
+            snprintf(logBuffer, sizeof(logBuffer), "Invalid header from %s: %02X %02X\n", connection->label, (unsigned int)headerData[0], (unsigned int)headerData[1]);
             LogFile(logBuffer);
             break;
         }
@@ -862,7 +1228,7 @@ static void *ReceiveClient(void *arg)
         packetHandler = FindPacketHandler(header.cmd);
         if(packetHandler == NULL)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Unsupported command from %s: %u\n", client->ip, header.cmd);
+            snprintf(logBuffer, sizeof(logBuffer), "Unsupported command from %s: %u\n", connection->label, header.cmd);
             LogFile(logBuffer);
             break;
         }
@@ -870,58 +1236,55 @@ static void *ReceiveClient(void *arg)
         if(header.dataLen < packetHandler->minDataLength ||
            header.dataLen > packetHandler->maxDataLength)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Invalid data length from %s: cmd=%u, length=%u\n", client->ip, header.cmd, header.dataLen);
+            snprintf(logBuffer, sizeof(logBuffer), "Invalid data length from %s: cmd=%u, length=%u\n", connection->label, header.cmd, header.dataLen);
             LogFile(logBuffer);
             break;
         }
 
-        if(header.cmd != CMD_MEM_DATA && !client->authenticated)
+        if(ValidatePacketPermission(connection, header.cmd) != 0)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Unauthenticated command from %s: %u\n", client->ip, header.cmd);
-            LogFile(logBuffer);
-            break;
-        }
-        if(header.cmd != CMD_MEM_DATA && header.cmd != CMD_BLUETOOTH_REGISTER && client->bluetoothFd < 0)
-        {
-            snprintf(logBuffer, sizeof(logBuffer), "Bluetooth registration required from %s: cmd=%u\n", client->ip, header.cmd);
-            LogFile(logBuffer);
             break;
         }
 
         requestHeader[0] = HEADER_REQUEST_0;
         requestHeader[1] = HEADER_REQUEST_1;
         requestHeader[2] = header.cmd;
-        requestHeader[3] = 0;
+        requestHeader[3] = RQ_FLAG_INITIAL;
 
         do
         {
-            if(RequestSend(client, requestHeader, sizeof(requestHeader)) != 0)
+            if(connection->sendAll(connection->context, requestHeader, sizeof(requestHeader)) != 0)
             {
                 waitResult = -1;
                 break;
             }
+            snprintf(logBuffer, sizeof(logBuffer), "[%s] RQ: cmd=%u flag=%u\n", connection->label, header.cmd, requestHeader[3]);
+            LogFile(logBuffer);
 
             if(header.dataLen == 0)
             {
                 break;
             }
 
-            waitResult = WaitForReceiveData(client, DATA_WAIT_TIMEOUT_MS);
+            waitResult = connection->waitForData(connection->context, DATA_WAIT_TIMEOUT_MS);
             if(waitResult == 0)
             {
-                snprintf(logBuffer, sizeof(logBuffer), "Data timeout from %s: resend RQ\n", client->ip);
+                requestHeader[3] = RQ_FLAG_RETRY;
+                snprintf(logBuffer, sizeof(logBuffer), "Data timeout from %s: resend RQ\n", connection->label);
                 LogFile(logBuffer);
             }
         }
         while(waitResult == 0);
 
-        if(waitResult < 0 || ReceiveAll(client, receiveData, header.dataLen) != 0)
+        if(waitResult < 0 || connection->receiveAll(connection->context, receiveData, header.dataLen) != 0)
         {
             break;
         }
 
         {
-            int processResult = packetHandler->processData(client, receiveData, header.dataLen);
+            int processResult = packetHandler->processData(connection, receiveData, header.dataLen);
+
+            fflush(stdout);
 
             if(header.cmd == CMD_MEM_DATA || header.cmd == CMD_BLUETOOTH_REGISTER)
             {
@@ -934,12 +1297,11 @@ static void *ReceiveClient(void *arg)
         }
     }
 
-    StopClient(client);
-    UnregisterClientThread(client);
-    return NULL;
+    sodium_memzero(receiveData, sizeof(receiveData));
 }
 
 static void LogFile(const char *message)
 {
     fputs(message, stdout);
+    fflush(stdout);
 }
