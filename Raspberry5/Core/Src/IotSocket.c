@@ -32,9 +32,7 @@ typedef struct _ClientInfo
     int sendResult;
 } ClientInfo;
 
-typedef void (*ProcessPacketData)(const ClientInfo *client,
-                                  const uint8_t *data,
-                                  size_t length);
+typedef void (*ProcessPacketData)(const ClientInfo *client, const uint8_t *data, size_t length);
 
 typedef struct _PacketHandler
 {
@@ -59,21 +57,11 @@ static int WaitForReceiveData(int socketFd, int timeoutMs);
 static int SendAll(int socketFd, const void *buffer, size_t length);
 static int RequestSend(ClientInfo *client, const void *data, size_t length);
 static const PacketHandler *FindPacketHandler(uint8_t cmd);
-static void ProcessDhtData(const ClientInfo *client,
-                           const uint8_t *data,
-                           size_t length);
-static void ProcessFanData(const ClientInfo *client,
-                           const uint8_t *data,
-                           size_t length);
-static void ProcessConData(const ClientInfo *client,
-                           const uint8_t *data,
-                           size_t length);
-static void ProcessMemData(const ClientInfo *client,
-                           const uint8_t *data,
-                           size_t length);
-static void ProcessChatData(const ClientInfo *client,
-                            const uint8_t *data,
-                            size_t length);
+static void ProcessDhtData(const ClientInfo *client, const uint8_t *data, size_t length);
+static void ProcessFanData(const ClientInfo *client, const uint8_t *data, size_t length);
+static void ProcessConData(const ClientInfo *client, const uint8_t *data, size_t length);
+static void ProcessMemData(const ClientInfo *client, const uint8_t *data, size_t length);
+static void ProcessChatData(const ClientInfo *client, const uint8_t *data, size_t length);
 static void *SendClient(void *arg);
 static void *ReceiveClient(void *arg);
 static void LogFile(const char *message);
@@ -195,8 +183,7 @@ int StartServer(const char *port)
         }
         pthread_detach(receiveThread);
 
-        printf("Client connected: ip=%s, fd=%d, clients=%d\n",
-               client->ip,client->fd,GetClientCount());
+        printf("Client connected: ip=%s, fd=%d, clients=%d\n", client->ip,client->fd,GetClientCount());
     }
 }
 
@@ -255,8 +242,7 @@ static int GetClientCount(void)
     return count;
 }
 
-static ClientInfo *RegisterClient(int clientSocket,
-                                  const struct sockaddr_in *clientAddress)
+static ClientInfo *RegisterClient(int clientSocket, const struct sockaddr_in *clientAddress)
 {
     ClientInfo *client = NULL;
     int i;
@@ -305,9 +291,7 @@ static void UnregisterClientThread(ClientInfo *client)
     if(socketToClose >= 0)
     {
         close(socketToClose);
-        printf("Client disconnected: ip=%s, clients=%d\n",
-               client->ip,
-               remainingClients);
+        printf("Client disconnected: ip=%s, clients=%d\n", client->ip, remainingClients);
     }
 }
 
@@ -337,10 +321,7 @@ static int ReceiveAll(int socketFd, void *buffer, size_t length)
 
     while(receivedLength < length)
     {
-        ssize_t result = recv(socketFd,
-                              current + receivedLength,
-                              length - receivedLength,
-                              0);
+        ssize_t result = recv(socketFd, current + receivedLength, length - receivedLength, 0);
         if(result == 0)
         {
             return -1;
@@ -401,10 +382,7 @@ static int SendAll(int socketFd, const void *buffer, size_t length)
 
     while(sentLength < length)
     {
-        ssize_t result = send(socketFd,
-                              current + sentLength,
-                              length - sentLength,
-                              MSG_NOSIGNAL);
+        ssize_t result = send(socketFd, current + sentLength, length - sentLength, MSG_NOSIGNAL);
         if(result == 0)
         {
             return -1;
@@ -477,63 +455,43 @@ static const PacketHandler *FindPacketHandler(uint8_t cmd)
     return NULL;
 }
 
-static void ProcessDhtData(const ClientInfo *client,
-                           const uint8_t *data,
-                           size_t length)
+static void ProcessDhtData(const ClientInfo *client, const uint8_t *data, size_t length)
 {
     DhtData dhtData;
 
     (void)length;
     memcpy(&dhtData, data, sizeof(dhtData));
-    printf("[%s] DHT: temp=%u, humi=%u\n",
-           client->ip,
-           (unsigned int)dhtData.temp,
-           (unsigned int)dhtData.humi);
+    printf("[%s] DHT: temp=%u, humi=%u\n", client->ip, (unsigned int)dhtData.temp, (unsigned int)dhtData.humi);
 }
 
-static void ProcessFanData(const ClientInfo *client,
-                           const uint8_t *data,
-                           size_t length)
+static void ProcessFanData(const ClientInfo *client, const uint8_t *data, size_t length)
 {
     FanData fanData;
 
     (void)length;
     memcpy(&fanData, data, sizeof(fanData));
-    printf("[%s] FAN: fanSpeed=%u\n",
-           client->ip,
-           (unsigned int)fanData.fanSpeed);
+    printf("[%s] FAN: fanSpeed=%u\n", client->ip, (unsigned int)fanData.fanSpeed);
 }
 
-static void ProcessConData(const ClientInfo *client,
-                           const uint8_t *data,
-                           size_t length)
+static void ProcessConData(const ClientInfo *client, const uint8_t *data, size_t length)
 {
     ConData conData;
 
     (void)length;
     memcpy(&conData, data, sizeof(conData));
-    printf("[%s] CON: tempData=%u\n",
-           client->ip,
-           (unsigned int)conData.tempData);
+    printf("[%s] CON: tempData=%u\n", client->ip, (unsigned int)conData.tempData);
 }
 
-static void ProcessMemData(const ClientInfo *client,
-                           const uint8_t *data,
-                           size_t length)
+static void ProcessMemData(const ClientInfo *client, const uint8_t *data, size_t length)
 {
     MemData memData;
 
     (void)length;
     memcpy(&memData, data, sizeof(memData));
-    printf("[%s] MEM: id=%.*s, pw=********\n",
-           client->ip,
-           MEM_ID_SIZE,
-           memData.id);
+    printf("[%s] MEM: id=%.*s, pw=********\n", client->ip, MEM_ID_SIZE, memData.id);
 }
 
-static void ProcessChatData(const ClientInfo *client,
-                            const uint8_t *data,
-                            size_t length)
+static void ProcessChatData(const ClientInfo *client, const uint8_t *data, size_t length)
 {
     printf("[%s] %.*s\n", client->ip, (int)length, (const char *)data);
 }
@@ -616,8 +574,7 @@ static void *ReceiveClient(void *arg)
 
         if(header.head0 != HEADER_OK_0 || header.head1 != HEADER_OK_1)
         {
-            snprintf(logBuffer,sizeof(logBuffer),"Invalid header from %s: %c%c\n",
-                    client->ip, header.head0, header.head1);
+            snprintf(logBuffer, sizeof(logBuffer), "Invalid header from %s: %c%c\n", client->ip, header.head0, header.head1);
             LogFile(logBuffer);
             break;
         }
@@ -625,11 +582,7 @@ static void *ReceiveClient(void *arg)
         packetHandler = FindPacketHandler(header.cmd);
         if(packetHandler == NULL)
         {
-            snprintf(logBuffer,
-                     sizeof(logBuffer),
-                     "Unsupported command from %s: %u\n",
-                     client->ip,
-                     header.cmd);
+            snprintf(logBuffer, sizeof(logBuffer), "Unsupported command from %s: %u\n", client->ip, header.cmd);
             LogFile(logBuffer);
             break;
         }
@@ -637,12 +590,7 @@ static void *ReceiveClient(void *arg)
         if(header.dataLen < packetHandler->minDataLength ||
            header.dataLen > packetHandler->maxDataLength)
         {
-            snprintf(logBuffer,
-                     sizeof(logBuffer),
-                     "Invalid data length from %s: cmd=%u, length=%u\n",
-                     client->ip,
-                     header.cmd,
-                     header.dataLen);
+            snprintf(logBuffer, sizeof(logBuffer), "Invalid data length from %s: cmd=%u, length=%u\n", client->ip, header.cmd, header.dataLen);
             LogFile(logBuffer);
             break;
         }
@@ -665,21 +613,16 @@ static void *ReceiveClient(void *arg)
                 break;
             }
 
-            waitResult = WaitForReceiveData(client->fd,
-                                            DATA_WAIT_TIMEOUT_MS);
+            waitResult = WaitForReceiveData(client->fd, DATA_WAIT_TIMEOUT_MS);
             if(waitResult == 0)
             {
-                snprintf(logBuffer,
-                         sizeof(logBuffer),
-                         "Data timeout from %s: resend RQ\n",
-                         client->ip);
+                snprintf(logBuffer, sizeof(logBuffer), "Data timeout from %s: resend RQ\n", client->ip);
                 LogFile(logBuffer);
             }
         }
         while(waitResult == 0);
 
-        if(waitResult < 0 ||
-           ReceiveAll(client->fd, receiveData, header.dataLen) != 0)
+        if(waitResult < 0 || ReceiveAll(client->fd, receiveData, header.dataLen) != 0)
         {
             break;
         }
