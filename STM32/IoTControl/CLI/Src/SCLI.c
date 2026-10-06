@@ -2,84 +2,32 @@
 #include "SCommand.h"
 #include "SCmdGpio.h"
 #include "SCmdSys.h"
-#include "usart.h"
+#include "SUsart.h"
 
-#define SCLI_RX_BUFFER_SIZE 64
 #define SCLI_LINE_SIZE 64
-#define SCLI_PRINT_SIZE 128
-#define SCLI_TX_TIMEOUT_MS 100
 
 static const SCommand commands[] = {
     {"gpio", SCmdGpio},
     {"sys", SCmdSys},
 };
 
-static UART_HandleTypeDef *const cliUart = &huart2;
+// SCLIInit에서 연결 (Init 전에는 NULL)
+static UART_HandleTypeDef *cliUart = NULL;
 
-// DMA가 직접 채우는 원형 버퍼 (인터럽트에서 복사하지 않음)
-static uint8_t rxBuffer[SCLI_RX_BUFFER_SIZE];
-
-// 인터럽트 -> 메인 전달용: 인터럽트에서는 이 값들만 기록
-static volatile uint16_t rxWritePos = 0;
-static volatile bool rxFlag = false;
-static volatile bool rxRestartFlag = false;
-
-// 메인 루프에서만 사용
-static uint16_t rxReadPos = 0;
 static uint8_t lineLength = 0;
 static char line[SCLI_LINE_SIZE];
 static bool lineOverflow = false;
 static bool lastWasCR = false;
 
-static char printBuffer[SCLI_PRINT_SIZE];
-
-static void StartReceive(void)
+void SCLIInit(UART_HandleTypeDef *huart)
 {
-    rxReadPos = 0;
-    rxWritePos = 0;
-    HAL_UARTEx_ReceiveToIdle_DMA(cliUart, rxBuffer, SCLI_RX_BUFFER_SIZE);
+    cliUart = huart;
+    SUsartBegin(huart);
 }
-
-void SCLIInit(void)
-{
-    StartReceive();
-}
-
-// ---------------------------------------------------------------------------
-// 인터럽트 콜백: 위치와 플래그만 기록
-// ---------------------------------------------------------------------------
-
-// IDLE(입력 멈춤), DMA 절반, DMA 끝에서 호출, size = 버퍼 시작부터 받은 위치
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
-{
-    if (huart != cliUart)
-    {
-        return;
-    }
-
-    rxWritePos = size;
-    rxFlag = true;
-}
-
-// 오버런 등으로 HAL이 수신을 멈추면 메인에서 다시 시작
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
-{
-    if (huart != cliUart)
-    {
-        return;
-    }
-
-    rxRestartFlag = true;
-    rxFlag = true;
-}
-
-// ---------------------------------------------------------------------------
-// 메인 루프 처리
-// ---------------------------------------------------------------------------
 
 static void Echo(const char *text, uint16_t length)
 {
-    HAL_UART_Transmit(cliUart, (const uint8_t *)text, length, SCLI_TX_TIMEOUT_MS);
+    SUsartWrite(cliUart, (const uint8_t *)text, length);
 }
 
 static void ProcessChar(char c)
@@ -135,51 +83,27 @@ static void ProcessChar(char c)
 
 void SCLIUpdate(void)
 {
-    if (!rxFlag)
+    if (cliUart == NULL)
     {
         return;
     }
 
-    // 처리 중에 들어온 수신은 플래그를 다시 세우도록 먼저 내림
-    rxFlag = false;
-
-    if (rxRestartFlag)
+    uint8_t c;
+    while (SUsartReadByte(cliUart, &c))
     {
-        rxRestartFlag = false;
-        StartReceive();
-        return;
-    }
-
-    // DMA 끝(size == 버퍼 크기)은 처음 위치와 같음
-    uint16_t writePos = rxWritePos;
-    if (writePos >= SCLI_RX_BUFFER_SIZE)
-    {
-        writePos = 0;
-    }
-
-    while (rxReadPos != writePos)
-    {
-        ProcessChar((char)rxBuffer[rxReadPos]);
-        rxReadPos = (rxReadPos + 1) % SCLI_RX_BUFFER_SIZE;
+        ProcessChar((char)c);
     }
 }
 
 void SCLIPrintf(const char *format, ...)
 {
-    va_list args;
-    va_start(args, format);
-    int length = vsnprintf(printBuffer, sizeof(printBuffer), format, args);
-    va_end(args);
-
-    if (length <= 0)
+    if (cliUart == NULL)
     {
         return;
     }
 
-    if (length > (int)sizeof(printBuffer) - 1)
-    {
-        length = sizeof(printBuffer) - 1;
-    }
-
-    HAL_UART_Transmit(cliUart, (uint8_t *)printBuffer, (uint16_t)length, SCLI_TX_TIMEOUT_MS);
+    va_list args;
+    va_start(args, format);
+    SUsartVPrintf(cliUart, format, args);
+    va_end(args);
 }
