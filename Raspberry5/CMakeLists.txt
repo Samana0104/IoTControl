@@ -7,7 +7,6 @@ project(IoTControl_Raspberry5
 )
 
 find_package(Threads REQUIRED)
-find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
 # DB 서버는 MySQL 8.4. libmariadb는 MySQL C API 호환 클라이언트 라이브러리
 pkg_check_modules(MARIADB REQUIRED IMPORTED_TARGET libmariadb)
@@ -73,4 +72,4 @@ target_include_directories(IotServer PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Packet/Inc"
     "${CMAKE_CURRENT_SOURCE_DIR}/Session/Inc"
 )
-target_link_libraries(IotServer PRIVATE IoTCommon Threads::Threads OpenSSL::SSL PkgConfig::MARIADB PkgConfig::SODIUM PkgConfig::BLUEZ PkgConfig::SYSTEMD PkgConfig::CJSON)
+target_link_libraries(IotServer PRIVATE IoTCommon Threads::Threads PkgConfig::MARIADB PkgConfig::SODIUM PkgConfig::BLUEZ PkgConfig::SYSTEMD PkgConfig::CJSON)
