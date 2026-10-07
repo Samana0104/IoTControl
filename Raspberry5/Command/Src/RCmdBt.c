@@ -1,35 +1,35 @@
 #include "RCmdBt.h"
+#include "RSession.h"
 
 #include <stdio.h>
 #include <string.h>
 
-// DB 등록 목록이 아니라 현재 서버가 보유한 BT 소켓 상태
+// DB 등록 목록이 아니라 현재 서버가 연결한 BT 세션
 static void BtList(TCPServer *server, const char *args)
 {
-    ServerClientSnapshot snapshots[MAX_CLNT * 2];
-    size_t snapshotCount = GetServerBluetoothSnapshots(snapshots);
+    RSessionSnapshot snapshots[MAX_SESSION];
+    size_t snapshotCount = RSessionGetSnapshots(snapshots);
     size_t rowCount = 0;
 
     (void)server;
     (void)args;
     flockfile(stdout);
-    puts("Runtime BT sockets (not a list of DB registrations):");
-    puts("SLOT ID       MAC               FD  RX");
+    puts("Connected BT sessions (not a list of DB registrations):");
+    puts("FD  ID       MAC               LINK");
     for(size_t index = 0; index < snapshotCount; ++index)
     {
-        const ServerClientSnapshot *snapshot = &snapshots[index];
-        const char *memberId = snapshot->memberId[0] != '\0' ? snapshot->memberId : "-";
+        const RSessionSnapshot *snapshot = &snapshots[index];
 
-        if(snapshot->bluetoothFd < 0)
+        if(snapshot->type != SESSION_BLUETOOTH)
         {
             continue;
         }
-        printf("%-4d %-8s %-17s %-3d %s\n", snapshot->index, memberId, snapshot->bluetoothMac, snapshot->bluetoothFd, snapshot->bluetoothReceiving ? "running" : "stopped");
+        printf("%-3d %-8s %-17s %s\n", snapshot->fd, snapshot->memberId, snapshot->address, snapshot->connected ? "connected" : "closing");
         ++rowCount;
     }
     if(rowCount == 0)
     {
-        puts("No runtime Bluetooth sockets.");
+        puts("No Bluetooth sessions.");
     }
     funlockfile(stdout);
 }
@@ -52,7 +52,14 @@ static void BtConnect(TCPServer *server, const char *args)
     {
         int connectResult = RequestMemberBluetoothConnection(memberId);
 
-        printf("Bluetooth request: id=%s, result=%s\n", memberId, connectResult == 0 ? "connected" : connectResult == 1 ? "not registered" : "failed");
+        if(connectResult == 0)
+        {
+            printf("Bluetooth request: id=%s, result=connected, fd=%d\n", memberId, RSessionFindBtFd(memberId));
+        }
+        else
+        {
+            printf("Bluetooth request: id=%s, result=%s\n", memberId, connectResult == 1 ? "not registered" : "failed");
+        }
     }
 }
 

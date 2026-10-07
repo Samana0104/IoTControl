@@ -2,16 +2,11 @@
 
 #include "IoTPacket.h"
 #include "IoTProtocol.h"
-#include "RBluetooth.h"
 
 #include <netinet/in.h>
 #include <openssl/ssl.h>
 #include <signal.h>
 #include <stddef.h>
-
-#define BUF_SIZE 100
-#define ID_SIZE 10
-#define MAX_CLNT 30
 
 typedef struct _TCPServer
 {
@@ -29,20 +24,7 @@ typedef struct _TCPServer
     struct sigaction originalTerminateAction;
 } TCPServer;
 
-typedef struct _ServerClientSnapshot
-{
-    int index;
-    int fd;
-    int connected;
-    int authenticated;
-    int bluetoothFd;
-    int bluetoothReceiving;
-    char ip[INET_ADDRSTRLEN];
-    char memberId[MEM_ID_SIZE + 1];
-    char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
-} ServerClientSnapshot;
-
-/* Stores the listen address and prepares client slots and SIGINT/SIGTERM handling.
+/* Stores the listen address and prepares client sessions and SIGINT/SIGTERM handling.
    Does not touch DB/TLS or the port. ip NULL: all interfaces, port 0: not set yet. */
 int InitServer(TCPServer *server, const char *ip, int port);
 /* Initializes DB/TLS on first use, then binds server->ip:server->port and listens. */
@@ -60,9 +42,7 @@ int IsServerRunning(const TCPServer *server);
 int GetServerPort(const TCPServer *server);
 int IsServerDatabaseInitialized(const TCPServer *server);
 
-/* snapshots must hold MAX_CLNT * 2 entries. Returns the number filled. */
-size_t GetServerClientSnapshots(ServerClientSnapshot *snapshots);
-size_t GetServerBluetoothSnapshots(ServerClientSnapshot *snapshots);
-
-/* 0: connected, 1: not registered in DB, -1: failed (errno set). */
+/* Connects the member's HC-05 registered in DB as a server-owned BT session.
+   0: connected, 1: not registered in DB, -1: failed (errno set). */
 int RequestMemberBluetoothConnection(const char *memberId);
+

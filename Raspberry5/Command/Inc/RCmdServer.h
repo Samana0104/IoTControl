@@ -2,5 +2,5 @@
 
 #include "RCommand.h"
 
-// server <start|status|clients> ...
+// server <start|status|sessions> ...
 void RCmdServer(TCPServer *server, const char *args);

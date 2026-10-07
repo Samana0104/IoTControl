@@ -1,22 +1,29 @@
 #include "RCtrlDht.h"
+#include "IoTPacketCodec.h"
 #include "RDatabase.h"
 #include "RLog.h"
 
 #include <inttypes.h>
-#include <stdio.h>
 #include <string.h>
 
-void RCtrlDhtReceive(const char *label, const char *memberId, const DhtData *data)
+int RCtrlDhtReceive(const RCtrlContext *context, const uint8_t *payload, size_t length)
 {
+    DhtData data;
     uint64_t affectedRows;
 
-    RLOG_INFO("[%s] DHT: temp=%u, humi=%u", label, (unsigned int)data->temp, (unsigned int)data->humi);
-    if(UpdateDhtData(memberId, strlen(memberId), data, &affectedRows) != 0)
+    if(ReadDhtData(payload, length, &data) != 0)
     {
-        RLOG_WARN("[%s] DHT DB UPDATE failed: id=%s", label, memberId);
+        return -1;
+    }
+    RLOG_INFO("[%s] DHT: temp=%u, humi=%u", context->label, (unsigned int)data.temp, (unsigned int)data.humi);
+    /* DB errors must not tear down an otherwise valid TCP/BT connection. */
+    if(UpdateDhtData(context->memberId, strlen(context->memberId), &data, &affectedRows) != 0)
+    {
+        RLOG_WARN("[%s] DHT DB UPDATE failed: id=%s", context->label, context->memberId);
     }
     else
     {
-        RLOG_INFO("[%s] DHT DB UPDATE: id=%s, affected=%" PRIu64, label, memberId, affectedRows);
+        RLOG_INFO("[%s] DHT DB UPDATE: id=%s, affected=%" PRIu64, context->label, context->memberId, affectedRows);
     }
+    return 0;
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IoTPacket.h"
+#include "RCtrl.h"
 
-// 장치 → 서버: 설정 온도를 con 행(singleton_id=1)에 기록, label은 로그용 접속 표시(IP 등)
-void RCtrlConReceive(const char *label, const ConData *data);
+// 장치 → 서버 NFY_CON: 설정 온도를 con 행(singleton_id=1)에 기록
+int RCtrlConReceive(const RCtrlContext *context, const uint8_t *payload, size_t length);

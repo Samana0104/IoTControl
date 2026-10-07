@@ -1,4 +1,5 @@
 #include "RCmdServer.h"
+#include "RSession.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -30,20 +31,16 @@ static void ServerStart(TCPServer *server, const char *args)
 
 static void ServerStatus(TCPServer *server, const char *args)
 {
-    ServerClientSnapshot snapshots[MAX_CLNT * 2];
-    size_t snapshotCount = GetServerClientSnapshots(snapshots);
-    size_t bluetoothCount = GetServerBluetoothSnapshots(snapshots);
-    size_t receiverCount = 0;
+    RSessionSnapshot snapshots[MAX_SESSION];
+    size_t snapshotCount = RSessionGetSnapshots(snapshots);
+    size_t tcpCount = 0;
 
     (void)args;
-    flockfile(stdout);
-    for(size_t index = 0; index < bluetoothCount; ++index)
+    for(size_t index = 0; index < snapshotCount; ++index)
     {
-        if(snapshots[index].bluetoothFd >= 0)
-        {
-            receiverCount += snapshots[index].bluetoothReceiving != 0;
-        }
+        tcpCount += snapshots[index].type == SESSION_TCP;
     }
+    flockfile(stdout);
     if(IsServerRunning(server))
     {
         printf("Server: running\nListen: %s:%d (TCP/TLS)\n", server->ip, GetServerPort(server));
@@ -52,29 +49,30 @@ static void ServerStatus(TCPServer *server, const char *args)
     {
         printf("Server: not started\nListen: none (configured %s:%d, use 'server start [port]')\n", server->ip, GetServerPort(server));
     }
-    printf("TCP sessions: %zu/%d\nBT sockets: %zu (active receivers: %zu)\n", snapshotCount, MAX_CLNT, bluetoothCount, receiverCount);
+    printf("Sessions: %zu/%d (TCP %zu, BT %zu)\n", snapshotCount, MAX_SESSION, tcpCount, snapshotCount - tcpCount);
     funlockfile(stdout);
 }
 
-static void ServerClients(TCPServer *server, const char *args)
+// TCP 클라이언트와 BT 장치 세션을 fd 기준으로 함께 표시
+static void ServerSessions(TCPServer *server, const char *args)
 {
-    ServerClientSnapshot snapshots[MAX_CLNT * 2];
-    size_t snapshotCount = GetServerClientSnapshots(snapshots);
+    RSessionSnapshot snapshots[MAX_SESSION];
+    size_t snapshotCount = RSessionGetSnapshots(snapshots);
 
     (void)server;
     (void)args;
     flockfile(stdout);
-    puts("SLOT FD  IP              ID       AUTH LINK");
+    puts("FD  TYPE ADDRESS           ID       AUTH LINK");
     for(size_t index = 0; index < snapshotCount; ++index)
     {
-        const ServerClientSnapshot *snapshot = &snapshots[index];
+        const RSessionSnapshot *snapshot = &snapshots[index];
         const char *memberId = snapshot->memberId[0] != '\0' ? snapshot->memberId : "-";
 
-        printf("%-4d %-3d %-15s %-8s %-4s %s\n", snapshot->index, snapshot->fd, snapshot->ip, memberId, snapshot->authenticated ? "yes" : "no", snapshot->connected ? "connected" : "closing");
+        printf("%-3d %-4s %-17s %-8s %-4s %s\n", snapshot->fd, snapshot->type == SESSION_TCP ? "TCP" : "BT", snapshot->address, memberId, snapshot->authenticated ? "yes" : "no", snapshot->connected ? "connected" : "closing");
     }
     if(snapshotCount == 0)
     {
-        puts("No TCP clients.");
+        puts("No sessions.");
     }
     funlockfile(stdout);
 }
@@ -83,7 +81,7 @@ static const RCommand SERVER_COMMANDS[] =
 {
     {"start", ServerStart},
     {"status", ServerStatus},
-    {"clients", ServerClients}
+    {"sessions", ServerSessions}
 };
 
 void RCmdServer(TCPServer *server, const char *args)
