@@ -1,5 +1,5 @@
 build/
-/.vscode/
+.vscode/
 
 # Local TLS certificates and keys
 /cert/
@@ -9,6 +9,8 @@ build/
 
 # Local database scripts
 /database/
+
+/Reference/
 
 # Compiled objects
 *.o
