@@ -1,5 +1,6 @@
 #include "RCtrlDht.h"
 #include "RDatabase.h"
+#include "RLog.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -9,13 +10,13 @@ void RCtrlDhtReceive(const char *label, const char *memberId, const DhtData *dat
 {
     uint64_t affectedRows;
 
-    printf("[%s] DHT: temp=%u, humi=%u\n", label, (unsigned int)data->temp, (unsigned int)data->humi);
+    RLOG_INFO("[%s] DHT: temp=%u, humi=%u", label, (unsigned int)data->temp, (unsigned int)data->humi);
     if(UpdateDhtData(memberId, strlen(memberId), data, &affectedRows) != 0)
     {
-        fprintf(stderr, "[%s] DHT DB UPDATE failed: id=%s\n", label, memberId);
+        RLOG_WARN("[%s] DHT DB UPDATE failed: id=%s", label, memberId);
     }
     else
     {
-        printf("[%s] DHT DB UPDATE: id=%s, affected=%" PRIu64 "\n", label, memberId, affectedRows);
+        RLOG_INFO("[%s] DHT DB UPDATE: id=%s, affected=%" PRIu64, label, memberId, affectedRows);
     }
 }

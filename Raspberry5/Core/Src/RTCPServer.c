@@ -8,6 +8,7 @@
 #include "RDatabaseCommand.h"
 #include "IoTPacket.h"
 #include "IoTPacketCodec.h"
+#include "RLog.h"
 
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -186,7 +187,7 @@ static void *ReceiveBluetooth(void *arg);
 static void LogBluetoothData(const BluetoothReceiveContext *context, const uint8_t *data, size_t length);
 static void *SendClient(void *arg);
 static void *ReceiveClient(void *arg);
-static void LogFile(const char *message);
+static void LogTlsErrors(uint8_t level);
 
 static const PacketHandler PACKET_HANDLERS[] =
 {
@@ -212,12 +213,12 @@ int InitServer(TCPServer *server, const char *ip, int port)
     }
     if(strlen(ip) >= sizeof(server->ip) || inet_pton(AF_INET, ip, &address) != 1)
     {
-        fprintf(stderr, "Invalid server IP: %s\n", ip);
+        RLOG_ERROR("Invalid server IP: %s", ip);
         return -1;
     }
     if(port < 0 || port > 65535)
     {
-        fprintf(stderr, "Invalid port: %d\n", port);
+        RLOG_ERROR("Invalid port: %d", port);
         return -1;
     }
     strcpy(server->ip, ip);
@@ -225,7 +226,7 @@ int InitServer(TCPServer *server, const char *ip, int port)
 
     if(InitializeClients() != 0)
     {
-        fputs("client synchronization initialization failed\n", stderr);
+        RLOG_ERROR("client synchronization initialization failed");
         return -1;
     }
 
@@ -235,12 +236,12 @@ int InitServer(TCPServer *server, const char *ip, int port)
     sigemptyset(&stopAction.sa_mask);
     if(sigaction(SIGINT, &stopAction, &server->originalInterruptAction) != 0)
     {
-        perror("sigaction(SIGINT)");
+        RLOG_ERROR("sigaction(SIGINT): %s", strerror(errno));
         return -1;
     }
     if(sigaction(SIGTERM, &stopAction, &server->originalTerminateAction) != 0)
     {
-        perror("sigaction(SIGTERM)");
+        RLOG_ERROR("sigaction(SIGTERM): %s", strerror(errno));
         sigaction(SIGINT, &server->originalInterruptAction, NULL);
         return -1;
     }
@@ -256,12 +257,12 @@ int OpenServer(TCPServer *server)
 
     if(server->socket >= 0)
     {
-        printf("Server already running on %s:%d\n", server->ip, server->port);
+        RLOG_WARN("Server already running on %s:%d", server->ip, server->port);
         return -1;
     }
     if(server->port <= 0)
     {
-        puts("No port set. Use 'server start <port>'.");
+        RLOG_WARN("No port set. Use 'server start <port>'.");
         return -1;
     }
     if(!server->databaseInitialized)
@@ -284,12 +285,12 @@ int OpenServer(TCPServer *server)
     serverSocket = socket(PF_INET, SOCK_STREAM, 0);
     if(serverSocket < 0)
     {
-        perror("socket()");
+        RLOG_ERROR("socket(): %s", strerror(errno));
         return -1;
     }
     if(setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &socketOption, sizeof(socketOption)) < 0)
     {
-        perror("setsockopt()");
+        RLOG_ERROR("setsockopt(): %s", strerror(errno));
         close(serverSocket);
         return -1;
     }
@@ -298,20 +299,19 @@ int OpenServer(TCPServer *server)
     inet_pton(AF_INET, server->ip, &serverAddress.sin_addr);
     if(bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
     {
-        perror("bind()");
+        RLOG_ERROR("bind(): %s", strerror(errno));
         close(serverSocket);
         return -1;
     }
     if(listen(serverSocket, LISTEN_BACKLOG) < 0)
     {
-        perror("listen()");
+        RLOG_ERROR("listen(): %s", strerror(errno));
         close(serverSocket);
         return -1;
     }
 
     server->socket = serverSocket;
-    printf("IoT server started on %s:%d\n", server->ip, server->port);
-    fflush(stdout);
+    RLOG_INFO("IoT server started on %s:%d", server->ip, server->port);
     return 0;
 }
 
@@ -322,7 +322,7 @@ int RunServer(TCPServer *server)
 
     if(server->socket < 0)
     {
-        puts("IoT server console ready. Use 'server start [port]' to start listening.");
+        RLOG_INFO("IoT server console ready. Use 'server start [port]' to start listening.");
     }
     ShowServerConsole(&console);
     fflush(stdout);
@@ -351,7 +351,7 @@ int RunServer(TCPServer *server)
             {
                 continue;
             }
-            perror("poll(server)");
+            RLOG_ERROR("poll(server): %s", strerror(errno));
             result = -1;
             break;
         }
@@ -370,16 +370,16 @@ int RunServer(TCPServer *server)
         if(events[1].revents & (POLLERR | POLLNVAL))
         {
             console.enabled = 0;
-            fputs("Server CLI input unavailable.\n", stderr);
+            RLOG_WARN("Server CLI input unavailable.");
         }
         if(server->socket < 0 && !console.enabled)
         {
-            puts("Server has not been started; exiting.");
+            RLOG_INFO("Server has not been started; exiting.");
             break;
         }
         if(events[0].revents & (POLLERR | POLLHUP | POLLNVAL))
         {
-            fputs("Listening socket failed\n", stderr);
+            RLOG_ERROR("Listening socket failed");
             result = -1;
             break;
         }
@@ -395,13 +395,13 @@ int RunServer(TCPServer *server)
                 continue;
             }
 
-            perror("accept()");
+            RLOG_ERROR("accept(): %s", strerror(errno));
             continue;
         }
 
         if(SetSocketTimeout(clientSocket, TLS_HANDSHAKE_TIMEOUT_SECONDS) != 0)
         {
-            perror("setsockopt(client timeout)");
+            RLOG_ERROR("setsockopt(client timeout): %s", strerror(errno));
             close(clientSocket);
             continue;
         }
@@ -409,8 +409,8 @@ int RunServer(TCPServer *server)
         tls = SSL_new(server->tlsContext);
         if(tls == NULL || SSL_set_fd(tls, clientSocket) != 1 || SSL_accept(tls) != 1)
         {
-            fputs("TLS handshake failed\n", stderr);
-            ERR_print_errors_fp(stderr);
+            RLOG_WARN("TLS handshake failed");
+            LogTlsErrors(RLOG_LEVEL_WARN);
             SSL_free(tls);
             close(clientSocket);
             continue;
@@ -418,7 +418,7 @@ int RunServer(TCPServer *server)
 
         if(SetSocketTimeout(clientSocket, 0) != 0)
         {
-            perror("setsockopt(client timeout reset)");
+            RLOG_ERROR("setsockopt(client timeout reset): %s", strerror(errno));
             SSL_shutdown(tls);
             SSL_free(tls);
             close(clientSocket);
@@ -428,7 +428,7 @@ int RunServer(TCPServer *server)
         client = RegisterClient(clientSocket, tls, &clientAddress);
         if(client == NULL)
         {
-            fputs("socket full\n", stderr);
+            RLOG_WARN("socket full");
             SSL_shutdown(tls);
             SSL_free(tls);
             close(clientSocket);
@@ -438,8 +438,7 @@ int RunServer(TCPServer *server)
         createResult = pthread_create(&sendThread, NULL, SendClient, client);
         if(createResult != 0)
         {
-            errno = createResult;
-            perror("pthread_create(send)");
+            RLOG_ERROR("pthread_create(send): %s", strerror(createResult));
             StopClient(client);
             UnregisterClientThread(client);
             UnregisterClientThread(client);
@@ -450,16 +449,14 @@ int RunServer(TCPServer *server)
         createResult = pthread_create(&receiveThread, NULL, ReceiveClient, client);
         if(createResult != 0)
         {
-            errno = createResult;
-            perror("pthread_create(receive)");
+            RLOG_ERROR("pthread_create(receive): %s", strerror(createResult));
             StopClient(client);
             UnregisterClientThread(client);
             continue;
         }
         pthread_detach(receiveThread);
 
-        printf("Client connected: ip=%s, fd=%d, clients=%d\n", client->ip,client->fd,GetClientCount());
-        fflush(stdout);
+        RLOG_INFO("Client connected: ip=%s, fd=%d, clients=%d", client->ip,client->fd,GetClientCount());
     }
 
     return result;
@@ -467,8 +464,7 @@ int RunServer(TCPServer *server)
 
 void CloseServer(TCPServer *server)
 {
-    puts("Stopping server; waiting for client and Bluetooth workers...");
-    fflush(stdout);
+    RLOG_INFO("Stopping server; waiting for client and Bluetooth workers...");
     if(server->socket >= 0)
     {
         close(server->socket);
@@ -483,8 +479,7 @@ void CloseServer(TCPServer *server)
         sigaction(SIGTERM, &server->originalTerminateAction, NULL);
         server->signalHandlersInstalled = 0;
     }
-    puts("IoT server stopped.");
-    fflush(stdout);
+    RLOG_INFO("IoT server stopped.");
 }
 
 void RequestServerStop(void)
@@ -550,8 +545,7 @@ static void ReadServerConsole(ServerConsole *console, TCPServer *server)
         }
     }
     console->enabled = 0;
-    puts(IsServerRunning(server) ? "Server CLI input closed; server continues running." : "Server CLI input closed before server start.");
-    fflush(stdout);
+    RLOG_INFO("%s", IsServerRunning(server) ? "Server CLI input closed; server continues running." : "Server CLI input closed before server start.");
 }
 
 static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, TCPServer *server)
@@ -838,7 +832,7 @@ static void UnregisterClientThread(ClientInfo *client)
         StopBluetoothReceive(bluetoothToClose, bluetoothStopFd, bluetoothReceiveThread, bluetoothReceiveStarted);
         SSL_free(tlsToFree);
         close(socketToClose);
-        printf("Client disconnected: ip=%s, clients=%d\n", clientIp, remainingClients);
+        RLOG_INFO("Client disconnected: ip=%s, clients=%d", clientIp, remainingClients);
         pthread_mutex_lock(&clientMutex);
         --clientCleanupCount;
         pthread_cond_broadcast(&clientIdleCond);
@@ -921,23 +915,23 @@ static int LoadTlsConfig(const char *filePath, TlsConfig *config)
     fileDescriptor = open(filePath, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
     if(fileDescriptor < 0)
     {
-        fprintf(stderr, "Cannot open TLS config file '%s': %s\n", filePath, strerror(errno));
+        RLOG_ERROR("Cannot open TLS config file '%s': %s", filePath, strerror(errno));
         goto cleanup;
     }
     if(fstat(fileDescriptor, &fileStatus) != 0 || !S_ISREG(fileStatus.st_mode))
     {
-        fputs("TLS config must be a regular file\n", stderr);
+        RLOG_ERROR("TLS config must be a regular file");
         goto cleanup;
     }
     if(fileStatus.st_mode & (S_IRWXG | S_IRWXO))
     {
-        fprintf(stderr, "TLS config permissions are too open. Run: chmod 600 %s\n", filePath);
+        RLOG_ERROR("TLS config permissions are too open. Run: chmod 600 %s", filePath);
         goto cleanup;
     }
     file = fdopen(fileDescriptor, "r");
     if(file == NULL)
     {
-        fputs("Cannot read TLS config file\n", stderr);
+        RLOG_ERROR("Cannot read TLS config file");
         goto cleanup;
     }
     fileDescriptor = -1;
@@ -962,7 +956,7 @@ static int LoadTlsConfig(const char *filePath, TlsConfig *config)
         separator = strchr(key, '=');
         if(separator == NULL)
         {
-            fprintf(stderr, "Expected KEY=value in TLS config at line %zu\n", lineNumber);
+            RLOG_ERROR("Expected KEY=value in TLS config at line %zu", lineNumber);
             goto cleanup;
         }
         *separator = '\0';
@@ -973,7 +967,7 @@ static int LoadTlsConfig(const char *filePath, TlsConfig *config)
         {
             if(valueLength < 2 || value[valueLength - 1] != *value)
             {
-                fprintf(stderr, "Unmatched quotes in TLS config at line %zu\n", lineNumber);
+                RLOG_ERROR("Unmatched quotes in TLS config at line %zu", lineNumber);
                 goto cleanup;
             }
             value[valueLength - 1] = '\0';
@@ -990,12 +984,12 @@ static int LoadTlsConfig(const char *filePath, TlsConfig *config)
         }
         if(field == NULL || field->seen)
         {
-            fprintf(stderr, "Unknown or duplicate TLS config key at line %zu\n", lineNumber);
+            RLOG_ERROR("Unknown or duplicate TLS config key at line %zu", lineNumber);
             goto cleanup;
         }
         if(valueLength == 0 || valueLength >= field->valueSize)
         {
-            fprintf(stderr, "Invalid value length for %s at line %zu\n", field->key, lineNumber);
+            RLOG_ERROR("Invalid value length for %s at line %zu", field->key, lineNumber);
             goto cleanup;
         }
         memcpy(field->value, value, valueLength + 1);
@@ -1003,14 +997,14 @@ static int LoadTlsConfig(const char *filePath, TlsConfig *config)
     }
     if(readResult < 0)
     {
-        fprintf(stderr, "Unreadable, binary or oversized TLS config line at line %zu\n", lineNumber + 1);
+        RLOG_ERROR("Unreadable, binary or oversized TLS config line at line %zu", lineNumber + 1);
         goto cleanup;
     }
     for(size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); ++index)
     {
         if(!fields[index].seen)
         {
-            fprintf(stderr, "Missing %s in TLS config\n", fields[index].key);
+            RLOG_ERROR("Missing %s in TLS config", fields[index].key);
             goto cleanup;
         }
     }
@@ -1045,14 +1039,15 @@ static SSL_CTX *CreateTlsServerContext(void)
     tlsContext = SSL_CTX_new(TLS_server_method());
     if(tlsContext == NULL)
     {
-        ERR_print_errors_fp(stderr);
+        RLOG_ERROR("SSL_CTX_new failed");
+        LogTlsErrors(RLOG_LEVEL_ERROR);
         return NULL;
     }
 
     if(SSL_CTX_set_min_proto_version(tlsContext, TLS1_2_VERSION) != 1 || SSL_CTX_use_certificate_chain_file(tlsContext, config.certificateFile) != 1 || SSL_CTX_use_PrivateKey_file(tlsContext, config.privateKeyFile, SSL_FILETYPE_PEM) != 1 || SSL_CTX_check_private_key(tlsContext) != 1)
     {
-        fputs("TLS certificate initialization failed\n", stderr);
-        ERR_print_errors_fp(stderr);
+        RLOG_ERROR("TLS certificate initialization failed");
+        LogTlsErrors(RLOG_LEVEL_ERROR);
         SSL_CTX_free(tlsContext);
         return NULL;
     }
@@ -1468,12 +1463,12 @@ static int ProcessMemData(PacketConnection *connection, const uint8_t *data, siz
         client->memberId[0] = '\0';
         client->authenticated = 0;
         pthread_mutex_unlock(&clientMutex);
-        printf("[%s] Member authentication failed\n", client->ip);
+        RLOG_WARN("[%s] Member authentication failed", client->ip);
         SendAck(connection, REQ_LOGIN, 0);
         return -1;
     }
 
-    printf("[%s] Member authenticated: id=%s\n", client->ip, client->memberId);
+    RLOG_INFO("[%s] Member authenticated: id=%s", client->ip, client->memberId);
     return SendAck(connection, REQ_LOGIN, 1);
 }
 
@@ -1499,7 +1494,7 @@ static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint
     pinLength = strnlen(registerData.pin, BLUETOOTH_PIN_SIZE);
     if(macLength != BLUETOOTH_MAC_SIZE || pinLength == 0)
     {
-        fprintf(stderr, "[%s] Invalid HC-05 registration data: id=%s\n", client->ip, client->memberId);
+        RLOG_WARN("[%s] Invalid HC-05 registration data: id=%s", client->ip, client->memberId);
         goto cleanup;
     }
 
@@ -1511,20 +1506,20 @@ static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint
     queryResult = GetMemberBluetoothDevice(client->memberId, strlen(client->memberId), &existingDevice);
     if(queryResult != 0)
     {
-        fprintf(stderr, "[%s] HC-05 registration rejected: id=%s, reason=%s\n", client->ip, client->memberId, queryResult > 0 ? "already registered" : "database error");
+        RLOG_WARN("[%s] HC-05 registration rejected: id=%s, reason=%s", client->ip, client->memberId, queryResult > 0 ? "already registered" : "database error");
         goto cleanup;
     }
 
     if(PairBluetoothDevice(bluetoothMac, pin, BLUETOOTH_PAIR_TIMEOUT_SECONDS) != 0)
     {
-        fprintf(stderr, "[%s] HC-05 pairing failed: id=%s, mac=%s: %s\n", client->ip, client->memberId, bluetoothMac, strerror(errno));
+        RLOG_WARN("[%s] HC-05 pairing failed: id=%s, mac=%s: %s", client->ip, client->memberId, bluetoothMac, strerror(errno));
         goto cleanup;
     }
 
     registerResult = RegisterMemberBluetoothDevice(client->memberId, strlen(client->memberId), bluetoothMac, macLength);
     if(registerResult != 1)
     {
-        fprintf(stderr, "[%s] HC-05 database registration failed: id=%s, reason=%s\n", client->ip, client->memberId, registerResult == 0 ? "already registered" : "database error");
+        RLOG_WARN("[%s] HC-05 database registration failed: id=%s, reason=%s", client->ip, client->memberId, registerResult == 0 ? "already registered" : "database error");
         goto cleanup;
     }
 
@@ -1533,7 +1528,7 @@ static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint
         goto cleanup;
     }
 
-    printf("[%s] HC-05 registered: id=%s, mac=%s\n", client->ip, client->memberId, bluetoothMac);
+    RLOG_INFO("[%s] HC-05 registered: id=%s, mac=%s", client->ip, client->memberId, bluetoothMac);
     processResult = 0;
 
 cleanup:
@@ -1574,7 +1569,7 @@ static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8
     {
         connected = 1;
     }
-    printf("[%s] Bluetooth request: id=%s, result=%s\n", connection->label, verifyResult == 1 ? memberId : "-", connected ? "connected" : "failed");
+    RLOG_INFO("[%s] Bluetooth request: id=%s, result=%s", connection->label, verifyResult == 1 ? memberId : "-", connected ? "connected" : "failed");
     /* BT is server-owned already; losing this result recipient must not close it. */
     return SendAck(connection, REQ_BT_CONNECT, connected);
 }
@@ -1628,7 +1623,7 @@ static int RequestRegisteredBluetoothConnection(const char *memberId, const char
         bluetoothClient = availableClient;
         if(bluetoothClient == NULL)
         {
-            fprintf(stderr, "Bluetooth session limit reached: id=%s\n", memberId);
+            RLOG_WARN("Bluetooth session limit reached: id=%s", memberId);
             pthread_mutex_unlock(&bluetoothConnectMutex);
             errno = ENOSPC;
             return -1;
@@ -1673,19 +1668,19 @@ static int ConnectRegisteredBluetoothDevice(ClientInfo *client, const char *requ
     queryResult = GetMemberBluetoothDevice(client->memberId, strlen(client->memberId), &deviceRecord);
     if(queryResult == 0)
     {
-        printf("[%s] HC-05 registration required: id=%s\n", source, client->memberId);
+        RLOG_INFO("[%s] HC-05 registration required: id=%s", source, client->memberId);
         return 1;
     }
     if(queryResult < 0)
     {
-        fprintf(stderr, "[%s] HC-05 database lookup failed: id=%s\n", source, client->memberId);
+        RLOG_WARN("[%s] HC-05 database lookup failed: id=%s", source, client->memberId);
         errno = EIO;
         return -1;
     }
 
     if(requestedMac != NULL && strcasecmp(requestedMac, deviceRecord.mac) != 0)
     {
-        fprintf(stderr, "[BT] ID/MAC binding mismatch: id=%s\n", client->memberId);
+        RLOG_WARN("[BT] ID/MAC binding mismatch: id=%s", client->memberId);
         errno = EACCES;
         return -1;
     }
@@ -1694,7 +1689,7 @@ static int ConnectRegisteredBluetoothDevice(ClientInfo *client, const char *requ
     if(client->inUse && client->bluetoothReceiving && strcasecmp(client->bluetoothMac, deviceRecord.mac) == 0)
     {
         pthread_mutex_unlock(&clientMutex);
-        printf("Bluetooth already connected: id=%s, mac=%s\n", client->memberId, deviceRecord.mac);
+        RLOG_INFO("Bluetooth already connected: id=%s, mac=%s", client->memberId, deviceRecord.mac);
         return 0;
     }
     for(int index = 0; index < MAX_CLNT; ++index)
@@ -1704,7 +1699,7 @@ static int ConnectRegisteredBluetoothDevice(ClientInfo *client, const char *requ
         if(other != client && other->inUse && other->bluetoothReceiving && strcasecmp(other->bluetoothMac, deviceRecord.mac) == 0)
         {
             pthread_mutex_unlock(&clientMutex);
-            fprintf(stderr, "Bluetooth MAC already connected to another member: id=%s, mac=%s\n", client->memberId, deviceRecord.mac);
+            RLOG_WARN("Bluetooth MAC already connected to another member: id=%s, mac=%s", client->memberId, deviceRecord.mac);
             errno = EADDRINUSE;
             return -1;
         }
@@ -1716,7 +1711,7 @@ static int ConnectRegisteredBluetoothDevice(ClientInfo *client, const char *requ
     bluetoothFd = ConnectBluetoothDevice(deviceRecord.mac, BLUETOOTH_CONNECT_TIMEOUT_MS, &rfcommChannel);
     if(bluetoothFd < 0)
     {
-        fprintf(stderr, "[%s] HC-05 connection failed: id=%s, mac=%s: %s\n", source, client->memberId, deviceRecord.mac, strerror(errno));
+        RLOG_WARN("[%s] HC-05 connection failed: id=%s, mac=%s: %s", source, client->memberId, deviceRecord.mac, strerror(errno));
         return -1;
     }
 
@@ -1729,11 +1724,11 @@ static int ConnectRegisteredBluetoothDevice(ClientInfo *client, const char *requ
         int receiveError = errno;
 
         DisconnectClientBluetooth(client);
-        fprintf(stderr, "[%s] Bluetooth receiver initialization failed: id=%s, mac=%s: %s\n", source, client->memberId, deviceRecord.mac, strerror(receiveError));
+        RLOG_ERROR("[%s] Bluetooth receiver initialization failed: id=%s, mac=%s: %s", source, client->memberId, deviceRecord.mac, strerror(receiveError));
         errno = receiveError;
         return -1;
     }
-    printf("[%s] HC-05 connected: id=%s, mac=%s, channel=%u\n", source, client->memberId, client->bluetoothMac, (unsigned int)rfcommChannel);
+    RLOG_INFO("[%s] HC-05 connected: id=%s, mac=%s, channel=%u", source, client->memberId, client->bluetoothMac, (unsigned int)rfcommChannel);
     return 0;
 }
 
@@ -1793,7 +1788,7 @@ static void StopBluetoothReceive(int bluetoothFd, int stopFd, pthread_t receiveT
 
         if(writeResult < 0 && errno != EAGAIN)
         {
-            perror("Bluetooth receiver stop signal");
+            RLOG_ERROR("Bluetooth receiver stop signal: %s", strerror(errno));
             shutdown(bluetoothFd, SHUT_RDWR);
         }
         pthread_join(receiveThread, NULL);
@@ -1850,50 +1845,61 @@ static void *ReceiveBluetooth(void *arg)
         context->owner->bluetoothReceiving = 0;
     }
     pthread_mutex_unlock(&clientMutex);
-    printf("[BT id=%s mac=%s] Receiver stopped\n", context->memberId, context->mac);
-    fflush(stdout);
+    RLOG_INFO("[BT id=%s mac=%s] Receiver stopped", context->memberId, context->mac);
     free(context);
     return NULL;
 }
 
 static void LogBluetoothData(const BluetoothReceiveContext *context, const uint8_t *data, size_t length)
 {
+#if RLOG_LEVEL >= RLOG_LEVEL_DEBUG
+    char text[RLOG_LINE_SIZE];
+    size_t textLength = 0;
     size_t i;
 
-    /* Byte logging is separate from the shared OK/RQ/DATA packet decoder. */
-    flockfile(stdout);
-    printf("[BT id=%s mac=%s] RX %zu bytes: ", context->memberId, context->mac, length);
-    for(i = 0; i < length; i++)
+    if(RLogGetLevel() < RLOG_LEVEL_DEBUG)
+    {
+        return;
+    }
+    /* Byte logging is separate from the shared OK/RQ/DATA packet decoder; RLog truncates long lines. */
+    for(i = 0; i < length && textLength + 5 < sizeof(text); i++)
     {
         if(data[i] >= ' ' && data[i] <= '~' && data[i] != '\\')
         {
-            fputc(data[i], stdout);
+            text[textLength++] = (char)data[i];
         }
         else if(data[i] == '\r')
         {
-            fputs("\\r", stdout);
+            text[textLength++] = '\\';
+            text[textLength++] = 'r';
         }
         else if(data[i] == '\n')
         {
-            fputs("\\n", stdout);
+            text[textLength++] = '\\';
+            text[textLength++] = 'n';
         }
         else if(data[i] == '\\')
         {
-            fputs("\\\\", stdout);
+            text[textLength++] = '\\';
+            text[textLength++] = '\\';
         }
         else
         {
-            printf("\\x%02X", (unsigned int)data[i]);
+            textLength += (size_t)snprintf(text + textLength, sizeof(text) - textLength, "\\x%02X", (unsigned int)data[i]);
         }
     }
-    fputc('\n', stdout);
-    fflush(stdout);
-    funlockfile(stdout);
+    text[textLength] = '\0';
+    RLOG_DEBUG("[BT id=%s mac=%s] RX %zu bytes: %s", context->memberId, context->mac, length, text);
+#else
+    (void)context;
+    (void)data;
+    (void)length;
+#endif
 }
 
 static int ProcessChatData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
-    printf("[%s] %.*s\n", connection->label, (int)length, (const char *)data);
+    RLOG_INFO("[%s] %.*s", connection->label, (int)length, (const char *)data);
     return 0;
 }
 
@@ -1970,15 +1976,12 @@ static void *ReceiveClient(void *arg)
 
 static int ValidatePacketPermission(PacketConnection *connection, uint16_t cmd)
 {
-    char logBuffer[BUF_SIZE];
-
     if(connection->transport == PACKET_TRANSPORT_BLUETOOTH)
     {
         /* This link belongs to an already registered member/MAC binding. */
         if(cmd == REQ_LOGIN || cmd == REQ_BT_REGISTER || cmd == REQ_BT_CONNECT)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Management command not allowed from %s: cmd=0x%04X\n", connection->label, (unsigned int)cmd);
-            LogFile(logBuffer);
+            RLOG_WARN("Management command not allowed from %s: cmd=0x%04X", connection->label, (unsigned int)cmd);
             return -1;
         }
     }
@@ -1988,8 +1991,7 @@ static int ValidatePacketPermission(PacketConnection *connection, uint16_t cmd)
 
         if(cmd != REQ_LOGIN && cmd != REQ_BT_CONNECT && !client->authenticated)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Unauthenticated command from %s: cmd=0x%04X\n", connection->label, (unsigned int)cmd);
-            LogFile(logBuffer);
+            RLOG_WARN("Unauthenticated command from %s: cmd=0x%04X", connection->label, (unsigned int)cmd);
             return -1;
         }
     }
@@ -2000,7 +2002,6 @@ static void ReceivePackets(PacketConnection *connection)
 {
     uint8_t headerData[HEADER_SIZE];
     uint8_t receiveData[MAX_PAYLOAD_SIZE] = {0};
-    char logBuffer[BUF_SIZE];
 
     while(1)
     {
@@ -2017,14 +2018,12 @@ static void ReceivePackets(PacketConnection *connection)
         packetHandler = FindPacketHandler(header.cmd);
         if(packetHandler == NULL)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Unsupported command from %s: cmd=0x%04X\n", connection->label, (unsigned int)header.cmd);
-            LogFile(logBuffer);
+            RLOG_WARN("Unsupported command from %s: cmd=0x%04X", connection->label, (unsigned int)header.cmd);
             break;
         }
         if(header.length < packetHandler->minDataLength || header.length > packetHandler->maxDataLength)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Invalid data length from %s: cmd=0x%04X, length=%u\n", connection->label, (unsigned int)header.cmd, (unsigned int)header.length);
-            LogFile(logBuffer);
+            RLOG_WARN("Invalid data length from %s: cmd=0x%04X, length=%u", connection->label, (unsigned int)header.cmd, (unsigned int)header.length);
             break;
         }
         if(ValidatePacketPermission(connection, header.cmd) != 0)
@@ -2035,8 +2034,7 @@ static void ReceivePackets(PacketConnection *connection)
         /* The payload follows the header directly; a sender that stalls is dropped. */
         if(header.length > 0 && connection->waitForData(connection->context, DATA_WAIT_TIMEOUT_MS) <= 0)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Payload timeout from %s: cmd=0x%04X\n", connection->label, (unsigned int)header.cmd);
-            LogFile(logBuffer);
+            RLOG_WARN("Payload timeout from %s: cmd=0x%04X", connection->label, (unsigned int)header.cmd);
             break;
         }
         if(connection->receiveAll(connection->context, receiveData, header.length) != 0)
@@ -2045,13 +2043,11 @@ static void ReceivePackets(PacketConnection *connection)
         }
         if(CheckPacketCrc(headerData, &header, receiveData) != 0)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "CRC mismatch from %s: cmd=0x%04X\n", connection->label, (unsigned int)header.cmd);
-            LogFile(logBuffer);
+            RLOG_WARN("CRC mismatch from %s: cmd=0x%04X", connection->label, (unsigned int)header.cmd);
             break;
         }
 
         processResult = packetHandler->processData(connection, receiveData, header.length);
-        fflush(stdout);
         if(header.cmd == REQ_LOGIN || header.cmd == REQ_BT_REGISTER || header.cmd == REQ_BT_CONNECT)
         {
             sodium_memzero(receiveData, header.length);
@@ -2065,8 +2061,22 @@ static void ReceivePackets(PacketConnection *connection)
     sodium_memzero(receiveData, sizeof(receiveData));
 }
 
-static void LogFile(const char *message)
+static void LogTlsErrors(uint8_t level)
 {
-    fputs(message, stdout);
-    fflush(stdout);
+    unsigned long tlsError;
+
+    while((tlsError = ERR_get_error()) != 0)
+    {
+        char text[256];
+
+        ERR_error_string_n(tlsError, text, sizeof(text));
+        if(level == RLOG_LEVEL_ERROR)
+        {
+            RLOG_ERROR("TLS: %s", text);
+        }
+        else
+        {
+            RLOG_WARN("TLS: %s", text);
+        }
+    }
 }

@@ -24,6 +24,7 @@ function(iotcontrol_configure_target target)
     # 헤더 탐색 경로 등록
     target_include_directories(${target} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Utils/Inc"
         "${CMAKE_CURRENT_SOURCE_DIR}/../common"
     )
 
@@ -49,6 +50,7 @@ file(GLOB IOT_SERVER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Command/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Controller/Src/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Utils/Src/*.c"
 )
 # RClient.c는 iot_client 전용
 list(REMOVE_ITEM IOT_SERVER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/RClient.c")

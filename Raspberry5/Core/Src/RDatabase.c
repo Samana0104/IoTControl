@@ -1,4 +1,5 @@
 #include "RDatabase.h"
+#include "RLog.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -74,19 +75,19 @@ int InitializeDatabase(void)
 
     if(sodium_init() < 0)
     {
-        fputs("libsodium initialization failed\n", stderr);
+        RLOG_ERROR("libsodium initialization failed");
         return -1;
     }
 
     if(crypto_pwhash_str(dummyPasswordHash, DUMMY_PASSWORD, sizeof(DUMMY_PASSWORD) - 1, crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE) != 0)
     {
-        fputs("dummy password hash initialization failed\n", stderr);
+        RLOG_ERROR("dummy password hash initialization failed");
         return -1;
     }
 
     if(mysql_library_init(0, NULL, NULL) != 0)
     {
-        fputs("MariaDB client initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB client initialization failed");
         return -1;
     }
 
@@ -106,7 +107,7 @@ MYSQL *OpenDatabaseConnection(void)
 
     if(mysql_thread_init() != 0)
     {
-        fputs("MariaDB thread initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB thread initialization failed");
         return NULL;
     }
     connection = ConnectDatabase();
@@ -146,24 +147,24 @@ static int ExecuteSensorUpdate(const char *query, MYSQL_BIND *parameters, uint64
     /* This dedicated connection must persist the UPDATE even if the DB default differs. */
     if(mysql_autocommit(connection, 1) != 0)
     {
-        fprintf(stderr, "Sensor DB autocommit failed (MariaDB error %u)\n", mysql_errno(connection));
+        RLOG_ERROR("Sensor DB autocommit failed (MariaDB error %u)", mysql_errno(connection));
         goto cleanup;
     }
     statement = mysql_stmt_init(connection);
     if(statement == NULL)
     {
-        fputs("Sensor DB statement initialization failed\n", stderr);
+        RLOG_ERROR("Sensor DB statement initialization failed");
         goto cleanup;
     }
     if(mysql_stmt_prepare(statement, query, (unsigned long)strlen(query)) != 0 || mysql_stmt_bind_param(statement, parameters) != 0 || mysql_stmt_execute(statement) != 0)
     {
-        fprintf(stderr, "Sensor DB UPDATE failed (MariaDB error %u)\n", mysql_stmt_errno(statement));
+        RLOG_WARN("Sensor DB UPDATE failed (MariaDB error %u)", mysql_stmt_errno(statement));
         goto cleanup;
     }
     count = mysql_stmt_affected_rows(statement);
     if(count == (my_ulonglong)-1)
     {
-        fputs("Sensor DB UPDATE affected-row retrieval failed\n", stderr);
+        RLOG_ERROR("Sensor DB UPDATE affected-row retrieval failed");
         goto cleanup;
     }
     if(affectedRows != NULL)
@@ -275,7 +276,7 @@ int VerifyMember(const char *memberId, size_t memberIdLength, const char *passwo
 
     if(mysql_thread_init() != 0)
     {
-        fputs("MariaDB thread initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB thread initialization failed");
         return -1;
     }
 
@@ -288,13 +289,13 @@ int VerifyMember(const char *memberId, size_t memberIdLength, const char *passwo
     statement = mysql_stmt_init(connection);
     if(statement == NULL)
     {
-        fputs("MariaDB statement initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB statement initialization failed");
         goto cleanup;
     }
 
     if(mysql_stmt_prepare(statement, MEMBER_QUERY, sizeof(MEMBER_QUERY) - 1) != 0)
     {
-        fprintf(stderr, "MariaDB statement prepare failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB statement prepare failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -306,7 +307,7 @@ int VerifyMember(const char *memberId, size_t memberIdLength, const char *passwo
 
     if(mysql_stmt_bind_param(statement, parameterBind) != 0 || mysql_stmt_execute(statement) != 0)
     {
-        fprintf(stderr, "MariaDB member query failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB member query failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -321,7 +322,7 @@ int VerifyMember(const char *memberId, size_t memberIdLength, const char *passwo
 
     if(mysql_stmt_bind_result(statement, resultBind) != 0 || mysql_stmt_store_result(statement) != 0)
     {
-        fprintf(stderr, "MariaDB result binding failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB result binding failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -337,7 +338,7 @@ int VerifyMember(const char *memberId, size_t memberIdLength, const char *passwo
 
     if(fetchResult != 0 || resultIsNull || resultError || resultLength >= sizeof(passwordHash))
     {
-        fprintf(stderr, "MariaDB member result fetch failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB member result fetch failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -379,7 +380,7 @@ int GetMemberBluetoothDevice(const char *memberId, size_t memberIdLength, Blueto
     memset(deviceRecord, 0, sizeof(*deviceRecord));
     if(mysql_thread_init() != 0)
     {
-        fputs("MariaDB thread initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB thread initialization failed");
         return -1;
     }
 
@@ -392,13 +393,13 @@ int GetMemberBluetoothDevice(const char *memberId, size_t memberIdLength, Blueto
     statement = mysql_stmt_init(connection);
     if(statement == NULL)
     {
-        fputs("MariaDB statement initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB statement initialization failed");
         goto cleanup;
     }
 
     if(mysql_stmt_prepare(statement, BLUETOOTH_DEVICE_QUERY, sizeof(BLUETOOTH_DEVICE_QUERY) - 1) != 0)
     {
-        fprintf(stderr, "MariaDB Bluetooth query prepare failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB Bluetooth query prepare failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -409,7 +410,7 @@ int GetMemberBluetoothDevice(const char *memberId, size_t memberIdLength, Blueto
     parameterBind[0].length = &parameterLength;
     if(mysql_stmt_bind_param(statement, parameterBind) != 0 || mysql_stmt_execute(statement) != 0)
     {
-        fprintf(stderr, "MariaDB Bluetooth query failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB Bluetooth query failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -422,7 +423,7 @@ int GetMemberBluetoothDevice(const char *memberId, size_t memberIdLength, Blueto
     resultBind[0].error = &resultError;
     if(mysql_stmt_bind_result(statement, resultBind) != 0 || mysql_stmt_store_result(statement) != 0)
     {
-        fprintf(stderr, "MariaDB Bluetooth result binding failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB Bluetooth result binding failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -434,7 +435,7 @@ int GetMemberBluetoothDevice(const char *memberId, size_t memberIdLength, Blueto
     }
     if(fetchResult != 0 || resultIsNull || resultError || macLength >= sizeof(deviceRecord->mac))
     {
-        fprintf(stderr, "MariaDB Bluetooth result fetch failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB Bluetooth result fetch failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -469,7 +470,7 @@ int RegisterMemberBluetoothDevice(const char *memberId, size_t memberIdLength, c
 
     if(mysql_thread_init() != 0)
     {
-        fputs("MariaDB thread initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB thread initialization failed");
         return -1;
     }
 
@@ -482,13 +483,13 @@ int RegisterMemberBluetoothDevice(const char *memberId, size_t memberIdLength, c
     statement = mysql_stmt_init(connection);
     if(statement == NULL)
     {
-        fputs("MariaDB statement initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB statement initialization failed");
         goto cleanup;
     }
 
     if(mysql_stmt_prepare(statement, BLUETOOTH_REGISTER_QUERY, sizeof(BLUETOOTH_REGISTER_QUERY) - 1) != 0)
     {
-        fprintf(stderr, "MariaDB Bluetooth register prepare failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB Bluetooth register prepare failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -506,7 +507,7 @@ int RegisterMemberBluetoothDevice(const char *memberId, size_t memberIdLength, c
 
     if(mysql_stmt_bind_param(statement, parameterBind) != 0)
     {
-        fprintf(stderr, "MariaDB Bluetooth register binding failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB Bluetooth register binding failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
     if(mysql_stmt_execute(statement) != 0)
@@ -516,7 +517,7 @@ int RegisterMemberBluetoothDevice(const char *memberId, size_t memberIdLength, c
             registerResult = 0;
             goto cleanup;
         }
-        fprintf(stderr, "MariaDB Bluetooth register failed: %s\n", mysql_stmt_error(statement));
+        RLOG_ERROR("MariaDB Bluetooth register failed: %s", mysql_stmt_error(statement));
         goto cleanup;
     }
 
@@ -599,23 +600,23 @@ static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config)
     fileDescriptor = open(filePath, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
     if(fileDescriptor < 0)
     {
-        fprintf(stderr, "Cannot open DB config file '%s': %s\n", filePath, strerror(errno));
+        RLOG_ERROR("Cannot open DB config file '%s': %s", filePath, strerror(errno));
         goto cleanup;
     }
     if(fstat(fileDescriptor, &fileStatus) != 0 || !S_ISREG(fileStatus.st_mode))
     {
-        fputs("DB config must be a regular file\n", stderr);
+        RLOG_ERROR("DB config must be a regular file");
         goto cleanup;
     }
     if(fileStatus.st_mode & (S_IRWXG | S_IRWXO))
     {
-        fprintf(stderr, "DB config permissions are too open. Run: chmod 600 %s\n", filePath);
+        RLOG_ERROR("DB config permissions are too open. Run: chmod 600 %s", filePath);
         goto cleanup;
     }
     file = fdopen(fileDescriptor, "r");
     if(file == NULL)
     {
-        fputs("Cannot read DB config file\n", stderr);
+        RLOG_ERROR("Cannot read DB config file");
         goto cleanup;
     }
     fileDescriptor = -1;
@@ -642,7 +643,7 @@ static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config)
         separator = strchr(key, '=');
         if(separator == NULL)
         {
-            fprintf(stderr, "Expected KEY=value in DB config at line %zu\n", lineNumber);
+            RLOG_ERROR("Expected KEY=value in DB config at line %zu", lineNumber);
             goto cleanup;
         }
         *separator = '\0';
@@ -653,7 +654,7 @@ static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config)
         {
             if(valueLength < 2 || value[valueLength - 1] != *value)
             {
-                fprintf(stderr, "Unmatched quotes in DB config at line %zu\n", lineNumber);
+                RLOG_ERROR("Unmatched quotes in DB config at line %zu", lineNumber);
                 goto cleanup;
             }
             value[valueLength - 1] = '\0';
@@ -670,12 +671,12 @@ static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config)
         }
         if(field == NULL || field->seen)
         {
-            fprintf(stderr, "Unknown or duplicate DB config key at line %zu\n", lineNumber);
+            RLOG_ERROR("Unknown or duplicate DB config key at line %zu", lineNumber);
             goto cleanup;
         }
         if(valueLength >= field->valueSize || (!field->allowEmpty && valueLength == 0))
         {
-            fprintf(stderr, "Invalid value length for %s at line %zu\n", field->key, lineNumber);
+            RLOG_ERROR("Invalid value length for %s at line %zu", field->key, lineNumber);
             goto cleanup;
         }
         memcpy(field->value, value, valueLength + 1);
@@ -683,14 +684,14 @@ static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config)
     }
     if(readResult < 0)
     {
-        fprintf(stderr, "Unreadable, binary or oversized DB config line at line %zu\n", lineNumber + 1);
+        RLOG_ERROR("Unreadable, binary or oversized DB config line at line %zu", lineNumber + 1);
         goto cleanup;
     }
     for(size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); ++index)
     {
         if(fields[index].required && !fields[index].seen)
         {
-            fprintf(stderr, "Missing %s in DB config\n", fields[index].key);
+            RLOG_ERROR("Missing %s in DB config", fields[index].key);
             goto cleanup;
         }
     }
@@ -698,7 +699,7 @@ static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config)
     {
         if(!isdigit((unsigned char)portText[index]))
         {
-            fputs("Invalid IOT_DB_PORT in DB config\n", stderr);
+            RLOG_ERROR("Invalid IOT_DB_PORT in DB config");
             goto cleanup;
         }
     }
@@ -706,7 +707,7 @@ static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config)
     port = strtoul(portText, &endPointer, 10);
     if(errno != 0 || *endPointer != '\0' || port == 0 || port > UINT16_MAX)
     {
-        fputs("Invalid IOT_DB_PORT in DB config\n", stderr);
+        RLOG_ERROR("Invalid IOT_DB_PORT in DB config");
         goto cleanup;
     }
     config->port = (unsigned int)port;
@@ -737,14 +738,14 @@ static MYSQL *ConnectDatabase(void)
 
     if(!databaseConfigLoaded)
     {
-        fputs("DB configuration has not been loaded\n", stderr);
+        RLOG_ERROR("DB configuration has not been loaded");
         return NULL;
     }
 
     connection = mysql_init(NULL);
     if(connection == NULL)
     {
-        fputs("MariaDB connection initialization failed\n", stderr);
+        RLOG_ERROR("MariaDB connection initialization failed");
         return NULL;
     }
 
@@ -754,7 +755,7 @@ static MYSQL *ConnectDatabase(void)
 
     if(mysql_real_connect(connection, databaseConfig.host, databaseConfig.user, databaseConfig.password, databaseConfig.name, databaseConfig.port, NULL, 0) == NULL)
     {
-        fprintf(stderr, "MariaDB connection failed: %s\n", mysql_error(connection));
+        RLOG_ERROR("MariaDB connection failed: %s", mysql_error(connection));
         mysql_close(connection);
         return NULL;
     }

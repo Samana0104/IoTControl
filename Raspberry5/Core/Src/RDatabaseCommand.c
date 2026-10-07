@@ -1,5 +1,6 @@
 #include "RDatabaseCommand.h"
 #include "RDatabase.h"
+#include "RLog.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -199,12 +200,12 @@ static int ExecuteDatabaseWrite(const char *sql, DatabaseCommandType type, uint6
     if(mysql_real_query(connection, sql, (unsigned long)strlen(sql)) != 0)
     {
         /* Do not echo SQL or server error text that may contain credential values. */
-        fprintf(stderr, "Database write failed (MariaDB error %u)\n", mysql_errno(connection));
+        RLOG_WARN("Database write failed (MariaDB error %u)", mysql_errno(connection));
         goto cleanup;
     }
     if(mysql_field_count(connection) != 0)
     {
-        fputs("Database write returned unexpected result columns\n", stderr);
+        RLOG_WARN("Database write returned unexpected result columns");
         goto cleanup;
     }
     count = mysql_affected_rows(connection);
@@ -265,7 +266,7 @@ int SelectDatabaseData(const char *sql, DatabaseRowCallback callback, void *cont
     }
     if(mysql_real_query(connection, sql, (unsigned long)strlen(sql)) != 0 || (resultSet = mysql_use_result(connection)) == NULL)
     {
-        fprintf(stderr, "Database select failed (MariaDB error %u)\n", mysql_errno(connection));
+        RLOG_WARN("Database select failed (MariaDB error %u)", mysql_errno(connection));
         goto cleanup;
     }
     row.columnCount = mysql_num_fields(resultSet);
