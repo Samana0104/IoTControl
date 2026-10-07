@@ -3,13 +3,11 @@
 #include "RDatabase.h"
 #include "RCommand.h"
 #include "RPacket.h"
-#include "RNetLink.h"
 #include "RNetwork.h"
 #include "RLog.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
-#include <openssl/ssl.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -103,14 +101,6 @@ int OpenServer(TCPServer *server)
             return -1;
         }
         server->databaseInitialized = 1;
-    }
-    if(server->tlsContext == NULL)
-    {
-        server->tlsContext = RNetLinkCreateTlsContext(&RConfigGet()->tls);
-        if(server->tlsContext == NULL)
-        {
-            return -1;
-        }
     }
 
     serverSocket = socket(PF_INET, SOCK_STREAM, 0);
@@ -247,8 +237,6 @@ void CloseServer(TCPServer *server)
     RNetStop();
     // 워커 스레드의 DB 연결은 스레드가 끝날 때 닫히고, 메인 스레드(콘솔) 연결은 여기서 닫음
     ResetDatabaseConnection();
-    SSL_CTX_free(server->tlsContext);
-    server->tlsContext = NULL;
     if(server->signalHandlersInstalled)
     {
         sigaction(SIGINT, &server->originalInterruptAction, NULL);
@@ -285,6 +273,6 @@ static void AcceptClient(TCPServer *server)
         }
         return;
     }
-    /* RNetwork owns the socket from here, even on failure; a worker runs the TLS handshake. */
-    RNetOpenTcp(clientSocket, server->tlsContext, &clientAddress);
+    /* RNetwork owns the socket from here, even on failure. */
+    RNetOpenTcp(clientSocket, &clientAddress);
 }

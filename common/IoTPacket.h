@@ -58,7 +58,7 @@ typedef struct _BluetoothRegisterData
 
 typedef struct _BluetoothConnectData
 {
-    /* Credentials are sent only over TLS and are not retained by the BT client. */
+    /* Credentials are not retained by the BT client. */
     char id[MEM_ID_SIZE];
     char pw[MEM_PW_SIZE];
     char mac[BLUETOOTH_MAC_SIZE];

@@ -1,15 +1,16 @@
 #include "RNetwork.h"
 #include "IoTPacketStream.h"
-#include "RNetLink.h"
+#include "RBluetooth.h"
 #include "RLog.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <openssl/err.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -18,7 +19,6 @@
 #define NET_TX_BUFFER_SIZE (PACKET_FRAME_SIZE * 4)
 // epoll_wait 최대 대기이자 타임아웃 확인 주기
 #define NET_TICK_MS 500
-#define TLS_HANDSHAKE_TIMEOUT_MS 5000
 // 프레임 첫 바이트를 받은 뒤 프레임 전체가 도착해야 하는 시간
 #define FRAME_TIMEOUT_MS 5000
 // 송신이 이 시간 동안 진행되지 않으면 상대가 받지 않는 것으로 보고 끊음
@@ -28,7 +28,6 @@
 
 typedef enum
 {
-    NET_STATE_HANDSHAKE,
     NET_STATE_OPEN,
     NET_STATE_CLOSING
 } RNetState;
@@ -42,20 +41,19 @@ typedef struct _RNetConnection
 
     // lock 보호
     pthread_mutex_t lock;
-    RNetLink link;
-    RSession *session; // NET_STATE_OPEN부터
+    RSessionType type;
+    int fd;
+    RSession *session;
     char address[SESSION_ADDRESS_SIZE];
     RNetState state;
     int owned;
     int closeRequested;
-    int wantWrite;
-    uint64_t deadlineMs;
+    uint64_t deadlineMs; // NET_STATE_CLOSING 마감
     uint64_t frameStartMs;
     uint8_t rx[NET_RX_BUFFER_SIZE];
     size_t rxLength;
     uint8_t tx[NET_TX_BUFFER_SIZE];
     size_t txLength;
-    size_t txRetryLength;
     uint64_t txProgressMs;
 } RNetConnection;
 
@@ -83,10 +81,11 @@ static void CloseConnection(RNetConnection *connection);
 static void *RunWorker(void *arg);
 static void HandleConnection(uint64_t eventData, uint32_t events);
 static int ServiceConnection(RNetConnection *connection, uint32_t events);
-static int FinishHandshake(RNetConnection *connection);
 static int ReceiveFrames(RNetConnection *connection);
 static int ProcessBufferedFrame(RNetConnection *connection);
 static int FlushConnection(RNetConnection *connection);
+static int ReadSocket(RNetConnection *connection);
+static void CloseSocket(RSessionType type, int fd);
 static void CheckTimeouts(void);
 static int IsConnectionTimedOut(RNetConnection *connection, uint64_t now);
 
@@ -148,7 +147,7 @@ void RNetStop(void)
         {
             pthread_mutex_lock(&connection->lock);
             connection->closeRequested = 1;
-            RNetLinkShutdown(&connection->link);
+            shutdown(connection->fd, SHUT_RDWR);
             pthread_mutex_unlock(&connection->lock);
         }
     }
@@ -169,12 +168,12 @@ void RNetStop(void)
     epollFd = -1;
 }
 
-int RNetOpenTcp(int fd, SSL_CTX *tlsContext, const struct sockaddr_in *address)
+int RNetOpenTcp(int fd, const struct sockaddr_in *address)
 {
-    RNetConnection *connection;
-    SSL *tls;
+    RNetConnection *connection = NULL;
+    char ip[INET_ADDRSTRLEN] = "";
 
-    if(fd < 0 || tlsContext == NULL || address == NULL)
+    if(fd < 0 || address == NULL)
     {
         RLOG_ERROR("RNetOpenTcp: invalid argument: fd=%d", fd);
         if(fd >= 0)
@@ -183,41 +182,31 @@ int RNetOpenTcp(int fd, SSL_CTX *tlsContext, const struct sockaddr_in *address)
         }
         return -1;
     }
-    if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) != 0)
+    inet_ntop(AF_INET, &address->sin_addr, ip, sizeof(ip));
+    if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0)
     {
-        RLOG_ERROR("fcntl(O_NONBLOCK): fd=%d: %s", fd, strerror(errno));
-        close(fd);
-        return -1;
+        pthread_mutex_lock(&tableMutex);
+        connection = ClaimConnection(SESSION_TCP, fd);
+        if(connection != NULL)
+        {
+            snprintf(connection->address, sizeof(connection->address), "%s", ip);
+            connection->session = RSessionAdd(SESSION_TCP, fd, ip, NULL);
+            if(connection->session == NULL)
+            {
+                connection->inUse = 0;
+                connectionCount--;
+                connection = NULL;
+            }
+        }
+        pthread_mutex_unlock(&tableMutex);
     }
-    tls = SSL_new(tlsContext);
-    if(tls == NULL || SSL_set_fd(tls, fd) != 1)
-    {
-        RLOG_ERROR("SSL_new/SSL_set_fd failed: fd=%d", fd);
-        ERR_clear_error();
-        SSL_free(tls);
-        close(fd);
-        return -1;
-    }
-    // 송신 버퍼 앞부분만 보내고 뒤에 이어 붙이므로 부분 쓰기와 버퍼 이동을 허용
-    SSL_set_mode(tls, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-
-    pthread_mutex_lock(&tableMutex);
-    connection = ClaimConnection(SESSION_TCP, fd);
-    if(connection != NULL)
-    {
-        connection->link.tls = tls;
-        inet_ntop(AF_INET, &address->sin_addr, connection->address, sizeof(connection->address));
-        connection->state = NET_STATE_HANDSHAKE;
-        connection->deadlineMs = GetMonotonicMs() + TLS_HANDSHAKE_TIMEOUT_MS;
-    }
-    pthread_mutex_unlock(&tableMutex);
     if(connection == NULL)
     {
-        RLOG_WARN("TCP client rejected: connection limit reached or server stopping");
-        SSL_free(tls);
+        RLOG_WARN("TCP client rejected: ip=%s (connection limit reached or server stopping)", ip);
         close(fd);
         return -1;
     }
+    RLOG_INFO("Client connected: ip=%s, fd=%d", ip, fd);
     return RegisterConnection(connection);
 }
 
@@ -295,7 +284,7 @@ int RNetSend(int fd, const void *frame, size_t frameLength)
         if(FlushConnection(connection) != 0)
         {
             connection->closeRequested = 1;
-            RNetLinkShutdown(&connection->link);
+            shutdown(connection->fd, SHUT_RDWR);
             errno = ECONNRESET;
             result = -1;
         }
@@ -319,7 +308,7 @@ int RNetClose(int fd)
     {
         pthread_mutex_lock(&connection->lock);
         connection->closeRequested = 1;
-        RNetLinkShutdown(&connection->link);
+        shutdown(connection->fd, SHUT_RDWR);
         pthread_mutex_unlock(&connection->lock);
     }
     pthread_mutex_unlock(&tableMutex);
@@ -353,19 +342,16 @@ static RNetConnection *ClaimConnection(RSessionType type, int fd)
 
         connection->inUse = 1;
         connection->generation++;
-        connection->link.type = type;
-        connection->link.fd = fd;
-        connection->link.tls = NULL;
+        connection->type = type;
+        connection->fd = fd;
         connection->session = NULL;
         connection->state = NET_STATE_OPEN;
         connection->owned = 0;
         connection->closeRequested = 0;
-        connection->wantWrite = 0;
         connection->deadlineMs = 0;
         connection->frameStartMs = 0;
         connection->rxLength = 0;
         connection->txLength = 0;
-        connection->txRetryLength = 0;
         connectionCount++;
         return connection;
     }
@@ -377,7 +363,7 @@ static RNetConnection *FindConnection(int fd)
 {
     for(int index = 0; index < NET_MAX_CONNECTIONS; ++index)
     {
-        if(connections[index].inUse && connections[index].link.fd == fd)
+        if(connections[index].inUse && connections[index].fd == fd)
         {
             return &connections[index];
         }
@@ -397,11 +383,11 @@ static int RegisterConnection(RNetConnection *connection)
 
     pthread_mutex_lock(&connection->lock);
     event.data.u64 = MakeEventData(connection);
-    if(epoll_ctl(epollFd, EPOLL_CTL_ADD, connection->link.fd, &event) != 0)
+    if(epoll_ctl(epollFd, EPOLL_CTL_ADD, connection->fd, &event) != 0)
     {
         int registerError = errno;
 
-        RLOG_ERROR("epoll_ctl(ADD): fd=%d: %s", connection->link.fd, strerror(registerError));
+        RLOG_ERROR("epoll_ctl(ADD): fd=%d: %s", connection->fd, strerror(registerError));
         connection->owned = 1;
         pthread_mutex_unlock(&connection->lock);
         CloseConnection(connection);
@@ -418,26 +404,22 @@ static void RearmConnection(RNetConnection *connection)
     struct epoll_event event = {.data.u64 = MakeEventData(connection)};
     uint32_t interest = 0;
 
-    if(connection->state == NET_STATE_HANDSHAKE)
+    if(connection->state == NET_STATE_OPEN)
     {
-        interest = connection->wantWrite ? EPOLLOUT : EPOLLIN;
-    }
-    else if(connection->state == NET_STATE_OPEN)
-    {
-        interest = EPOLLIN | (connection->wantWrite ? EPOLLOUT : 0);
+        interest = EPOLLIN;
     }
     if(connection->txLength > 0)
     {
         interest |= EPOLLOUT;
     }
     event.events = interest | EPOLLONESHOT;
-    epoll_ctl(epollFd, EPOLL_CTL_MOD, connection->link.fd, &event);
+    epoll_ctl(epollFd, EPOLL_CTL_MOD, connection->fd, &event);
 }
 
 // 맡은 워커(owned)만 호출. epoll에서 빼고 세션을 지운 뒤 fd를 닫음
 static void CloseConnection(RNetConnection *connection)
 {
-    RNetLink link;
+    RSessionType type;
     RSession *session;
     char address[SESSION_ADDRESS_SIZE];
     int fd;
@@ -445,14 +427,13 @@ static void CloseConnection(RNetConnection *connection)
 
     pthread_mutex_lock(&tableMutex);
     pthread_mutex_lock(&connection->lock);
-    epoll_ctl(epollFd, EPOLL_CTL_DEL, connection->link.fd, NULL);
-    link = connection->link;
-    fd = link.fd;
+    epoll_ctl(epollFd, EPOLL_CTL_DEL, connection->fd, NULL);
+    type = connection->type;
+    fd = connection->fd;
     session = connection->session;
     memcpy(address, connection->address, sizeof(address));
     connection->session = NULL;
-    connection->link.fd = -1;
-    connection->link.tls = NULL;
+    connection->fd = -1;
     explicit_bzero(connection->rx, connection->rxLength);
     connection->rxLength = 0;
     connection->txLength = 0;
@@ -466,7 +447,7 @@ static void CloseConnection(RNetConnection *connection)
     {
         RSessionRemove(session);
     }
-    RNetLinkClose(&link);
+    CloseSocket(type, fd);
     RLOG_INFO("Connection closed: %s, fd=%d, connections=%d", address, fd, remaining);
     pthread_cond_broadcast(&idleCond);
     pthread_mutex_unlock(&tableMutex);
@@ -543,20 +524,6 @@ static int ServiceConnection(RNetConnection *connection, uint32_t events)
     {
         return -1;
     }
-    if(connection->state == NET_STATE_HANDSHAKE)
-    {
-        int handshakeResult = RNetLinkHandshake(&connection->link, &connection->wantWrite);
-
-        if(handshakeResult < 0)
-        {
-            RLOG_WARN("[%s] TLS handshake failed", connection->address);
-            return -1;
-        }
-        if(handshakeResult == 0 || FinishHandshake(connection) != 0)
-        {
-            return handshakeResult == 0 ? 0 : -1;
-        }
-    }
     if(connection->state == NET_STATE_OPEN && ReceiveFrames(connection) != 0)
     {
         return -1;
@@ -570,19 +537,6 @@ static int ServiceConnection(RNetConnection *connection, uint32_t events)
     {
         return -1;
     }
-    return 0;
-}
-
-static int FinishHandshake(RNetConnection *connection)
-{
-    connection->session = RSessionAdd(SESSION_TCP, connection->link.fd, connection->address, NULL);
-    if(connection->session == NULL)
-    {
-        RLOG_WARN("[%s] Session limit reached", connection->address);
-        return -1;
-    }
-    connection->state = NET_STATE_OPEN;
-    RLOG_INFO("Client connected: ip=%s, fd=%d", connection->address, connection->link.fd);
     return 0;
 }
 
@@ -602,16 +556,11 @@ static int ReceiveFrames(RNetConnection *connection)
         {
             continue;
         }
-        readResult = RNetLinkRead(&connection->link, connection->rx + connection->rxLength, sizeof(connection->rx) - connection->rxLength, &connection->wantWrite);
+        readResult = ReadSocket(connection);
         if(readResult <= 0)
         {
             return readResult;
         }
-        if(connection->rxLength == 0)
-        {
-            connection->frameStartMs = GetMonotonicMs();
-        }
-        connection->rxLength += (size_t)readResult;
     }
     return 0;
 }
@@ -663,29 +612,63 @@ static int ProcessBufferedFrame(RNetConnection *connection)
     return 1;
 }
 
+// 연결 lock을 잡은 상태에서 호출. 빈 수신 버퍼 공간만큼 읽음. >0: 읽은 바이트 수, 0: 지금 읽을 것 없음, -1: 끊김/오류
+static int ReadSocket(RNetConnection *connection)
+{
+    size_t space = sizeof(connection->rx) - connection->rxLength;
+    ssize_t result;
+
+    if(space == 0)
+    {
+        return 0;
+    }
+    result = recv(connection->fd, connection->rx + connection->rxLength, space, MSG_DONTWAIT);
+    if(result > 0)
+    {
+        if(connection->rxLength == 0)
+        {
+            connection->frameStartMs = GetMonotonicMs();
+        }
+        connection->rxLength += (size_t)result;
+        return (int)result;
+    }
+    if(result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
+    {
+        return 0;
+    }
+    return -1;
+}
+
 // 연결 lock을 잡은 상태에서 호출. 소켓이 받는 만큼 보냄. -1: 연결 오류
 static int FlushConnection(RNetConnection *connection)
 {
     while(connection->txLength > 0)
     {
-        size_t length = connection->txRetryLength != 0 ? connection->txRetryLength : connection->txLength;
-        int sentLength = RNetLinkWrite(&connection->link, connection->tx, length);
+        ssize_t sentLength = send(connection->fd, connection->tx, connection->txLength, MSG_DONTWAIT | MSG_NOSIGNAL);
 
         if(sentLength < 0)
         {
-            return -1;
-        }
-        if(sentLength == 0)
-        {
-            connection->txRetryLength = length;
-            return 0;
+            if(errno == EINTR)
+            {
+                continue;
+            }
+            return errno == EAGAIN || errno == EWOULDBLOCK ? 0 : -1;
         }
         connection->txLength -= (size_t)sentLength;
         memmove(connection->tx, connection->tx + sentLength, connection->txLength);
-        connection->txRetryLength = 0;
         connection->txProgressMs = GetMonotonicMs();
     }
     return 0;
+}
+
+static void CloseSocket(RSessionType type, int fd)
+{
+    if(type == SESSION_BLUETOOTH)
+    {
+        DisconnectBluetoothDevice(fd);
+        return;
+    }
+    close(fd);
 }
 
 // 주기마다 워커 하나가 확인. 시간이 지난 연결은 shutdown해서 맡은 워커가 닫게 함
@@ -712,7 +695,7 @@ static void CheckTimeouts(void)
         if(!connection->owned && !connection->closeRequested && IsConnectionTimedOut(connection, now))
         {
             connection->closeRequested = 1;
-            RNetLinkShutdown(&connection->link);
+            shutdown(connection->fd, SHUT_RDWR);
         }
         pthread_mutex_unlock(&connection->lock);
     }
@@ -723,11 +706,6 @@ static int IsConnectionTimedOut(RNetConnection *connection, uint64_t now)
 {
     const char *label = connection->session != NULL ? connection->session->label : connection->address;
 
-    if(connection->state == NET_STATE_HANDSHAKE && now >= connection->deadlineMs)
-    {
-        RLOG_WARN("[%s] TLS handshake timeout", label);
-        return 1;
-    }
     if(connection->state == NET_STATE_CLOSING && now >= connection->deadlineMs)
     {
         return 1;

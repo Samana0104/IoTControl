@@ -55,19 +55,12 @@ static const ConfigField DATABASE_FIELDS[] =
     CONFIG_NUMBER(RDatabaseConfig, timeoutSeconds, 1, 3600)
 };
 
-static const ConfigField TLS_FIELDS[] =
-{
-    CONFIG_TEXT(RTlsConfig, certificateFile, 0),
-    CONFIG_TEXT(RTlsConfig, privateKeyFile, 0)
-};
-
 #define CONFIG_SECTION(name, member, fields) {name, offsetof(RConfig, member), fields, sizeof(fields) / sizeof(fields[0])}
 
 static const ConfigSection SECTIONS[] =
 {
     CONFIG_SECTION("server", server, SERVER_FIELDS),
-    CONFIG_SECTION("database", database, DATABASE_FIELDS),
-    CONFIG_SECTION("tls", tls, TLS_FIELDS)
+    CONFIG_SECTION("database", database, DATABASE_FIELDS)
 };
 
 #define CONFIG_SECTION_COUNT (sizeof(SECTIONS) / sizeof(SECTIONS[0]))

@@ -27,7 +27,7 @@ static int ParsePort(const char *port)
     return (int)parsedPort;
 }
 
-// DB/TLS 초기화 후 listen 시작, 포트를 생략하면 main에서 설정한 포트 사용
+// DB 초기화 후 listen 시작, 포트를 생략하면 main에서 설정한 포트 사용
 static void ServerStart(TCPServer *server, const char *args)
 {
     if(server->socket >= 0)
@@ -66,7 +66,7 @@ static void ServerStatus(TCPServer *server, const char *args)
     flockfile(stdout);
     if(server->socket >= 0)
     {
-        printf("Server: running\nListen: %s:%d (TCP/TLS)\n", server->ip, server->port);
+        printf("Server: running\nListen: %s:%d (TCP)\n", server->ip, server->port);
     }
     else
     {

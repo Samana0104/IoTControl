@@ -55,7 +55,7 @@ typedef struct _HeaderData
 #define MSG_BT_REGISTER 0x0006
 #define MSG_BT_CONNECT 0x0007
 
-/* Client -> server, TCP/TLS */
+/* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
 #define ACK_LOGIN REQ_TO_ACK(REQ_LOGIN)     /* ResultData */
 #define REQ_BT_REGISTER MSG_BT_REGISTER     /* BluetoothRegisterData, after login */
