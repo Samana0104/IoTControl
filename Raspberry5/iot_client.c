@@ -10,7 +10,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-#define INPUT_BUFFER_SIZE (MAX_MESSAGE_SIZE + 2)
+#define INPUT_BUFFER_SIZE (MAX_CHAT_SIZE + 2)
 #define BLUETOOTH_REGISTER_COMMAND "bt-register "
 #define BLUETOOTH_CONNECT_COMMAND "bt-connect "
 
@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
 
     if(AuthenticateClient(&client, memberId, password) != 0)
     {
-        fputs("Failed to send credentials\n", stderr);
+        fputs(errno == EACCES ? "Login rejected: wrong ID or password\n" : "Login failed: no response from server\n", stderr);
         sodium_memzero(password, sizeof(password));
         DisconnectClient(&client);
         return 1;
@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
             DiscardRemainingInput();
             fprintf(stderr,
                     "Message is too long. Maximum length is %u bytes.\n",
-                    MAX_MESSAGE_SIZE);
+                    MAX_CHAT_SIZE);
             continue;
         }
 
@@ -230,7 +230,7 @@ static int RunBluetoothConnectionRequest(IotClient *client, const char *memberId
     }
     else
     {
-        printf("BT result: %d (%s)\n", result, result == BLUETOOTH_CONNECT_SUCCEEDED ? "connected" : "failed");
+        printf("BT result: %d (%s)\n", result, result == 1 ? "connected" : "failed");
     }
     return result;
 }

@@ -2,14 +2,17 @@
 #include "RBluetooth.h"
 #include "RDatabase.h"
 #include "RCommand.h"
+#include "RCtrlCon.h"
+#include "RCtrlDht.h"
+#include "RCtrlFan.h"
 #include "RDatabaseCommand.h"
 #include "IoTPacket.h"
+#include "IoTPacketCodec.h"
 
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <poll.h>
@@ -26,7 +29,7 @@
 #include <unistd.h>
 
 #define LISTEN_BACKLOG 5
-#define SEND_BUFFER_SIZE (MAX_MESSAGE_SIZE + HEADER_SIZE)
+#define SEND_BUFFER_SIZE PACKET_FRAME_SIZE
 #define DATA_WAIT_TIMEOUT_MS 5000
 #define TLS_HANDSHAKE_TIMEOUT_SECONDS 5
 #define BLUETOOTH_CONNECT_TIMEOUT_MS 5000
@@ -118,7 +121,7 @@ typedef int (*ProcessPacketData)(PacketConnection *connection, const uint8_t *da
 
 typedef struct _PacketHandler
 {
-    CmdList cmd;
+    uint16_t cmd;
     size_t minDataLength;
     size_t maxDataLength;
     ProcessPacketData processData;
@@ -161,10 +164,11 @@ static int WaitForBluetoothEvent(BluetoothReceiveContext *context, short events,
 static int ReceiveBluetoothPacketData(void *context, void *buffer, size_t length);
 static int SendBluetoothPacketData(void *context, const void *buffer, size_t length);
 static int WaitForBluetoothPacketData(void *context, int timeoutMs);
-static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd);
+static int ValidatePacketPermission(PacketConnection *connection, uint16_t cmd);
 static void ReceivePackets(PacketConnection *connection);
-static const PacketHandler *FindPacketHandler(uint8_t cmd);
+static const PacketHandler *FindPacketHandler(uint16_t cmd);
 static int GetPacketMemberId(const PacketConnection *connection, char memberId[MEM_ID_SIZE + 1]);
+static int SendAck(PacketConnection *connection, uint16_t reqCmd, int succeeded);
 static int ProcessDhtData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ProcessFanData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ProcessConData(PacketConnection *connection, const uint8_t *data, size_t length);
@@ -186,13 +190,13 @@ static void LogFile(const char *message);
 
 static const PacketHandler PACKET_HANDLERS[] =
 {
-    {CMD_DHT11_DATA, DHT_DATA_SIZE, DHT_DATA_SIZE, ProcessDhtData},
-    {CMD_FAN_DATA, FAN_DATA_SIZE, FAN_DATA_SIZE, ProcessFanData},
-    {CMD_CON_DATA, CON_DATA_SIZE, CON_DATA_SIZE, ProcessConData},
-    {CMD_MEM_DATA, MEM_DATA_SIZE, MEM_DATA_SIZE, ProcessMemData},
-    {CMD_CHAT_DATA, 0, MAX_MESSAGE_SIZE, ProcessChatData},
-    {CMD_BLUETOOTH_REGISTER, BLUETOOTH_REGISTER_DATA_SIZE, BLUETOOTH_REGISTER_DATA_SIZE, ProcessBluetoothRegisterData},
-    {CMD_BLUETOOTH_CONNECT, BLUETOOTH_CONNECT_DATA_SIZE, BLUETOOTH_CONNECT_DATA_SIZE, ProcessBluetoothConnectData}
+    {REQ_LOGIN, MEM_DATA_SIZE, MEM_DATA_SIZE, ProcessMemData},
+    {REQ_BT_REGISTER, BLUETOOTH_REGISTER_DATA_SIZE, BLUETOOTH_REGISTER_DATA_SIZE, ProcessBluetoothRegisterData},
+    {REQ_BT_CONNECT, BLUETOOTH_CONNECT_DATA_SIZE, BLUETOOTH_CONNECT_DATA_SIZE, ProcessBluetoothConnectData},
+    {NFY_CHAT, 0, MAX_CHAT_SIZE, ProcessChatData},
+    {NFY_DHT, DHT_DATA_SIZE, DHT_DATA_SIZE, ProcessDhtData},
+    {NFY_FAN, FAN_DATA_SIZE, FAN_DATA_SIZE, ProcessFanData},
+    {NFY_CON, CON_DATA_SIZE, CON_DATA_SIZE, ProcessConData}
 };
 
 int InitServer(TCPServer *server, const char *ip, int port)
@@ -1337,13 +1341,13 @@ static int WaitForBluetoothPacketData(void *context, int timeoutMs)
     return WaitForBluetoothEvent((BluetoothReceiveContext *)context, POLLIN, timeoutMs);
 }
 
-static const PacketHandler *FindPacketHandler(uint8_t cmd)
+static const PacketHandler *FindPacketHandler(uint16_t cmd)
 {
     size_t i;
 
     for(i = 0; i < sizeof(PACKET_HANDLERS) / sizeof(PACKET_HANDLERS[0]); i++)
     {
-        if(PACKET_HANDLERS[i].cmd == (CmdList)cmd)
+        if(PACKET_HANDLERS[i].cmd == cmd)
         {
             return &PACKET_HANDLERS[i];
         }
@@ -1385,68 +1389,49 @@ static int GetPacketMemberId(const PacketConnection *connection, char memberId[M
     return memberId[0] != '\0' ? 0 : -1;
 }
 
+static int SendAck(PacketConnection *connection, uint16_t reqCmd, int succeeded)
+{
+    uint8_t frame[HEADER_SIZE + RESULT_DATA_SIZE];
+
+    MakeAckPacket(frame, sizeof(frame), reqCmd, succeeded ? RESULT_SUCCESS : RESULT_FAIL);
+    return connection->sendAll(connection->context, frame, sizeof(frame));
+}
+
 static int ProcessDhtData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     DhtData dhtData;
     char memberId[MEM_ID_SIZE + 1];
-    uint64_t affectedRows;
 
-    if(data == NULL || DecodeDhtData(data, length, &dhtData) != 0 || GetPacketMemberId(connection, memberId) != 0)
+    if(data == NULL || ReadDhtData(data, length, &dhtData) != 0 || GetPacketMemberId(connection, memberId) != 0)
     {
         return -1;
     }
-    printf("[%s] DHT: temp=%u, humi=%u\n", connection->label, (unsigned int)dhtData.temp, (unsigned int)dhtData.humi);
-    if(UpdateDhtData(memberId, strlen(memberId), &dhtData, &affectedRows) != 0)
-    {
-        fprintf(stderr, "[%s] DHT DB UPDATE failed: id=%s\n", connection->label, memberId);
-    }
-    else
-    {
-        printf("[%s] DHT DB UPDATE: id=%s, affected=%" PRIu64 "\n", connection->label, memberId, affectedRows);
-    }
     /* DB errors must not tear down an otherwise valid TCP/BT connection. */
+    RCtrlDhtReceive(connection->label, memberId, &dhtData);
     return 0;
 }
 
 static int ProcessFanData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     FanData fanData;
-    uint64_t affectedRows;
 
-    if(connection == NULL || data == NULL || DecodeFanData(data, length, &fanData) != 0)
+    if(connection == NULL || data == NULL || ReadFanData(data, length, &fanData) != 0)
     {
         return -1;
     }
-    printf("[%s] FAN: fanSpeed=%u\n", connection->label, (unsigned int)fanData.fanSpeed);
-    if(UpdateFanData(&fanData, &affectedRows) != 0)
-    {
-        fprintf(stderr, "[%s] FAN DB UPDATE failed: singleton_id=1\n", connection->label);
-    }
-    else
-    {
-        printf("[%s] FAN DB UPDATE: singleton_id=1, affected=%" PRIu64 "\n", connection->label, affectedRows);
-    }
+    RCtrlFanReceive(connection->label, &fanData);
     return 0;
 }
 
 static int ProcessConData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     ConData conData;
-    uint64_t affectedRows;
 
-    if(connection == NULL || data == NULL || DecodeConData(data, length, &conData) != 0)
+    if(connection == NULL || data == NULL || ReadConData(data, length, &conData) != 0)
     {
         return -1;
     }
-    printf("[%s] CON: tempData=%u\n", connection->label, (unsigned int)conData.tempData);
-    if(UpdateConData(&conData, &affectedRows) != 0)
-    {
-        fprintf(stderr, "[%s] CON DB UPDATE failed: singleton_id=1\n", connection->label);
-    }
-    else
-    {
-        printf("[%s] CON DB UPDATE: singleton_id=1, affected=%" PRIu64 "\n", connection->label, affectedRows);
-    }
+    RCtrlConReceive(connection->label, &conData);
     return 0;
 }
 
@@ -1458,7 +1443,7 @@ static int ProcessMemData(PacketConnection *connection, const uint8_t *data, siz
     size_t passwordLength;
     int verifyResult;
 
-    if(DecodeMemData(data, length, &memData) != 0)
+    if(ReadMemData(data, length, &memData) != 0)
     {
         return -1;
     }
@@ -1484,11 +1469,12 @@ static int ProcessMemData(PacketConnection *connection, const uint8_t *data, siz
         client->authenticated = 0;
         pthread_mutex_unlock(&clientMutex);
         printf("[%s] Member authentication failed\n", client->ip);
+        SendAck(connection, REQ_LOGIN, 0);
         return -1;
     }
 
     printf("[%s] Member authenticated: id=%s\n", client->ip, client->memberId);
-    return 0;
+    return SendAck(connection, REQ_LOGIN, 1);
 }
 
 static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint8_t *data, size_t length)
@@ -1504,7 +1490,7 @@ static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint
     int registerResult;
     int processResult = -1;
 
-    if(DecodeBluetoothRegisterData(data, length, &registerData) != 0)
+    if(ReadBluetoothRegisterData(data, length, &registerData) != 0)
     {
         return -1;
     }
@@ -1554,21 +1540,24 @@ cleanup:
     pthread_mutex_unlock(&bluetoothPairMutex);
     sodium_memzero(pin, sizeof(pin));
     sodium_memzero(&registerData, sizeof(registerData));
+    if(SendAck(connection, REQ_BT_REGISTER, processResult == 0) != 0)
+    {
+        processResult = -1;
+    }
     return processResult;
 }
 
 static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     BluetoothConnectData request;
-    BluetoothConnectResult result = {.connected = BLUETOOTH_CONNECT_FAILED};
-    uint8_t resultFrame[HEADER_SIZE + BLUETOOTH_CONNECT_RESULT_SIZE];
+    int connected = 0;
     char memberId[MEM_ID_SIZE + 1];
     char requestedMac[BLUETOOTH_MAC_TEXT_SIZE];
     size_t memberIdLength;
     size_t passwordLength;
     int verifyResult;
 
-    if(connection->transport != PACKET_TRANSPORT_TCP || data == NULL || DecodeBluetoothConnectData(data, length, &request) != 0)
+    if(connection->transport != PACKET_TRANSPORT_TCP || data == NULL || ReadBluetoothConnectData(data, length, &request) != 0)
     {
         return -1;
     }
@@ -1583,13 +1572,11 @@ static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8
 
     if(verifyResult == 1 && RequestRegisteredBluetoothConnection(memberId, requestedMac) == 0)
     {
-        result.connected = BLUETOOTH_CONNECT_SUCCEEDED;
+        connected = 1;
     }
-    EncodePacketHeader(resultFrame, HEADER_RESULT_0, HEADER_RESULT_1, CMD_BLUETOOTH_CONNECT, BLUETOOTH_CONNECT_RESULT_SIZE);
-    EncodeBluetoothConnectResult(&result, resultFrame + HEADER_SIZE, BLUETOOTH_CONNECT_RESULT_SIZE);
-    printf("[%s] Bluetooth request: id=%s, result=%u\n", connection->label, verifyResult == 1 ? memberId : "-", result.connected);
+    printf("[%s] Bluetooth request: id=%s, result=%s\n", connection->label, verifyResult == 1 ? memberId : "-", connected ? "connected" : "failed");
     /* BT is server-owned already; losing this result recipient must not close it. */
-    return connection->sendAll(connection->context, resultFrame, sizeof(resultFrame));
+    return SendAck(connection, REQ_BT_CONNECT, connected);
 }
 
 int RequestMemberBluetoothConnection(const char *memberId)
@@ -1981,16 +1968,16 @@ static void *ReceiveClient(void *arg)
     return NULL;
 }
 
-static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd)
+static int ValidatePacketPermission(PacketConnection *connection, uint16_t cmd)
 {
     char logBuffer[BUF_SIZE];
 
     if(connection->transport == PACKET_TRANSPORT_BLUETOOTH)
     {
         /* This link belongs to an already registered member/MAC binding. */
-        if(cmd == CMD_MEM_DATA || cmd == CMD_BLUETOOTH_REGISTER || cmd == CMD_BLUETOOTH_CONNECT)
+        if(cmd == REQ_LOGIN || cmd == REQ_BT_REGISTER || cmd == REQ_BT_CONNECT)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Management command not allowed from %s: cmd=%u\n", connection->label, cmd);
+            snprintf(logBuffer, sizeof(logBuffer), "Management command not allowed from %s: cmd=0x%04X\n", connection->label, (unsigned int)cmd);
             LogFile(logBuffer);
             return -1;
         }
@@ -1999,9 +1986,9 @@ static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd)
     {
         ClientInfo *client = (ClientInfo *)connection->context;
 
-        if(cmd != CMD_MEM_DATA && cmd != CMD_BLUETOOTH_CONNECT && !client->authenticated)
+        if(cmd != REQ_LOGIN && cmd != REQ_BT_CONNECT && !client->authenticated)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Unauthenticated command from %s: %u\n", connection->label, cmd);
+            snprintf(logBuffer, sizeof(logBuffer), "Unauthenticated command from %s: cmd=0x%04X\n", connection->label, (unsigned int)cmd);
             LogFile(logBuffer);
             return -1;
         }
@@ -2012,96 +1999,66 @@ static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd)
 static void ReceivePackets(PacketConnection *connection)
 {
     uint8_t headerData[HEADER_SIZE];
-    uint8_t receiveData[MAX_MESSAGE_SIZE] = {0};
+    uint8_t receiveData[MAX_PAYLOAD_SIZE] = {0};
     char logBuffer[BUF_SIZE];
 
     while(1)
     {
         HeaderData header;
-        uint8_t requestHeader[HEADER_SIZE];
         const PacketHandler *packetHandler;
-        int waitResult = 1;
+        int processResult;
 
         if(connection->receiveAll(connection->context, headerData, sizeof(headerData)) != 0)
         {
             break;
         }
-
         DecodePacketHeader(headerData, &header);
-
-        if(header.head0 != HEADER_OK_0 || header.head1 != HEADER_OK_1)
-        {
-            snprintf(logBuffer, sizeof(logBuffer), "Invalid header from %s: %02X %02X\n", connection->label, (unsigned int)headerData[0], (unsigned int)headerData[1]);
-            LogFile(logBuffer);
-            break;
-        }
 
         packetHandler = FindPacketHandler(header.cmd);
         if(packetHandler == NULL)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Unsupported command from %s: %u\n", connection->label, header.cmd);
+            snprintf(logBuffer, sizeof(logBuffer), "Unsupported command from %s: cmd=0x%04X\n", connection->label, (unsigned int)header.cmd);
             LogFile(logBuffer);
             break;
         }
-
-        if(header.dataLen < packetHandler->minDataLength ||
-           header.dataLen > packetHandler->maxDataLength)
+        if(header.length < packetHandler->minDataLength || header.length > packetHandler->maxDataLength)
         {
-            snprintf(logBuffer, sizeof(logBuffer), "Invalid data length from %s: cmd=%u, length=%u\n", connection->label, header.cmd, header.dataLen);
+            snprintf(logBuffer, sizeof(logBuffer), "Invalid data length from %s: cmd=0x%04X, length=%u\n", connection->label, (unsigned int)header.cmd, (unsigned int)header.length);
             LogFile(logBuffer);
             break;
         }
-
         if(ValidatePacketPermission(connection, header.cmd) != 0)
         {
             break;
         }
 
-        EncodePacketHeader(requestHeader, HEADER_REQUEST_0, HEADER_REQUEST_1, header.cmd, RQ_FLAG_INITIAL);
-
-        do
+        /* The payload follows the header directly; a sender that stalls is dropped. */
+        if(header.length > 0 && connection->waitForData(connection->context, DATA_WAIT_TIMEOUT_MS) <= 0)
         {
-            if(connection->sendAll(connection->context, requestHeader, sizeof(requestHeader)) != 0)
-            {
-                waitResult = -1;
-                break;
-            }
-            snprintf(logBuffer, sizeof(logBuffer), "[%s] RQ: cmd=%u flag=%u\n", connection->label, header.cmd, requestHeader[3]);
+            snprintf(logBuffer, sizeof(logBuffer), "Payload timeout from %s: cmd=0x%04X\n", connection->label, (unsigned int)header.cmd);
             LogFile(logBuffer);
-
-            if(header.dataLen == 0)
-            {
-                break;
-            }
-
-            waitResult = connection->waitForData(connection->context, DATA_WAIT_TIMEOUT_MS);
-            if(waitResult == 0)
-            {
-                requestHeader[3] = RQ_FLAG_RETRY;
-                snprintf(logBuffer, sizeof(logBuffer), "Data timeout from %s: resend RQ\n", connection->label);
-                LogFile(logBuffer);
-            }
+            break;
         }
-        while(waitResult == 0);
-
-        if(waitResult < 0 || connection->receiveAll(connection->context, receiveData, header.dataLen) != 0)
+        if(connection->receiveAll(connection->context, receiveData, header.length) != 0)
         {
             break;
         }
-
+        if(CheckPacketCrc(headerData, &header, receiveData) != 0)
         {
-            int processResult = packetHandler->processData(connection, receiveData, header.dataLen);
+            snprintf(logBuffer, sizeof(logBuffer), "CRC mismatch from %s: cmd=0x%04X\n", connection->label, (unsigned int)header.cmd);
+            LogFile(logBuffer);
+            break;
+        }
 
-            fflush(stdout);
-
-            if(header.cmd == CMD_MEM_DATA || header.cmd == CMD_BLUETOOTH_REGISTER || header.cmd == CMD_BLUETOOTH_CONNECT)
-            {
-                sodium_memzero(receiveData, header.dataLen);
-            }
-            if(processResult != 0)
-            {
-                break;
-            }
+        processResult = packetHandler->processData(connection, receiveData, header.length);
+        fflush(stdout);
+        if(header.cmd == REQ_LOGIN || header.cmd == REQ_BT_REGISTER || header.cmd == REQ_BT_CONNECT)
+        {
+            sodium_memzero(receiveData, header.length);
+        }
+        if(processResult != 0)
+        {
+            break;
         }
     }
 

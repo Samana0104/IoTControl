@@ -1,5 +1,6 @@
 #include "RClient.h"
 #include "IoTPacket.h"
+#include "IoTPacketCodec.h"
 
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -21,6 +22,7 @@
 
 #define TLS_HANDSHAKE_TIMEOUT_SECONDS 5
 #define BLUETOOTH_RESULT_TIMEOUT_SECONDS 90
+#define LOGIN_RESULT_TIMEOUT_SECONDS 10
 #define TLS_CLIENT_CONFIG_PATH_SIZE 4096
 #define TLS_CLIENT_CONFIG_LINE_SIZE (TLS_CLIENT_CONFIG_PATH_SIZE + 128)
 
@@ -34,9 +36,12 @@ static int ReadTlsClientConfigLine(FILE *file, char *line, size_t lineSize);
 static int LoadTlsClientConfig(const char *filePath, TlsClientConfig *config);
 static int ParsePort(const char *port);
 static int SetSocketTimeout(int socketFd, int timeoutSeconds);
-static int SendPacket(IotClient *client, uint8_t cmd, const void *data, size_t length);
+/* frame: Make*Packet() output, sent at once. */
+static int SendPacket(IotClient *client, const uint8_t *frame, size_t frameLength);
 static int SendAll(IotClient *client, const void *buffer, size_t length);
 static int ReceiveAll(IotClient *client, void *buffer, size_t length);
+/* Waits up to timeoutSeconds for the ACK of reqCmd. Returns 0 and the RESULT_* byte, or -1. */
+static int ReceiveAck(IotClient *client, uint16_t reqCmd, int timeoutSeconds, uint8_t *result);
 
 void InitializeClient(IotClient *client)
 {
@@ -317,7 +322,8 @@ cleanup:
 int AuthenticateClient(IotClient *client, const char *memberId, const char *password)
 {
     MemData memData;
-    uint8_t payload[MEM_DATA_SIZE];
+    uint8_t frame[HEADER_SIZE + MEM_DATA_SIZE];
+    uint8_t ackResult;
     size_t memberIdLength;
     size_t passwordLength;
     int result;
@@ -339,17 +345,26 @@ int AuthenticateClient(IotClient *client, const char *memberId, const char *pass
     memset(&memData, 0, sizeof(memData));
     memcpy(memData.id, memberId, memberIdLength);
     memcpy(memData.pw, password, passwordLength);
-    EncodeMemData(&memData, payload, sizeof(payload));
-    result = SendPacket(client, CMD_MEM_DATA, payload, sizeof(payload));
+    result = SendPacket(client, frame, MakeLoginPacket(frame, sizeof(frame), &memData));
     sodium_memzero(&memData, sizeof(memData));
-    sodium_memzero(payload, sizeof(payload));
-    return result;
+    sodium_memzero(frame, sizeof(frame));
+    if(result != 0 || ReceiveAck(client, REQ_LOGIN, LOGIN_RESULT_TIMEOUT_SECONDS, &ackResult) != 0)
+    {
+        return -1;
+    }
+    if(ackResult != RESULT_SUCCESS)
+    {
+        errno = EACCES;
+        return -1;
+    }
+    return 0;
 }
 
 int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const char *pin)
 {
     BluetoothRegisterData registerData;
-    uint8_t payload[BLUETOOTH_REGISTER_DATA_SIZE];
+    uint8_t frame[HEADER_SIZE + BLUETOOTH_REGISTER_DATA_SIZE];
+    uint8_t ackResult;
     size_t macLength;
     size_t pinLength;
     int result;
@@ -371,27 +386,30 @@ int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const c
     memset(&registerData, 0, sizeof(registerData));
     memcpy(registerData.mac, bluetoothMac, macLength);
     memcpy(registerData.pin, pin, pinLength);
-    EncodeBluetoothRegisterData(&registerData, payload, sizeof(payload));
-    result = SendPacket(client, CMD_BLUETOOTH_REGISTER, payload, sizeof(payload));
+    result = SendPacket(client, frame, MakeBluetoothRegisterPacket(frame, sizeof(frame), &registerData));
     sodium_memzero(&registerData, sizeof(registerData));
-    sodium_memzero(payload, sizeof(payload));
-    return result;
+    sodium_memzero(frame, sizeof(frame));
+    /* Pairing and the first RFCOMM connection run before the server answers. */
+    if(result != 0 || ReceiveAck(client, REQ_BT_REGISTER, BLUETOOTH_RESULT_TIMEOUT_SECONDS, &ackResult) != 0)
+    {
+        return -1;
+    }
+    if(ackResult != RESULT_SUCCESS)
+    {
+        errno = ECONNREFUSED;
+        return -1;
+    }
+    return 0;
 }
 
 int RequestBluetoothConnection(IotClient *client, const char *memberId, const char *password, const char *bluetoothMac)
 {
     BluetoothConnectData request = {0};
-    BluetoothConnectResult response;
-    uint8_t payload[BLUETOOTH_CONNECT_DATA_SIZE];
-    uint8_t responseHeader[HEADER_SIZE];
-    uint8_t responseData[BLUETOOTH_CONNECT_RESULT_SIZE];
-    struct timeval originalTimeout;
-    struct timeval resultTimeout = {.tv_sec = BLUETOOTH_RESULT_TIMEOUT_SECONDS};
-    socklen_t timeoutLength = sizeof(originalTimeout);
+    uint8_t frame[HEADER_SIZE + BLUETOOTH_CONNECT_DATA_SIZE];
+    uint8_t ackResult;
     size_t memberIdLength;
     size_t passwordLength;
-    int result = -1;
-    int requestError;
+    int result;
 
     if(client == NULL || client->fd < 0 || client->tls == NULL || memberId == NULL || password == NULL || bluetoothMac == NULL)
     {
@@ -405,89 +423,41 @@ int RequestBluetoothConnection(IotClient *client, const char *memberId, const ch
         errno = EINVAL;
         return -1;
     }
-    if(getsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &originalTimeout, &timeoutLength) != 0 || setsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &resultTimeout, sizeof(resultTimeout)) != 0)
-    {
-        return -1;
-    }
     memcpy(request.id, memberId, memberIdLength);
     memcpy(request.pw, password, passwordLength);
     memcpy(request.mac, bluetoothMac, sizeof(request.mac));
-    EncodeBluetoothConnectData(&request, payload, sizeof(payload));
-    result = SendPacket(client, CMD_BLUETOOTH_CONNECT, payload, sizeof(payload));
+    result = SendPacket(client, frame, MakeBluetoothConnectPacket(frame, sizeof(frame), &request));
     sodium_memzero(&request, sizeof(request));
-    sodium_memzero(payload, sizeof(payload));
-    if(result != 0)
-    {
-        goto cleanup;
-    }
-    result = -1;
-    do
-    {
-        if(ReceiveAll(client, responseHeader, sizeof(responseHeader)) != 0)
-        {
-            goto cleanup;
-        }
-    }
-    while(responseHeader[0] == HEADER_REQUEST_0 && responseHeader[1] == HEADER_REQUEST_1 && responseHeader[3] == RQ_FLAG_RETRY);
-
-    if(responseHeader[0] != HEADER_RESULT_0 || responseHeader[1] != HEADER_RESULT_1 || responseHeader[2] != CMD_BLUETOOTH_CONNECT || responseHeader[3] != BLUETOOTH_CONNECT_RESULT_SIZE)
-    {
-        errno = EPROTO;
-        goto cleanup;
-    }
-    if(ReceiveAll(client, responseData, sizeof(responseData)) != 0)
-    {
-        goto cleanup;
-    }
-    DecodeBluetoothConnectResult(responseData, sizeof(responseData), &response);
-    if(response.connected != BLUETOOTH_CONNECT_FAILED && response.connected != BLUETOOTH_CONNECT_SUCCEEDED)
-    {
-        errno = EPROTO;
-        goto cleanup;
-    }
-    result = response.connected;
-
-cleanup:
-    requestError = errno;
-    if(setsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &originalTimeout, sizeof(originalTimeout)) != 0 && result >= 0)
+    sodium_memzero(frame, sizeof(frame));
+    if(result != 0 || ReceiveAck(client, REQ_BT_CONNECT, BLUETOOTH_RESULT_TIMEOUT_SECONDS, &ackResult) != 0)
     {
         return -1;
     }
-    errno = requestError;
-    return result;
+    return ackResult == RESULT_SUCCESS ? 1 : 0;
 }
 
 int SendDhtData(IotClient *client, const DhtData *data)
 {
-    uint8_t payload[DHT_DATA_SIZE];
+    uint8_t frame[HEADER_SIZE + DHT_DATA_SIZE];
 
     if(client == NULL || client->fd < 0 || client->tls == NULL || data == NULL)
     {
         errno = EINVAL;
         return -1;
     }
-    EncodeDhtData(data, payload, sizeof(payload));
-    return SendPacket(client, CMD_DHT11_DATA, payload, sizeof(payload));
+    return SendPacket(client, frame, MakeDhtPacket(frame, sizeof(frame), data));
 }
 
 int SendChatMessage(IotClient *client, const char *message)
 {
-    size_t messageLength;
+    uint8_t frame[PACKET_FRAME_SIZE];
 
     if(client == NULL || client->fd < 0 || message == NULL)
     {
         errno = EINVAL;
         return -1;
     }
-
-    messageLength = strlen(message);
-    if(messageLength > MAX_MESSAGE_SIZE)
-    {
-        errno = EMSGSIZE;
-        return -1;
-    }
-
-    return SendPacket(client, CMD_CHAT_DATA, message, messageLength);
+    return SendPacket(client, frame, MakeChatPacket(frame, sizeof(frame), message, strlen(message)));
 }
 
 void DisconnectClient(IotClient *client)
@@ -536,51 +506,15 @@ static int SetSocketTimeout(int socketFd, int timeoutSeconds)
     return setsockopt(socketFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == 0 && setsockopt(socketFd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == 0 ? 0 : -1;
 }
 
-static int SendPacket(IotClient *client, uint8_t cmd, const void *data, size_t length)
+static int SendPacket(IotClient *client, const uint8_t *frame, size_t frameLength)
 {
-    uint8_t sendHeader[HEADER_SIZE];
-    uint8_t responseHeader[HEADER_SIZE];
-
-    if(length > MAX_MESSAGE_SIZE)
+    /* Make*Packet() returns 0 when the payload does not fit. */
+    if(frameLength < HEADER_SIZE)
     {
         errno = EMSGSIZE;
         return -1;
     }
-
-    EncodePacketHeader(sendHeader, HEADER_OK_0, HEADER_OK_1, cmd, (uint8_t)length);
-
-    if(SendAll(client, sendHeader, sizeof(sendHeader)) != 0)
-    {
-        return -1;
-    }
-
-    while(1)
-    {
-        if(ReceiveAll(client, responseHeader, sizeof(responseHeader)) != 0)
-        {
-            return -1;
-        }
-
-        if(responseHeader[0] != HEADER_REQUEST_0 || responseHeader[1] != HEADER_REQUEST_1 || (responseHeader[3] != RQ_FLAG_INITIAL && responseHeader[3] != RQ_FLAG_RETRY))
-        {
-            errno = EPROTO;
-            return -1;
-        }
-
-        /* Discard queued retries before checking the current command. */
-        if(responseHeader[3] == RQ_FLAG_RETRY)
-        {
-            continue;
-        }
-
-        if(responseHeader[2] != cmd)
-        {
-            errno = EPROTO;
-            return -1;
-        }
-
-        return SendAll(client, data, length);
-    }
+    return SendAll(client, frame, frameLength);
 }
 
 static int SendAll(IotClient *client, const void *buffer, size_t length)
@@ -613,6 +547,54 @@ static int SendAll(IotClient *client, const void *buffer, size_t length)
     }
 
     return 0;
+}
+
+static int ReceiveAck(IotClient *client, uint16_t reqCmd, int timeoutSeconds, uint8_t *result)
+{
+    uint8_t headerData[HEADER_SIZE];
+    uint8_t payload[RESULT_DATA_SIZE];
+    HeaderData header;
+    ResultData ackData;
+    struct timeval originalTimeout;
+    struct timeval ackTimeout = {.tv_sec = timeoutSeconds};
+    socklen_t timeoutLength = sizeof(originalTimeout);
+    int receiveResult = -1;
+    int receiveError;
+
+    if(getsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &originalTimeout, &timeoutLength) != 0 || setsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &ackTimeout, sizeof(ackTimeout)) != 0)
+    {
+        return -1;
+    }
+    if(ReceiveAll(client, headerData, sizeof(headerData)) != 0)
+    {
+        goto cleanup;
+    }
+    DecodePacketHeader(headerData, &header);
+    if(header.cmd != REQ_TO_ACK(reqCmd) || header.length != RESULT_DATA_SIZE)
+    {
+        errno = EPROTO;
+        goto cleanup;
+    }
+    if(ReceiveAll(client, payload, sizeof(payload)) != 0)
+    {
+        goto cleanup;
+    }
+    if(CheckPacketCrc(headerData, &header, payload) != 0 || ReadResultData(payload, sizeof(payload), &ackData) != 0 || (ackData.result != RESULT_SUCCESS && ackData.result != RESULT_FAIL))
+    {
+        errno = EPROTO;
+        goto cleanup;
+    }
+    *result = ackData.result;
+    receiveResult = 0;
+
+cleanup:
+    receiveError = errno;
+    if(setsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &originalTimeout, sizeof(originalTimeout)) != 0)
+    {
+        return -1;
+    }
+    errno = receiveError;
+    return receiveResult;
 }
 
 static int ReceiveAll(IotClient *client, void *buffer, size_t length)
