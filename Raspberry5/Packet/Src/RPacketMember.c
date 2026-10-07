@@ -15,8 +15,14 @@ int RPacketLoginReceive(RSession *session, const uint8_t *payload, size_t length
     size_t passwordLength;
     int verifyResult;
 
+    if(session == NULL || payload == NULL)
+    {
+        RLOG_ERROR("RPacketLoginReceive: NULL argument");
+        return -1;
+    }
     if(ReadMemData(payload, length, &memData) != 0)
     {
+        RLOG_WARN("[%s] Malformed login payload: length=%zu", session->label, length);
         return -1;
     }
     memberIdLength = strnlen(memData.id, MEM_ID_SIZE);
@@ -29,12 +35,12 @@ int RPacketLoginReceive(RSession *session, const uint8_t *payload, size_t length
     if(verifyResult != 1)
     {
         RSessionLogout(session);
-        RLOG_WARN("[%s] Member authentication failed", RSessionGetLabel(session));
+        RLOG_WARN("[%s] Member authentication failed", session->label);
         RPacketSendAck(session, REQ_LOGIN, 0);
         return -1;
     }
 
     RSessionLogin(session, memberId, memberIdLength);
-    RLOG_INFO("[%s] Member authenticated: id=%s", RSessionGetLabel(session), memberId);
+    RLOG_INFO("[%s] Member authenticated: id=%s", session->label, memberId);
     return RPacketSendAck(session, REQ_LOGIN, 1);
 }

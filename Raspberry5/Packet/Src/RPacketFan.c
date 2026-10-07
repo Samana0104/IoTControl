@@ -2,6 +2,7 @@
 #include "IoTPacketCodec.h"
 #include "RDatabase.h"
 #include "RLog.h"
+#include "RNetwork.h"
 
 #include <inttypes.h>
 
@@ -9,45 +10,49 @@
 
 int RPacketFanReceive(RSession *session, const uint8_t *payload, size_t length)
 {
-    const char *label = RSessionGetLabel(session);
     FanData data;
     uint64_t affectedRows;
 
-    if(ReadFanData(payload, length, &data) != 0)
+    if(session == NULL || payload == NULL)
     {
+        RLOG_ERROR("RPacketFanReceive: NULL argument");
         return -1;
     }
-    RLOG_INFO("[%s] FAN: fanSpeed=%u", label, (unsigned int)data.fanSpeed);
+    if(ReadFanData(payload, length, &data) != 0)
+    {
+        RLOG_WARN("[%s] Malformed FAN payload: length=%zu", session->label, length);
+        return -1;
+    }
+    RLOG_INFO("[%s] FAN: fanSpeed=%u", session->label, (unsigned int)data.fanSpeed);
     if(UpdateFanData(&data, &affectedRows) != 0)
     {
-        RLOG_WARN("[%s] FAN DB UPDATE failed: singleton_id=1", label);
+        RLOG_WARN("[%s] FAN DB UPDATE failed: singleton_id=1", session->label);
+        return 0;
     }
-    else
-    {
-        RLOG_INFO("[%s] FAN DB UPDATE: singleton_id=1, affected=%" PRIu64, label, affectedRows);
-    }
+    RLOG_INFO("[%s] FAN DB UPDATE: singleton_id=1, affected=%" PRIu64, session->label, affectedRows);
     return 0;
 }
 
 int RPacketFanReceiveAck(RSession *session, const uint8_t *payload, size_t length)
 {
-    const char *label = RSessionGetLabel(session);
-    int fd = RSessionGetFd(session);
-    char memberId[MEM_ID_SIZE + 1];
     ResultData result;
 
-    if(RSessionGetMemberId(session, memberId) != 0 || ReadResultData(payload, length, &result) != 0)
+    if(session == NULL || payload == NULL)
     {
+        RLOG_ERROR("RPacketFanReceiveAck: NULL argument");
         return -1;
     }
-    if(result.result == RESULT_SUCCESS)
+    if(ReadResultData(payload, length, &result) != 0)
     {
-        RLOG_INFO("[%s] FAN control applied: id=%s, fd=%d", label, memberId, fd);
+        RLOG_WARN("[%s] Malformed ACK_FAN payload: length=%zu", session->label, length);
+        return -1;
     }
-    else
+    if(result.result != RESULT_SUCCESS)
     {
-        RLOG_WARN("[%s] FAN control rejected by device: id=%s, fd=%d, result=%u", label, memberId, fd, (unsigned int)result.result);
+        RLOG_WARN("[%s] FAN control rejected by device: id=%s, fd=%d, result=%u", session->label, session->memberId, session->fd, (unsigned int)result.result);
+        return 0;
     }
+    RLOG_INFO("[%s] FAN control applied: id=%s, fd=%d", session->label, session->memberId, session->fd);
     return 0;
 }
 
@@ -55,24 +60,32 @@ int RPacketFanSetSpeed(int fd, uint8_t percent)
 {
     FanData data = {.fanSpeed = percent};
     uint8_t frame[HEADER_SIZE + FAN_DATA_SIZE];
+    size_t frameLength;
     int result;
 
     if(fd < 0 || percent > FAN_MAX_PERCENT)
     {
+        RLOG_ERROR("RPacketFanSetSpeed: invalid argument: fd=%d, percent=%u", fd, (unsigned int)percent);
         return -1;
     }
-    result = RSessionSend(fd, frame, MakeFanControlPacket(frame, sizeof(frame), &data));
-    if(result == 0)
+    frameLength = MakeFanControlPacket(frame, sizeof(frame), &data);
+    if(frameLength == 0)
     {
-        RLOG_INFO("FAN control sent: fd=%d, speed=%u%%", fd, (unsigned int)percent);
+        RLOG_ERROR("REQ_FAN frame build failed");
+        return -1;
     }
-    else if(result == 1)
+
+    result = RNetSend(fd, frame, frameLength);
+    if(result == 1)
     {
         RLOG_WARN("FAN control skipped: fd=%d has no connected session", fd);
+        return 1;
     }
-    else
+    if(result != 0)
     {
         RLOG_WARN("FAN control send failed: fd=%d", fd);
+        return -1;
     }
-    return result;
+    RLOG_INFO("FAN control sent: fd=%d, speed=%u%%", fd, (unsigned int)percent);
+    return 0;
 }

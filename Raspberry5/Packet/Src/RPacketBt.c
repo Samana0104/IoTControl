@@ -3,6 +3,7 @@
 #include "RBluetooth.h"
 #include "RDatabase.h"
 #include "RLog.h"
+#include "RNetwork.h"
 #include "RPacket.h"
 
 #include <errno.h>
@@ -12,25 +13,40 @@
 #include <strings.h>
 
 #define BLUETOOTH_PAIR_TIMEOUT_SECONDS 30
+#define BLUETOOTH_CONNECT_TIMEOUT_MS 5000
 
 // BlueZ 에이전트 경로가 하나뿐이므로 페어링은 한 번에 하나씩
 static pthread_mutex_t pairMutex = PTHREAD_MUTEX_INITIALIZER;
+// 회원/MAC 중복 확인과 연결을 한 번에 하나씩 (BT 세션을 만드는 유일한 경로)
+static pthread_mutex_t connectMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int RegisterDevice(RSession *session, const char *memberId, const BluetoothRegisterData *registerData);
 static int ConnectRegisteredDevice(const char *memberId, const char *requestedMac);
+static int ConnectDevice(const char *memberId, const char *mac);
+static int FindBtSessionConflict(const char *memberId, const char *mac, int *previousFd);
 
 int RPacketBtRegisterReceive(RSession *session, const uint8_t *payload, size_t length)
 {
     BluetoothRegisterData registerData;
-    char memberId[MEM_ID_SIZE + 1];
     int registered;
 
-    if(RSessionGetMemberId(session, memberId) != 0 || ReadBluetoothRegisterData(payload, length, &registerData) != 0)
+    if(session == NULL || payload == NULL)
     {
+        RLOG_ERROR("RPacketBtRegisterReceive: NULL argument");
+        return -1;
+    }
+    if(!session->authenticated)
+    {
+        RLOG_WARN("[%s] HC-05 registration from unauthenticated session", session->label);
+        return -1;
+    }
+    if(ReadBluetoothRegisterData(payload, length, &registerData) != 0)
+    {
+        RLOG_WARN("[%s] Malformed HC-05 registration payload: length=%zu", session->label, length);
         return -1;
     }
     pthread_mutex_lock(&pairMutex);
-    registered = RegisterDevice(session, memberId, &registerData) == 0;
+    registered = RegisterDevice(session, session->memberId, &registerData) == 0;
     pthread_mutex_unlock(&pairMutex);
     sodium_memzero(&registerData, sizeof(registerData));
 
@@ -51,8 +67,14 @@ int RPacketBtConnectReceive(RSession *session, const uint8_t *payload, size_t le
     int verifyResult;
     int connected = 0;
 
-    if(RSessionGetType(session) != SESSION_TCP || ReadBluetoothConnectData(payload, length, &request) != 0)
+    if(session == NULL || payload == NULL)
     {
+        RLOG_ERROR("RPacketBtConnectReceive: NULL argument");
+        return -1;
+    }
+    if(session->type != SESSION_TCP || ReadBluetoothConnectData(payload, length, &request) != 0)
+    {
+        RLOG_WARN("[%s] Malformed Bluetooth connect request: length=%zu", session->label, length);
         return -1;
     }
     memberIdLength = strnlen(request.id, sizeof(request.id));
@@ -68,13 +90,19 @@ int RPacketBtConnectReceive(RSession *session, const uint8_t *payload, size_t le
     {
         connected = 1;
     }
-    RLOG_INFO("[%s] Bluetooth request: id=%s, result=%s", RSessionGetLabel(session), verifyResult == 1 ? memberId : "-", connected ? "connected" : "failed");
+    RLOG_INFO("[%s] Bluetooth request: id=%s, result=%s", session->label, verifyResult == 1 ? memberId : "-", connected ? "connected" : "failed");
     // BT 세션은 서버 소유라 요청한 클라이언트가 끊겨도 유지됨
     return RPacketSendAck(session, REQ_BT_CONNECT, connected);
 }
 
 int RPacketBtConnectMember(const char *memberId)
 {
+    if(memberId == NULL)
+    {
+        RLOG_ERROR("RPacketBtConnectMember: NULL memberId");
+        errno = EINVAL;
+        return -1;
+    }
     return ConnectRegisteredDevice(memberId, NULL);
 }
 
@@ -93,7 +121,7 @@ static int RegisterDevice(RSession *session, const char *memberId, const Bluetoo
 
     if(macLength != BLUETOOTH_MAC_SIZE || pinLength == 0)
     {
-        RLOG_WARN("[%s] Invalid HC-05 registration data: id=%s", RSessionGetLabel(session), memberId);
+        RLOG_WARN("[%s] Invalid HC-05 registration data: id=%s", session->label, memberId);
         return -1;
     }
     memcpy(bluetoothMac, registerData->mac, macLength);
@@ -102,7 +130,7 @@ static int RegisterDevice(RSession *session, const char *memberId, const Bluetoo
     queryResult = GetMemberBluetoothDevice(memberId, strlen(memberId), &existingDevice);
     if(queryResult != 0)
     {
-        RLOG_WARN("[%s] HC-05 registration rejected: id=%s, reason=%s", RSessionGetLabel(session), memberId, queryResult > 0 ? "already registered" : "database error");
+        RLOG_WARN("[%s] HC-05 registration rejected: id=%s, reason=%s", session->label, memberId, queryResult > 0 ? "already registered" : "database error");
         return -1;
     }
 
@@ -113,21 +141,21 @@ static int RegisterDevice(RSession *session, const char *memberId, const Bluetoo
     sodium_memzero(pin, sizeof(pin));
     if(pairResult != 0)
     {
-        RLOG_WARN("[%s] HC-05 pairing failed: id=%s, mac=%s: %s", RSessionGetLabel(session), memberId, bluetoothMac, strerror(pairError));
+        RLOG_WARN("[%s] HC-05 pairing failed: id=%s, mac=%s: %s", session->label, memberId, bluetoothMac, strerror(pairError));
         return -1;
     }
 
     registerResult = RegisterMemberBluetoothDevice(memberId, strlen(memberId), bluetoothMac, macLength);
     if(registerResult != 1)
     {
-        RLOG_WARN("[%s] HC-05 database registration failed: id=%s, reason=%s", RSessionGetLabel(session), memberId, registerResult == 0 ? "already registered" : "database error");
+        RLOG_WARN("[%s] HC-05 database registration failed: id=%s, reason=%s", session->label, memberId, registerResult == 0 ? "already registered" : "database error");
         return -1;
     }
     if(RPacketBtConnectMember(memberId) != 0)
     {
         return -1;
     }
-    RLOG_INFO("[%s] HC-05 registered: id=%s, mac=%s", RSessionGetLabel(session), memberId, bluetoothMac);
+    RLOG_INFO("[%s] HC-05 registered: id=%s, mac=%s", session->label, memberId, bluetoothMac);
     return 0;
 }
 
@@ -163,5 +191,88 @@ static int ConnectRegisteredDevice(const char *memberId, const char *requestedMa
         errno = EACCES;
         return -1;
     }
-    return RSessionOpenBt(memberId, deviceRecord.mac) >= 0 ? 0 : -1;
+    return ConnectDevice(memberId, deviceRecord.mac);
+}
+
+// 같은 회원이 같은 MAC으로 연결돼 있으면 그대로 0, MAC이 바뀌었으면 이전 연결을 닫고 새로 연결
+static int ConnectDevice(const char *memberId, const char *mac)
+{
+    uint8_t rfcommChannel;
+    int previousFd;
+    int conflict;
+    int fd;
+
+    pthread_mutex_lock(&connectMutex);
+    conflict = FindBtSessionConflict(memberId, mac, &previousFd);
+    if(conflict != 0)
+    {
+        pthread_mutex_unlock(&connectMutex);
+        if(conflict > 0)
+        {
+            RLOG_INFO("Bluetooth already connected: id=%s, mac=%s, fd=%d", memberId, mac, previousFd);
+            return 0;
+        }
+        RLOG_WARN("Bluetooth MAC already connected to another member: id=%s, mac=%s", memberId, mac);
+        errno = EADDRINUSE;
+        return -1;
+    }
+    if(previousFd >= 0)
+    {
+        RNetClose(previousFd);
+    }
+
+    fd = ConnectBluetoothDevice(mac, BLUETOOTH_CONNECT_TIMEOUT_MS, &rfcommChannel);
+    if(fd < 0)
+    {
+        int connectError = errno;
+
+        pthread_mutex_unlock(&connectMutex);
+        RLOG_WARN("[BT] HC-05 connection failed: id=%s, mac=%s: %s", memberId, mac, strerror(connectError));
+        errno = connectError;
+        return -1;
+    }
+    if(RNetOpenBt(fd, memberId, mac) != 0)
+    {
+        int openError = errno;
+
+        pthread_mutex_unlock(&connectMutex);
+        RLOG_WARN("[BT] Session not available: id=%s: %s", memberId, strerror(openError));
+        errno = openError;
+        return -1;
+    }
+    pthread_mutex_unlock(&connectMutex);
+    RLOG_INFO("[BT] HC-05 connected: id=%s, mac=%s, fd=%d, channel=%u", memberId, mac, fd, (unsigned int)rfcommChannel);
+    return 0;
+}
+
+// 1: 같은 회원·같은 MAC이 이미 연결됨, -1: 다른 회원이 이 MAC 사용 중, 0: 연결해도 됨
+// *previousFd: 같은 회원의 연결 fd (1이면 그 연결, 0이면 교체할 이전 연결), 없으면 -1
+static int FindBtSessionConflict(const char *memberId, const char *mac, int *previousFd)
+{
+    RSessionSnapshot snapshots[MAX_SESSION];
+    size_t snapshotCount = RSessionGetSnapshots(snapshots);
+
+    *previousFd = -1;
+    for(size_t index = 0; index < snapshotCount; ++index)
+    {
+        const RSessionSnapshot *snapshot = &snapshots[index];
+
+        if(snapshot->type != SESSION_BLUETOOTH)
+        {
+            continue;
+        }
+        if(strcmp(snapshot->memberId, memberId) == 0)
+        {
+            *previousFd = snapshot->fd;
+            if(strcasecmp(snapshot->address, mac) == 0)
+            {
+                return 1;
+            }
+        }
+        else if(strcasecmp(snapshot->address, mac) == 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
 }

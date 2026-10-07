@@ -11,7 +11,7 @@ static void ExecuteDbStatement(TCPServer *server, const char *keyword, const cha
     char sql[DB_STATEMENT_SIZE];
     int length;
 
-    if(!IsServerDatabaseInitialized(server))
+    if(!server->databaseInitialized)
     {
         puts("Initialize the database first: server start [port]");
         return;

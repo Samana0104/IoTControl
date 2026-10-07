@@ -3,7 +3,7 @@
 #include "RCommand.h"
 #include "RDatabaseCommand.h"
 #include "RPacket.h"
-#include "RSession.h"
+#include "RNetwork.h"
 #include "RLog.h"
 
 #include <arpa/inet.h>
@@ -90,15 +90,9 @@ int InitServer(TCPServer *server, const char *ip, int port)
     strcpy(server->ip, ip);
     server->port = port;
 
-    if(RThreadPoolStart(&server->threadPool, SERVER_WORKER_COUNT) != 0)
+    if(RNetStart(RPacketProcess, SERVER_WORKER_COUNT) != 0)
     {
-        RLOG_ERROR("Thread pool start failed: %s", strerror(errno));
-        return -1;
-    }
-    server->threadPoolStarted = 1;
-    if(RSessionInit(RPacketProcess, &server->threadPool) != 0)
-    {
-        RLOG_ERROR("Session initialization failed");
+        RLOG_ERROR("Network start failed: %s", strerror(errno));
         return -1;
     }
 
@@ -276,8 +270,8 @@ int RunServer(TCPServer *server)
             close(clientSocket);
             continue;
         }
-        /* The session owns the socket and TLS from here, even on failure; its I/O thread runs the handshake. */
-        RSessionOpenTcp(clientSocket, tls, &clientAddress);
+        /* RNetwork owns the socket and TLS from here, even on failure; a worker runs the handshake. */
+        RNetOpenTcp(clientSocket, tls, &clientAddress);
     }
 
     return result;
@@ -291,13 +285,7 @@ void CloseServer(TCPServer *server)
         close(server->socket);
         server->socket = -1;
     }
-    /* Sessions first: their pending jobs still need the pool. */
-    RSessionCloseAll();
-    if(server->threadPoolStarted)
-    {
-        RThreadPoolStop(&server->threadPool);
-        server->threadPoolStarted = 0;
-    }
+    RNetStop();
     SSL_CTX_free(server->tlsContext);
     server->tlsContext = NULL;
     if(server->signalHandlersInstalled)
@@ -312,21 +300,6 @@ void CloseServer(TCPServer *server)
 void RequestServerStop(void)
 {
     serverStopRequested = 1;
-}
-
-int IsServerRunning(const TCPServer *server)
-{
-    return server->socket >= 0;
-}
-
-int GetServerPort(const TCPServer *server)
-{
-    return server->port;
-}
-
-int IsServerDatabaseInitialized(const TCPServer *server)
-{
-    return server->databaseInitialized;
 }
 
 static void HandleServerStopSignal(int signalNumber)
@@ -372,7 +345,7 @@ static void ReadServerConsole(ServerConsole *console, TCPServer *server)
         }
     }
     console->enabled = 0;
-    RLOG_INFO("%s", IsServerRunning(server) ? "Server CLI input closed; server continues running." : "Server CLI input closed before server start.");
+    RLOG_INFO("%s", server->socket >= 0 ? "Server CLI input closed; server continues running." : "Server CLI input closed before server start.");
 }
 
 static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, TCPServer *server)

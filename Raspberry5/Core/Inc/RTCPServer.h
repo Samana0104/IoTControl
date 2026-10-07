@@ -2,7 +2,6 @@
 
 #include "IoTPacket.h"
 #include "IoTProtocol.h"
-#include "RThreadPool.h"
 
 #include <netinet/in.h>
 #include <openssl/ssl.h>
@@ -19,9 +18,6 @@ typedef struct _TCPServer
     int socket;
     int databaseInitialized;
     SSL_CTX *tlsContext;
-    /* Runs packet handlers for every session. */
-    RThreadPool threadPool;
-    int threadPoolStarted;
 
     int signalHandlersInstalled;
     struct sigaction originalInterruptAction;
@@ -42,6 +38,3 @@ void RequestServerStop(void);
 
 /* Returns 1..65535, or -1 for an invalid port string. */
 int ParseServerPort(const char *port);
-int IsServerRunning(const TCPServer *server);
-int GetServerPort(const TCPServer *server);
-int IsServerDatabaseInitialized(const TCPServer *server);

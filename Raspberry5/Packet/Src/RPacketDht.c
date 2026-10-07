@@ -8,24 +8,31 @@
 
 int RPacketDhtReceive(RSession *session, const uint8_t *payload, size_t length)
 {
-    const char *label = RSessionGetLabel(session);
-    char memberId[MEM_ID_SIZE + 1];
     DhtData data;
     uint64_t affectedRows;
 
-    if(RSessionGetMemberId(session, memberId) != 0 || ReadDhtData(payload, length, &data) != 0)
+    if(session == NULL || payload == NULL)
     {
+        RLOG_ERROR("RPacketDhtReceive: NULL argument");
         return -1;
     }
-    RLOG_INFO("[%s] DHT: temp=%u, humi=%u", label, (unsigned int)data.temp, (unsigned int)data.humi);
+    if(!session->authenticated)
+    {
+        RLOG_WARN("[%s] DHT from unauthenticated session", session->label);
+        return -1;
+    }
+    if(ReadDhtData(payload, length, &data) != 0)
+    {
+        RLOG_WARN("[%s] Malformed DHT payload: length=%zu", session->label, length);
+        return -1;
+    }
+    RLOG_INFO("[%s] DHT: temp=%u, humi=%u", session->label, (unsigned int)data.temp, (unsigned int)data.humi);
     // DB 오류로 정상 연결을 끊지 않음
-    if(UpdateDhtData(memberId, strlen(memberId), &data, &affectedRows) != 0)
+    if(UpdateDhtData(session->memberId, strlen(session->memberId), &data, &affectedRows) != 0)
     {
-        RLOG_WARN("[%s] DHT DB UPDATE failed: id=%s", label, memberId);
+        RLOG_WARN("[%s] DHT DB UPDATE failed: id=%s", session->label, session->memberId);
+        return 0;
     }
-    else
-    {
-        RLOG_INFO("[%s] DHT DB UPDATE: id=%s, affected=%" PRIu64, label, memberId, affectedRows);
-    }
+    RLOG_INFO("[%s] DHT DB UPDATE: id=%s, affected=%" PRIu64, session->label, session->memberId, affectedRows);
     return 0;
 }

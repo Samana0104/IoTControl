@@ -23,7 +23,7 @@ static void FanSet(TCPServer *server, const char *args)
         puts("Usage: fan set <session fd> <0..100>");
         return;
     }
-    if(!IsServerRunning(server))
+    if(server->socket < 0)
     {
         puts("Start the server first: server start [port]");
         return;

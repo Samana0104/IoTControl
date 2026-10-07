@@ -16,7 +16,7 @@ static void BtList(TCPServer *server, const char *args)
     (void)args;
     flockfile(stdout);
     puts("Connected BT sessions (not a list of DB registrations):");
-    puts("FD  ID       MAC               LINK");
+    puts("FD  ID       MAC");
     for(size_t index = 0; index < snapshotCount; ++index)
     {
         const RSessionSnapshot *snapshot = &snapshots[index];
@@ -25,7 +25,7 @@ static void BtList(TCPServer *server, const char *args)
         {
             continue;
         }
-        printf("%-3d %-8s %-17s %s\n", snapshot->fd, snapshot->memberId, snapshot->address, snapshot->connected ? "open" : "pending");
+        printf("%-3d %-8s %s\n", snapshot->fd, snapshot->memberId, snapshot->address);
         ++rowCount;
     }
     if(rowCount == 0)
@@ -45,7 +45,7 @@ static void BtConnect(TCPServer *server, const char *args)
     {
         puts("Usage: bt connect <member ID> (1..8 bytes; registered in DB)");
     }
-    else if(!IsServerRunning(server))
+    else if(server->socket < 0)
     {
         puts("Start the server first: server start [port]");
     }

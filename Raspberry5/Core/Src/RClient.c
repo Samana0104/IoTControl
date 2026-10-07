@@ -323,6 +323,7 @@ int AuthenticateClient(IotClient *client, const char *memberId, const char *pass
 {
     MemData memData;
     uint8_t frame[HEADER_SIZE + MEM_DATA_SIZE];
+    size_t frameLength;
     uint8_t ackResult;
     size_t memberIdLength;
     size_t passwordLength;
@@ -345,8 +346,15 @@ int AuthenticateClient(IotClient *client, const char *memberId, const char *pass
     memset(&memData, 0, sizeof(memData));
     memcpy(memData.id, memberId, memberIdLength);
     memcpy(memData.pw, password, passwordLength);
-    result = SendPacket(client, frame, MakeLoginPacket(frame, sizeof(frame), &memData));
+    frameLength = MakeLoginPacket(frame, sizeof(frame), &memData);
     sodium_memzero(&memData, sizeof(memData));
+    if(frameLength == 0)
+    {
+        sodium_memzero(frame, sizeof(frame));
+        errno = EMSGSIZE;
+        return -1;
+    }
+    result = SendPacket(client, frame, frameLength);
     sodium_memzero(frame, sizeof(frame));
     if(result != 0 || ReceiveAck(client, REQ_LOGIN, LOGIN_RESULT_TIMEOUT_SECONDS, &ackResult) != 0)
     {
@@ -364,6 +372,7 @@ int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const c
 {
     BluetoothRegisterData registerData;
     uint8_t frame[HEADER_SIZE + BLUETOOTH_REGISTER_DATA_SIZE];
+    size_t frameLength;
     uint8_t ackResult;
     size_t macLength;
     size_t pinLength;
@@ -386,8 +395,15 @@ int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const c
     memset(&registerData, 0, sizeof(registerData));
     memcpy(registerData.mac, bluetoothMac, macLength);
     memcpy(registerData.pin, pin, pinLength);
-    result = SendPacket(client, frame, MakeBluetoothRegisterPacket(frame, sizeof(frame), &registerData));
+    frameLength = MakeBluetoothRegisterPacket(frame, sizeof(frame), &registerData);
     sodium_memzero(&registerData, sizeof(registerData));
+    if(frameLength == 0)
+    {
+        sodium_memzero(frame, sizeof(frame));
+        errno = EMSGSIZE;
+        return -1;
+    }
+    result = SendPacket(client, frame, frameLength);
     sodium_memzero(frame, sizeof(frame));
     /* Pairing and the first RFCOMM connection run before the server answers. */
     if(result != 0 || ReceiveAck(client, REQ_BT_REGISTER, BLUETOOTH_RESULT_TIMEOUT_SECONDS, &ackResult) != 0)
@@ -406,6 +422,7 @@ int RequestBluetoothConnection(IotClient *client, const char *memberId, const ch
 {
     BluetoothConnectData request = {0};
     uint8_t frame[HEADER_SIZE + BLUETOOTH_CONNECT_DATA_SIZE];
+    size_t frameLength;
     uint8_t ackResult;
     size_t memberIdLength;
     size_t passwordLength;
@@ -426,8 +443,15 @@ int RequestBluetoothConnection(IotClient *client, const char *memberId, const ch
     memcpy(request.id, memberId, memberIdLength);
     memcpy(request.pw, password, passwordLength);
     memcpy(request.mac, bluetoothMac, sizeof(request.mac));
-    result = SendPacket(client, frame, MakeBluetoothConnectPacket(frame, sizeof(frame), &request));
+    frameLength = MakeBluetoothConnectPacket(frame, sizeof(frame), &request);
     sodium_memzero(&request, sizeof(request));
+    if(frameLength == 0)
+    {
+        sodium_memzero(frame, sizeof(frame));
+        errno = EMSGSIZE;
+        return -1;
+    }
+    result = SendPacket(client, frame, frameLength);
     sodium_memzero(frame, sizeof(frame));
     if(result != 0 || ReceiveAck(client, REQ_BT_CONNECT, BLUETOOTH_RESULT_TIMEOUT_SECONDS, &ackResult) != 0)
     {
@@ -439,25 +463,39 @@ int RequestBluetoothConnection(IotClient *client, const char *memberId, const ch
 int SendDhtData(IotClient *client, const DhtData *data)
 {
     uint8_t frame[HEADER_SIZE + DHT_DATA_SIZE];
+    size_t frameLength;
 
     if(client == NULL || client->fd < 0 || client->tls == NULL || data == NULL)
     {
         errno = EINVAL;
         return -1;
     }
-    return SendPacket(client, frame, MakeDhtPacket(frame, sizeof(frame), data));
+    frameLength = MakeDhtPacket(frame, sizeof(frame), data);
+    if(frameLength == 0)
+    {
+        errno = EMSGSIZE;
+        return -1;
+    }
+    return SendPacket(client, frame, frameLength);
 }
 
 int SendChatMessage(IotClient *client, const char *message)
 {
     uint8_t frame[PACKET_FRAME_SIZE];
+    size_t frameLength;
 
     if(client == NULL || client->fd < 0 || message == NULL)
     {
         errno = EINVAL;
         return -1;
     }
-    return SendPacket(client, frame, MakeChatPacket(frame, sizeof(frame), message, strlen(message)));
+    frameLength = MakeChatPacket(frame, sizeof(frame), message, strlen(message));
+    if(frameLength == 0)
+    {
+        errno = EMSGSIZE;
+        return -1;
+    }
+    return SendPacket(client, frame, frameLength);
 }
 
 void DisconnectClient(IotClient *client)
