@@ -38,21 +38,30 @@ function(iotcontrol_configure_target target)
     endif()
 endfunction()
 
-add_executable(iot_server
-    "${CMAKE_CURRENT_SOURCE_DIR}/RMain.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/RBluetooth.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/RDatabase.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/RDatabaseCommand.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/RSocket.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Command/Src/RCommand.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Command/Src/RCmdServer.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Command/Src/RCmdBt.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Command/Src/RCmdDb.c"
+# 4개 환경(Raspberry5 / STM32 / Arduino / PC) 공용 패킷 코드
+file(GLOB IOT_COMMON_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../common/*.c")
+add_library(IoTCommon STATIC ${IOT_COMMON_SOURCES})
+iotcontrol_configure_target(IoTCommon)
+target_include_directories(IoTCommon PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../common")
+
+# 새 .c 파일은 다음 빌드 때 자동으로 포함된다 (CONFIGURE_DEPENDS)
+file(GLOB IOT_SERVER_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Command/Src/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Controller/Src/*.c"
 )
-iotcontrol_configure_target(iot_server)
-target_include_directories(iot_server PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Command/Inc")
-target_compile_definitions(iot_server PRIVATE IOT_BT_PAIR_AGENT_DEFAULT="${CMAKE_CURRENT_BINARY_DIR}/bluetooth_pair_agent.py")
-target_link_libraries(iot_server PRIVATE Threads::Threads OpenSSL::SSL PkgConfig::MARIADB PkgConfig::SODIUM PkgConfig::BLUEZ)
+# RClient.c는 iot_client 전용
+list(REMOVE_ITEM IOT_SERVER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/RClient.c")
+
+add_executable(IotServer "${CMAKE_CURRENT_SOURCE_DIR}/Main.c" ${IOT_SERVER_SOURCES})
+
+iotcontrol_configure_target(IotServer)
+target_include_directories(IotServer PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/Command/Inc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Controller/Inc"
+)
+target_compile_definitions(IotServer PRIVATE IOT_BT_PAIR_AGENT_DEFAULT="${CMAKE_CURRENT_BINARY_DIR}/bluetooth_pair_agent.py")
+target_link_libraries(IotServer PRIVATE IoTCommon Threads::Threads OpenSSL::SSL PkgConfig::MARIADB PkgConfig::SODIUM PkgConfig::BLUEZ)
 
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/bluetooth_pair_agent.py"
@@ -65,7 +74,7 @@ add_executable(iot_client
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/RClient.c"
 )
 iotcontrol_configure_target(iot_client)
-target_link_libraries(iot_client PRIVATE OpenSSL::SSL PkgConfig::SODIUM)
+target_link_libraries(iot_client PRIVATE IoTCommon OpenSSL::SSL PkgConfig::SODIUM)
 
 add_executable(iot_bt_client
     "${CMAKE_CURRENT_SOURCE_DIR}/iot_bt_client.c"
