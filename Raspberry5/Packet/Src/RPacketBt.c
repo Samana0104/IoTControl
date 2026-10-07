@@ -2,6 +2,7 @@
 #include "IoTPacketCodec.h"
 #include "RBluetooth.h"
 #include "RDatabase.h"
+#include "RDatabaseQuery.h"
 #include "RLog.h"
 #include "RNetwork.h"
 #include "RPacket.h"
@@ -109,15 +110,17 @@ int RPacketBtConnectMember(const char *memberId)
 // pairMutex를 잡은 상태에서 호출. 0: 등록 및 연결 완료, -1: 실패 (로그 남김)
 static int RegisterDevice(RSession *session, const char *memberId, const BluetoothRegisterData *registerData)
 {
-    BluetoothDeviceRecord existingDevice;
+    DatabaseValue idParam[1] = {DATABASE_TEXT(memberId)};
+    DatabaseValue registerParams[2];
+    char existingMac[BLUETOOTH_MAC_TEXT_SIZE];
     char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
     char pin[BLUETOOTH_PIN_SIZE + 1];
+    uint64_t insertedRows;
     size_t macLength = strnlen(registerData->mac, BLUETOOTH_MAC_SIZE);
     size_t pinLength = strnlen(registerData->pin, BLUETOOTH_PIN_SIZE);
     int queryResult;
     int pairResult;
     int pairError;
-    int registerResult;
 
     if(macLength != BLUETOOTH_MAC_SIZE || pinLength == 0)
     {
@@ -127,7 +130,7 @@ static int RegisterDevice(RSession *session, const char *memberId, const Bluetoo
     memcpy(bluetoothMac, registerData->mac, macLength);
     bluetoothMac[macLength] = '\0';
 
-    queryResult = GetMemberBluetoothDevice(memberId, strlen(memberId), &existingDevice);
+    queryResult = QueryDatabaseValue(QUERY_SELECT_BLUETOOTH_MAC, idParam, 1, existingMac, sizeof(existingMac));
     if(queryResult != 0)
     {
         RLOG_WARN("[%s] HC-05 registration rejected: id=%s, reason=%s", session->label, memberId, queryResult > 0 ? "already registered" : "database error");
@@ -145,10 +148,11 @@ static int RegisterDevice(RSession *session, const char *memberId, const Bluetoo
         return -1;
     }
 
-    registerResult = RegisterMemberBluetoothDevice(memberId, strlen(memberId), bluetoothMac, macLength);
-    if(registerResult != 1)
+    registerParams[0] = DATABASE_TEXT(memberId);
+    registerParams[1] = DATABASE_TEXT(bluetoothMac);
+    if(ExecuteDatabaseQuery(QUERY_INSERT_BLUETOOTH, registerParams, 2, NULL, NULL, &insertedRows) != 0 || insertedRows != 1)
     {
-        RLOG_WARN("[%s] HC-05 database registration failed: id=%s, reason=%s", session->label, memberId, registerResult == 0 ? "already registered" : "database error");
+        RLOG_WARN("[%s] HC-05 database registration failed: id=%s", session->label, memberId);
         return -1;
     }
     if(RPacketBtConnectMember(memberId) != 0)
@@ -163,7 +167,8 @@ static int RegisterDevice(RSession *session, const char *memberId, const Bluetoo
 // requestedMac != NULL이면 DB의 ID-MAC 바인딩과 같아야 함. 0: 연결됨, 1: 미등록, -1: 실패
 static int ConnectRegisteredDevice(const char *memberId, const char *requestedMac)
 {
-    BluetoothDeviceRecord deviceRecord;
+    DatabaseValue idParam[1];
+    char registeredMac[BLUETOOTH_MAC_TEXT_SIZE];
     size_t memberIdLength;
     int queryResult;
 
@@ -173,7 +178,8 @@ static int ConnectRegisteredDevice(const char *memberId, const char *requestedMa
         return -1;
     }
 
-    queryResult = GetMemberBluetoothDevice(memberId, memberIdLength, &deviceRecord);
+    idParam[0] = DATABASE_TEXT(memberId);
+    queryResult = QueryDatabaseValue(QUERY_SELECT_BLUETOOTH_MAC, idParam, 1, registeredMac, sizeof(registeredMac));
     if(queryResult == 0)
     {
         RLOG_INFO("[BT] HC-05 registration required: id=%s", memberId);
@@ -185,13 +191,13 @@ static int ConnectRegisteredDevice(const char *memberId, const char *requestedMa
         errno = EIO;
         return -1;
     }
-    if(requestedMac != NULL && strcasecmp(requestedMac, deviceRecord.mac) != 0)
+    if(requestedMac != NULL && strcasecmp(requestedMac, registeredMac) != 0)
     {
         RLOG_WARN("[BT] ID/MAC binding mismatch: id=%s", memberId);
         errno = EACCES;
         return -1;
     }
-    return ConnectDevice(memberId, deviceRecord.mac);
+    return ConnectDevice(memberId, registeredMac);
 }
 
 // 같은 회원이 같은 MAC으로 연결돼 있으면 그대로 0, MAC이 바뀌었으면 이전 연결을 닫고 새로 연결

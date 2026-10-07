@@ -2,7 +2,30 @@
 #include "RSession.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+// 1..65535, 숫자가 아니거나 범위를 벗어나면 -1
+static int ParsePort(const char *port)
+{
+    char *endPointer;
+    long parsedPort;
+
+    if(port == NULL || *port == '\0')
+    {
+        return -1;
+    }
+
+    errno = 0;
+    parsedPort = strtol(port, &endPointer, 10);
+    if(errno != 0 || *endPointer != '\0' || parsedPort < 1 || parsedPort > 65535)
+    {
+        return -1;
+    }
+
+    return (int)parsedPort;
+}
 
 // DB/TLS 초기화 후 listen 시작, 포트를 생략하면 main에서 설정한 포트 사용
 static void ServerStart(TCPServer *server, const char *args)
@@ -14,7 +37,7 @@ static void ServerStart(TCPServer *server, const char *args)
     }
     if(*args != '\0')
     {
-        int port = ParseServerPort(args);
+        int port = ParsePort(args);
 
         if(!isdigit((unsigned char)*args) || port < 0)
         {

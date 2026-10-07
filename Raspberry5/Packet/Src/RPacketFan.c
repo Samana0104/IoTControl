@@ -1,6 +1,6 @@
 #include "RPacketFan.h"
 #include "IoTPacketCodec.h"
-#include "RDatabase.h"
+#include "RDatabaseQuery.h"
 #include "RLog.h"
 #include "RNetwork.h"
 
@@ -10,6 +10,7 @@
 
 int RPacketFanReceive(RSession *session, const uint8_t *payload, size_t length)
 {
+    DatabaseValue params[1];
     FanData data;
     uint64_t affectedRows;
 
@@ -24,7 +25,8 @@ int RPacketFanReceive(RSession *session, const uint8_t *payload, size_t length)
         return -1;
     }
     RLOG_INFO("[%s] FAN: fanSpeed=%u", session->label, (unsigned int)data.fanSpeed);
-    if(UpdateFanData(&data, &affectedRows) != 0)
+    params[0] = DATABASE_NUMBER(data.fanSpeed);
+    if(ExecuteDatabaseQuery(QUERY_UPDATE_FAN, params, 1, NULL, NULL, &affectedRows) != 0)
     {
         RLOG_WARN("[%s] FAN DB UPDATE failed: singleton_id=1", session->label);
         return 0;

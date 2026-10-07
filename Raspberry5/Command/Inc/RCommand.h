@@ -4,6 +4,9 @@
 
 #include <stddef.h>
 
+// 콘솔 한 줄 최대 길이
+#define RCOMMAND_MAX_LINE_SIZE 256
+
 /* args: text after the command name with leading whitespace removed. */
 typedef void (*RCommandHandler)(TCPServer *server, const char *args);
 

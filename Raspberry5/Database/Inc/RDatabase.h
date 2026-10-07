@@ -1,28 +1,20 @@
 #pragma once
 
 #include <stddef.h>
-#include <stdint.h>
 
-#include "RBluetooth.h"
 #include "IoTPacket.h"
-
-typedef struct _BluetoothDeviceRecord
-{
-    char mac[BLUETOOTH_MAC_TEXT_SIZE];
-} BluetoothDeviceRecord;
 
 typedef struct st_mysql MYSQL;
 
+/* Connects once with RConfigGet()->database (load Config/DBConfig.json first) to check it.
+   Must succeed before any query. */
 int InitializeDatabase(void);
-/* InitializeDatabase() must succeed first. Each opened connection must be closed
-   on the same thread; these functions manage MariaDB thread initialization. */
-MYSQL *OpenDatabaseConnection(void);
-void CloseDatabaseConnection(MYSQL *connection);
-/* UPDATE only; rows must already exist. Returns 0 on success, -1 on error.
-   affectedRows == 0 means either unchanged values or no matching row. */
-int UpdateDhtData(const char *memberId, size_t memberIdLength, const DhtData *data, uint64_t *affectedRows);
-int UpdateFanData(const FanData *data, uint64_t *affectedRows);
-int UpdateConData(const ConData *data, uint64_t *affectedRows);
+/* This thread's MySQL connection: opened on first use and reused (autocommit on).
+   Closed automatically when the thread exits. NULL on connection failure. Queries: RDatabaseQuery.h */
+MYSQL *GetDatabaseConnection(void);
+/* Closes this thread's connection (lost connection, or before the main thread exits).
+   The next GetDatabaseConnection() reconnects. */
+void ResetDatabaseConnection(void);
+/* 1: password matches, 0: wrong ID or password, -1: DB error.
+   An unknown ID takes as long as a wrong password (dummy hash check). */
 int VerifyMember(const char *memberId, size_t memberIdLength, const char *password, size_t passwordLength);
-int GetMemberBluetoothDevice(const char *memberId, size_t memberIdLength, BluetoothDeviceRecord *deviceRecord);
-int RegisterMemberBluetoothDevice(const char *memberId, size_t memberIdLength, const char *bluetoothMac, size_t bluetoothMacLength);

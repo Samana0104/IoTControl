@@ -1,12 +1,13 @@
 #include "RPacketCon.h"
 #include "IoTPacketCodec.h"
-#include "RDatabase.h"
+#include "RDatabaseQuery.h"
 #include "RLog.h"
 
 #include <inttypes.h>
 
 int RPacketConReceive(RSession *session, const uint8_t *payload, size_t length)
 {
+    DatabaseValue params[1];
     ConData data;
     uint64_t affectedRows;
 
@@ -21,7 +22,8 @@ int RPacketConReceive(RSession *session, const uint8_t *payload, size_t length)
         return -1;
     }
     RLOG_INFO("[%s] CON: tempData=%u", session->label, (unsigned int)data.tempData);
-    if(UpdateConData(&data, &affectedRows) != 0)
+    params[0] = DATABASE_NUMBER(data.tempData);
+    if(ExecuteDatabaseQuery(QUERY_UPDATE_CON, params, 1, NULL, NULL, &affectedRows) != 0)
     {
         RLOG_WARN("[%s] CON DB UPDATE failed: singleton_id=1", session->label);
         return 0;
