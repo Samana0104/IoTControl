@@ -1,6 +1,15 @@
 /build/
 /.vscode/
 
+# Local TLS certificates and keys
+/cert/
+
+# Local tests and test artifacts
+/tests/
+
+# Local database scripts
+/database/
+
 # Compiled objects
 *.o
 
