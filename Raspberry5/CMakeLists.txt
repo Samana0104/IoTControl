@@ -12,6 +12,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(MARIADB REQUIRED IMPORTED_TARGET libmariadb)
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 pkg_check_modules(BLUEZ REQUIRED IMPORTED_TARGET bluez)
+# HC-05 PIN 페어링 에이전트 (BlueZ D-Bus)
+pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -24,6 +26,7 @@ function(iotcontrol_configure_target target)
     # 헤더 탐색 경로 등록
     target_include_directories(${target} PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Driver/Inc"
         "${CMAKE_CURRENT_SOURCE_DIR}/Utils/Inc"
         "${CMAKE_CURRENT_SOURCE_DIR}/../common"
     )
@@ -48,8 +51,10 @@ target_include_directories(IoTCommon PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../comm
 # 새 .c 파일은 다음 빌드 때 자동으로 포함된다 (CONFIGURE_DEPENDS)
 file(GLOB IOT_SERVER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Driver/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Command/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Controller/Src/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Session/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Utils/Src/*.c"
 )
 # RClient.c는 iot_client 전용
@@ -61,15 +66,9 @@ iotcontrol_configure_target(IotServer)
 target_include_directories(IotServer PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Command/Inc"
     "${CMAKE_CURRENT_SOURCE_DIR}/Controller/Inc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Session/Inc"
 )
-target_compile_definitions(IotServer PRIVATE IOT_BT_PAIR_AGENT_DEFAULT="${CMAKE_CURRENT_BINARY_DIR}/bluetooth_pair_agent.py")
-target_link_libraries(IotServer PRIVATE IoTCommon Threads::Threads OpenSSL::SSL PkgConfig::MARIADB PkgConfig::SODIUM PkgConfig::BLUEZ)
-
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/bluetooth_pair_agent.py"
-    "${CMAKE_CURRENT_BINARY_DIR}/bluetooth_pair_agent.py"
-    COPYONLY
-)
+target_link_libraries(IotServer PRIVATE IoTCommon Threads::Threads OpenSSL::SSL PkgConfig::MARIADB PkgConfig::SODIUM PkgConfig::BLUEZ PkgConfig::SYSTEMD)
 
 add_executable(iot_client
     "${CMAKE_CURRENT_SOURCE_DIR}/iot_client.c"
@@ -80,10 +79,10 @@ target_link_libraries(iot_client PRIVATE IoTCommon OpenSSL::SSL PkgConfig::SODIU
 
 add_executable(iot_bt_client
     "${CMAKE_CURRENT_SOURCE_DIR}/iot_bt_client.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/RBluetooth.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Driver/Src/RBluetooth.c"
 )
 iotcontrol_configure_target(iot_bt_client)
-target_link_libraries(iot_bt_client PRIVATE PkgConfig::BLUEZ)
+target_link_libraries(iot_bt_client PRIVATE PkgConfig::BLUEZ PkgConfig::SYSTEMD)
 
 add_executable(iot_password_hash
     "${CMAKE_CURRENT_SOURCE_DIR}/password_hash.c"
