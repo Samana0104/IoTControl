@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <openssl/err.h>
 #include <pthread.h>
 #include <string.h>
 #include <sys/epoll.h>
@@ -168,25 +169,48 @@ void RNetStop(void)
     epollFd = -1;
 }
 
-int RNetOpenTcp(int fd, SSL *tls, const struct sockaddr_in *address)
+int RNetOpenTcp(int fd, SSL_CTX *tlsContext, const struct sockaddr_in *address)
 {
-    RNetConnection *connection = NULL;
+    RNetConnection *connection;
+    SSL *tls;
 
-    if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0)
+    if(fd < 0 || tlsContext == NULL || address == NULL)
     {
-        // 송신 버퍼 앞부분만 보내고 뒤에 이어 붙이므로 부분 쓰기와 버퍼 이동을 허용
-        SSL_set_mode(tls, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-        pthread_mutex_lock(&tableMutex);
-        connection = ClaimConnection(SESSION_TCP, fd);
-        if(connection != NULL)
+        RLOG_ERROR("RNetOpenTcp: invalid argument: fd=%d", fd);
+        if(fd >= 0)
         {
-            connection->link.tls = tls;
-            inet_ntop(AF_INET, &address->sin_addr, connection->address, sizeof(connection->address));
-            connection->state = NET_STATE_HANDSHAKE;
-            connection->deadlineMs = GetMonotonicMs() + TLS_HANDSHAKE_TIMEOUT_MS;
+            close(fd);
         }
-        pthread_mutex_unlock(&tableMutex);
+        return -1;
     }
+    if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) != 0)
+    {
+        RLOG_ERROR("fcntl(O_NONBLOCK): fd=%d: %s", fd, strerror(errno));
+        close(fd);
+        return -1;
+    }
+    tls = SSL_new(tlsContext);
+    if(tls == NULL || SSL_set_fd(tls, fd) != 1)
+    {
+        RLOG_ERROR("SSL_new/SSL_set_fd failed: fd=%d", fd);
+        ERR_clear_error();
+        SSL_free(tls);
+        close(fd);
+        return -1;
+    }
+    // 송신 버퍼 앞부분만 보내고 뒤에 이어 붙이므로 부분 쓰기와 버퍼 이동을 허용
+    SSL_set_mode(tls, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+
+    pthread_mutex_lock(&tableMutex);
+    connection = ClaimConnection(SESSION_TCP, fd);
+    if(connection != NULL)
+    {
+        connection->link.tls = tls;
+        inet_ntop(AF_INET, &address->sin_addr, connection->address, sizeof(connection->address));
+        connection->state = NET_STATE_HANDSHAKE;
+        connection->deadlineMs = GetMonotonicMs() + TLS_HANDSHAKE_TIMEOUT_MS;
+    }
+    pthread_mutex_unlock(&tableMutex);
     if(connection == NULL)
     {
         RLOG_WARN("TCP client rejected: connection limit reached or server stopping");
@@ -325,13 +349,14 @@ static RNetConnection *ClaimConnection(RSessionType type, int fd)
         {
             continue;
         }
+        memset(connection->address, 0, sizeof(connection->address));
+
         connection->inUse = 1;
         connection->generation++;
         connection->link.type = type;
         connection->link.fd = fd;
         connection->link.tls = NULL;
         connection->session = NULL;
-        memset(connection->address, 0, sizeof(connection->address));
         connection->state = NET_STATE_OPEN;
         connection->owned = 0;
         connection->closeRequested = 0;

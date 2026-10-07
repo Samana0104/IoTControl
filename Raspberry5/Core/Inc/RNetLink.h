@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RConfig.h"
 #include "RSession.h"
 
 #include <openssl/ssl.h>
@@ -12,6 +13,9 @@ typedef struct _RNetLink
     int fd;
     SSL *tls; // SESSION_TCP 전용
 } RNetLink;
+
+// 인증서/개인 키 경로(Config/TLSConfig.json)로 서버용 TLS 컨텍스트 생성 (TLS 1.2 이상). 실패하면 NULL (로그 남김)
+SSL_CTX *RNetLinkCreateTlsContext(const RTlsConfig *tls);
 
 // TLS 핸드셰이크 진행. 1: 완료, 0: 더 기다림, -1: 실패
 // *wantWrite: 1이면 쓰기 가능을 기다려야 함 (아니면 읽기 가능)

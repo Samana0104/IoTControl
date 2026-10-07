@@ -36,5 +36,3 @@ void CloseServer(TCPServer *server);
 /* Same as SIGINT/SIGTERM: the server loop stops and cleans up workers. */
 void RequestServerStop(void);
 
-/* Returns 1..65535, or -1 for an invalid port string. */
-int ParseServerPort(const char *port);

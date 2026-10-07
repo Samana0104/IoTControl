@@ -18,9 +18,9 @@ int RNetStart(RNetFrameHandler handler, int workerCount);
 // 모든 연결을 닫고 워커 종료까지 대기 (처리 중인 handler는 끝날 때까지 기다림)
 void RNetStop(void);
 
-// accept한 소켓과 SSL_set_fd까지 마친 tls를 등록. 핸드셰이크는 워커가 진행하고, 끝나면 세션이 추가됨.
-// 성공/실패 모두 fd와 tls의 소유권을 가져감. 0: 등록됨, -1: 실패
-int RNetOpenTcp(int fd, SSL *tls, const struct sockaddr_in *address);
+// accept한 소켓을 tlsContext로 TLS 연결로 등록. 핸드셰이크는 워커가 진행하고, 끝나면 세션이 추가됨.
+// 성공/실패 모두 fd의 소유권을 가져감. 0: 등록됨, -1: 실패
+int RNetOpenTcp(int fd, SSL_CTX *tlsContext, const struct sockaddr_in *address);
 // 이미 연결된 HC-05 RFCOMM fd를 회원 세션으로 등록. 실패해도 fd는 닫힘.
 // 0: 등록됨, -1: 실패 (errno: ENOSPC 가득 참, ECANCELED 종료 중)
 int RNetOpenBt(int fd, const char *memberId, const char *mac);

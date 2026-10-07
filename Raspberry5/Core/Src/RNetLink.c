@@ -1,12 +1,41 @@
 #include "RNetLink.h"
+#include "RLog.h"
 
 #include <errno.h>
 #include <openssl/err.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 static int ReadTls(RNetLink *link, void *buffer, size_t size, int *wantWrite);
 static int WriteTls(RNetLink *link, const void *buffer, size_t length);
+
+SSL_CTX *RNetLinkCreateTlsContext(const RTlsConfig *tls)
+{
+    SSL_CTX *tlsContext;
+
+    if(tls == NULL)
+    {
+        RLOG_ERROR("RNetLinkCreateTlsContext: NULL config");
+        return NULL;
+    }
+    tlsContext = SSL_CTX_new(TLS_server_method());
+    if(tlsContext == NULL)
+    {
+        RLOG_ERROR("SSL_CTX_new failed");
+        ERR_clear_error();
+        return NULL;
+    }
+    if(SSL_CTX_set_min_proto_version(tlsContext, TLS1_2_VERSION) != 1 || SSL_CTX_use_certificate_chain_file(tlsContext, tls->certificateFile) != 1 || SSL_CTX_use_PrivateKey_file(tlsContext, tls->privateKeyFile, SSL_FILETYPE_PEM) != 1 || SSL_CTX_check_private_key(tlsContext) != 1)
+    {
+        RLOG_ERROR("TLS certificate initialization failed");
+        ERR_clear_error();
+        SSL_CTX_free(tlsContext);
+        return NULL;
+    }
+    SSL_CTX_set_options(tlsContext, SSL_OP_NO_COMPRESSION | SSL_OP_NO_RENEGOTIATION);
+    return tlsContext;
+}
 
 int RNetLinkHandshake(RNetLink *link, int *wantWrite)
 {
