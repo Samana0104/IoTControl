@@ -1,7 +1,8 @@
-#include "IotSocket.h"
-#include "IotBluetooth.h"
-#include "IotDatabase.h"
-#include "IotDatabaseCommand.h"
+#include "RSocket.h"
+#include "RBluetooth.h"
+#include "RDatabase.h"
+#include "RCommand.h"
+#include "RDatabaseCommand.h"
 #include "IoTPacket.h"
 
 #include <arpa/inet.h>
@@ -30,8 +31,9 @@
 #define TLS_HANDSHAKE_TIMEOUT_SECONDS 5
 #define BLUETOOTH_CONNECT_TIMEOUT_MS 5000
 #define BLUETOOTH_PAIR_TIMEOUT_SECONDS 30
-#define SERVER_CLI_INPUT_SIZE (DATABASE_COMMAND_MAX_SQL_SIZE + 8)
 #define SERVER_POLL_TIMEOUT_MS 500
+#define SERVER_CONSOLE_INPUT_SIZE (DATABASE_COMMAND_MAX_SQL_SIZE + 8)
+#define SERVER_CONSOLE_PROMPT "iot-server> "
 #define TLS_CONFIG_FILE "tls_config.txt"
 #define TLS_CONFIG_PATH_SIZE 4096
 #define TLS_CONFIG_LINE_SIZE (TLS_CONFIG_PATH_SIZE * 2)
@@ -86,35 +88,23 @@ typedef struct _ClientInfo
     int sendResult;
 } ClientInfo;
 
-typedef struct _ServerClientSnapshot
-{
-    int index;
-    int fd;
-    int connected;
-    int authenticated;
-    int bluetoothFd;
-    int bluetoothReceiving;
-    char ip[INET_ADDRSTRLEN];
-    char memberId[MEM_ID_SIZE + 1];
-    char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
-} ServerClientSnapshot;
-
-typedef struct _ServerCli
-{
-    int enabled;
-    int interactive;
-    int discardingInput;
-    size_t inputLength;
-    char input[SERVER_CLI_INPUT_SIZE];
-} ServerCli;
-
-typedef struct _ServerState
+struct _ServerState
 {
     int socket;
     int port;
     int databaseInitialized;
     SSL_CTX *tlsContext;
-} ServerState;
+};
+
+/* Console input is line-buffered here and each line is handed to RCommandExecute(). */
+typedef struct _ServerConsole
+{
+    int enabled;
+    int interactive;
+    int discardingInput;
+    size_t inputLength;
+    char input[SERVER_CONSOLE_INPUT_SIZE];
+} ServerConsole;
 
 typedef enum
 {
@@ -153,19 +143,11 @@ static pthread_mutex_t bluetoothPairMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t bluetoothConnectMutex = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t serverStopRequested;
 
-static int ParsePort(const char *port);
-static int StartServerListener(ServerState *server, const char *port);
 static void HandleServerStopSignal(int signalNumber);
 static void StopServerClients(void);
-static size_t GetServerClientSnapshots(ServerClientSnapshot *snapshots);
-static size_t GetServerBluetoothSnapshots(ServerClientSnapshot *snapshots);
-static void PrintServerCliHelp(void);
-static void PrintServerStatus(const ServerState *server);
-static void PrintServerClients(int bluetoothOnly);
-static void ConnectBluetoothFromCli(const char *arguments, const ServerState *server);
-static int ExecuteServerCliCommand(char *input, ServerState *server);
-static int ProcessServerCliInput(ServerCli *cli, const char *input, size_t length, ServerState *server);
-static int ReadServerCli(ServerCli *cli, ServerState *server);
+static void ShowServerConsole(const ServerConsole *console);
+static void ReadServerConsole(ServerConsole *console, ServerState *server);
+static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, ServerState *server);
 static int SetSocketTimeout(int socketFd, int timeoutSeconds);
 static int InitializeClients(void);
 static int GetClientCount(void);
@@ -198,7 +180,6 @@ static int ProcessMemData(PacketConnection *connection, const uint8_t *data, siz
 static int ProcessChatData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8_t *data, size_t length);
-static int RequestMemberBluetoothConnection(const char *memberId);
 static int RequestRegisteredBluetoothConnection(const char *memberId, const char *requestedMac);
 static int ConnectMemberBluetoothDevice(ClientInfo *client);
 static int ConnectRegisteredBluetoothDevice(ClientInfo *client, const char *requestedMac);
@@ -235,14 +216,14 @@ int StartServerWithCli(const char *port, int enableCli)
     struct sigaction originalInterruptAction;
     struct sigaction originalTerminateAction;
     int signalHandlersInstalled = 0;
-    ServerCli cli = {.enabled = enableCli != 0, .interactive = isatty(STDIN_FILENO)};
+    ServerConsole console = {.enabled = enableCli != 0, .interactive = isatty(STDIN_FILENO)};
 
-    if(port != NULL && ParsePort(port) < 0)
+    if(port != NULL && ParseServerPort(port) < 0)
     {
         fprintf(stderr, "Invalid port: %s\n", port);
         return -1;
     }
-    if(port == NULL && !cli.enabled)
+    if(port == NULL && !console.enabled)
     {
         fputs("A port is required when the CLI is disabled.\n", stderr);
         return -1;
@@ -280,16 +261,9 @@ int StartServerWithCli(const char *port, int enableCli)
     }
     else
     {
-        puts("IoT server CLI ready. Use 'start <port>' to start listening.");
+        puts("IoT server CLI ready. Use 'server start <port>' to start listening.");
     }
-    if(cli.enabled)
-    {
-        PrintServerCliHelp();
-        if(cli.interactive)
-        {
-            fputs("iot-server> ", stdout);
-        }
-    }
+    ShowServerConsole(&console);
     fflush(stdout);
     result = 0;
 
@@ -298,7 +272,7 @@ int StartServerWithCli(const char *port, int enableCli)
         struct pollfd events[2] =
         {
             {.fd = server.socket, .events = POLLIN},
-            {.fd = cli.enabled ? STDIN_FILENO : -1, .events = POLLIN}
+            {.fd = console.enabled ? STDIN_FILENO : -1, .events = POLLIN}
         };
         int pollResult;
         int clientSocket;
@@ -327,17 +301,18 @@ int StartServerWithCli(const char *port, int enableCli)
         }
         if(events[1].revents & (POLLIN | POLLHUP))
         {
-            if(ReadServerCli(&cli, &server) != 0)
+            ReadServerConsole(&console, &server);
+            if(serverStopRequested)
             {
                 break;
             }
         }
         if(events[1].revents & (POLLERR | POLLNVAL))
         {
-            cli.enabled = 0;
+            console.enabled = 0;
             fputs("Server CLI input unavailable.\n", stderr);
         }
-        if(server.socket < 0 && !cli.enabled)
+        if(server.socket < 0 && !console.enabled)
         {
             puts("Server has not been started; exiting.");
             break;
@@ -449,10 +424,10 @@ cleanup:
     return result;
 }
 
-static int StartServerListener(ServerState *server, const char *port)
+int StartServerListener(ServerState *server, const char *port)
 {
     int serverSocket;
-    int serverPort = ParsePort(port);
+    int serverPort = ParseServerPort(port);
     int socketOption = 1;
     struct sockaddr_in serverAddress = {0};
 
@@ -513,10 +488,114 @@ static int StartServerListener(ServerState *server, const char *port)
     return 0;
 }
 
+void RequestServerStop(void)
+{
+    serverStopRequested = 1;
+}
+
+int IsServerRunning(const ServerState *server)
+{
+    return server->socket >= 0;
+}
+
+int GetServerPort(const ServerState *server)
+{
+    return server->port;
+}
+
+int IsServerDatabaseInitialized(const ServerState *server)
+{
+    return server->databaseInitialized;
+}
+
 static void HandleServerStopSignal(int signalNumber)
 {
     (void)signalNumber;
     serverStopRequested = 1;
+}
+
+static void ShowServerConsole(const ServerConsole *console)
+{
+    if(!console->enabled)
+    {
+        return;
+    }
+    RCommandPrintHelp();
+    if(console->interactive)
+    {
+        fputs(SERVER_CONSOLE_PROMPT, stdout);
+    }
+    fflush(stdout);
+}
+
+static void ReadServerConsole(ServerConsole *console, ServerState *server)
+{
+    char input[SERVER_CONSOLE_INPUT_SIZE];
+    ssize_t length = read(STDIN_FILENO, input, sizeof(input));
+
+    if(length > 0)
+    {
+        ProcessServerConsoleInput(console, input, (size_t)length, server);
+        return;
+    }
+    if(length < 0 && (errno == EINTR || errno == EAGAIN))
+    {
+        return;
+    }
+    if(length == 0 && (console->inputLength > 0 || console->discardingInput))
+    {
+        ProcessServerConsoleInput(console, "\n", 1, server);
+        if(serverStopRequested)
+        {
+            return;
+        }
+    }
+    console->enabled = 0;
+    puts(IsServerRunning(server) ? "Server CLI input closed; server continues running." : "Server CLI input closed before server start.");
+    fflush(stdout);
+}
+
+static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, ServerState *server)
+{
+    for(size_t index = 0; index < length; ++index)
+    {
+        if(input[index] == '\n')
+        {
+            if(console->discardingInput)
+            {
+                puts("CLI input is too long; command discarded.");
+            }
+            else
+            {
+                console->input[console->inputLength] = '\0';
+                RCommandExecute(server, console->input);
+            }
+            console->inputLength = 0;
+            console->discardingInput = 0;
+            /* Lines queued after quit/exit are not run. */
+            if(serverStopRequested)
+            {
+                return;
+            }
+            if(console->interactive)
+            {
+                fputs(SERVER_CONSOLE_PROMPT, stdout);
+            }
+            fflush(stdout);
+        }
+        else if(!console->discardingInput)
+        {
+            if(input[index] == '\0' || console->inputLength == sizeof(console->input) - 1)
+            {
+                /* Discard the whole line; never execute a truncated command. */
+                console->discardingInput = 1;
+            }
+            else
+            {
+                console->input[console->inputLength++] = input[index];
+            }
+        }
+    }
 }
 
 static void StopServerClients(void)
@@ -550,7 +629,7 @@ static void StopServerClients(void)
     pthread_mutex_unlock(&bluetoothConnectMutex);
 }
 
-static size_t GetServerClientSnapshots(ServerClientSnapshot *snapshots)
+size_t GetServerClientSnapshots(ServerClientSnapshot *snapshots)
 {
     size_t snapshotCount = 0;
 
@@ -581,7 +660,7 @@ static size_t GetServerClientSnapshots(ServerClientSnapshot *snapshots)
     return snapshotCount;
 }
 
-static size_t GetServerBluetoothSnapshots(ServerClientSnapshot *snapshots)
+size_t GetServerBluetoothSnapshots(ServerClientSnapshot *snapshots)
 {
     size_t snapshotCount = 0;
 
@@ -607,280 +686,7 @@ static size_t GetServerBluetoothSnapshots(ServerClientSnapshot *snapshots)
     return snapshotCount;
 }
 
-static void PrintServerCliHelp(void)
-{
-    puts("\n=== IoT server CLI ===");
-    puts("  start <port> Start listening on the specified port (1..65535)");
-    puts("  help        Show this command list");
-    puts("  status      Show server port and runtime session counts");
-    puts("  clients     List TCP clients, IDs and authentication state");
-    puts("  bluetooth   List current BT sockets, MACs and receiver state");
-    puts("  bt-connect <id> Connect the member's DB-registered Bluetooth device");
-    puts("  db <SQL>    Run one INSERT/UPDATE/SELECT statement (UPDATE needs WHERE)");
-    puts("  clear       Clear the terminal screen");
-    puts("  quit / exit Stop accepting, disconnect clients and stop the server");
-    puts("CLI commands are local only. 'db insert/update' changes DB records.\n");
-}
-
-static void PrintServerStatus(const ServerState *server)
-{
-    ServerClientSnapshot snapshots[MAX_CLNT * 2];
-    size_t snapshotCount = GetServerClientSnapshots(snapshots);
-    size_t bluetoothCount = GetServerBluetoothSnapshots(snapshots);
-    size_t receiverCount = 0;
-
-    for(size_t index = 0; index < bluetoothCount; ++index)
-    {
-        if(snapshots[index].bluetoothFd >= 0)
-        {
-            receiverCount += snapshots[index].bluetoothReceiving != 0;
-        }
-    }
-    if(server->socket >= 0)
-    {
-        printf("Server: running\nListen: 0.0.0.0:%d (TCP/TLS)\n", server->port);
-    }
-    else
-    {
-        puts("Server: not started\nListen: none (use 'start <port>')");
-    }
-    printf("TCP sessions: %zu/%d\nBT sockets: %zu (active receivers: %zu)\n", snapshotCount, MAX_CLNT, bluetoothCount, receiverCount);
-}
-
-static void PrintServerClients(int bluetoothOnly)
-{
-    ServerClientSnapshot snapshots[MAX_CLNT * 2];
-    size_t snapshotCount = bluetoothOnly ? GetServerBluetoothSnapshots(snapshots) : GetServerClientSnapshots(snapshots);
-    size_t rowCount = 0;
-
-    if(bluetoothOnly)
-    {
-        puts("Runtime BT sockets (not a list of DB registrations):");
-        puts("SLOT ID       MAC               FD  RX");
-    }
-    else
-    {
-        puts("SLOT FD  IP              ID       AUTH LINK");
-    }
-    for(size_t index = 0; index < snapshotCount; ++index)
-    {
-        const ServerClientSnapshot *snapshot = &snapshots[index];
-        const char *memberId = snapshot->memberId[0] != '\0' ? snapshot->memberId : "-";
-
-        if(bluetoothOnly)
-        {
-            if(snapshot->bluetoothFd < 0)
-            {
-                continue;
-            }
-            printf("%-4d %-8s %-17s %-3d %s\n", snapshot->index, memberId, snapshot->bluetoothMac, snapshot->bluetoothFd, snapshot->bluetoothReceiving ? "running" : "stopped");
-        }
-        else
-        {
-            printf("%-4d %-3d %-15s %-8s %-4s %s\n", snapshot->index, snapshot->fd, snapshot->ip, memberId, snapshot->authenticated ? "yes" : "no", snapshot->connected ? "connected" : "closing");
-        }
-        ++rowCount;
-    }
-    if(rowCount == 0)
-    {
-        puts(bluetoothOnly ? "No runtime Bluetooth sockets." : "No TCP clients.");
-    }
-}
-
-static void ConnectBluetoothFromCli(const char *arguments, const ServerState *server)
-{
-    const char *memberId = arguments;
-
-    while(isspace((unsigned char)*memberId))
-    {
-        ++memberId;
-    }
-    if(*memberId == '\0' || strlen(memberId) > MEM_ID_SIZE || strpbrk(memberId, " \t\r\n\v\f") != NULL)
-    {
-        puts("Usage: bt-connect <member ID> (1..8 bytes; registered in DB)");
-    }
-    else if(server->socket < 0)
-    {
-        puts("Start the server first: start <port>");
-    }
-    else
-    {
-        int connectResult = RequestMemberBluetoothConnection(memberId);
-
-        printf("Bluetooth request: id=%s, result=%s\n", memberId, connectResult == 0 ? "connected" : connectResult == 1 ? "not registered" : "failed");
-    }
-    fflush(stdout);
-}
-
-static int ExecuteServerCliCommand(char *input, ServerState *server)
-{
-    char *command = input;
-    size_t length;
-
-    while(isspace((unsigned char)*command))
-    {
-        ++command;
-    }
-    length = strlen(command);
-    while(length > 0 && isspace((unsigned char)command[length - 1]))
-    {
-        command[--length] = '\0';
-    }
-    if(length == 0)
-    {
-        return 0;
-    }
-
-    /* Do not hold stdout's lock while connecting/joining a worker that logs. */
-    if(strncmp(command, "bt-connect", sizeof("bt-connect") - 1) == 0 && (command[sizeof("bt-connect") - 1] == '\0' || isspace((unsigned char)command[sizeof("bt-connect") - 1])))
-    {
-        ConnectBluetoothFromCli(command + sizeof("bt-connect") - 1, server);
-        return 0;
-    }
-
-    /* Keep each CLI response together while packet workers also print logs. */
-    flockfile(stdout);
-    if(strcmp(command, "help") == 0)
-    {
-        PrintServerCliHelp();
-    }
-    else if(strncmp(command, "start", sizeof("start") - 1) == 0 && (command[sizeof("start") - 1] == '\0' || isspace((unsigned char)command[sizeof("start") - 1])))
-    {
-        const char *port = command + sizeof("start") - 1;
-
-        while(isspace((unsigned char)*port))
-        {
-            ++port;
-        }
-        if(!isdigit((unsigned char)*port) || ParsePort(port) < 0)
-        {
-            puts("Usage: start <port> (1..65535)");
-        }
-        else if(server->socket >= 0)
-        {
-            printf("Server already running on port %d. Restart the process to change ports.\n", server->port);
-        }
-        else if(StartServerListener(server, port) != 0)
-        {
-            puts("Server start failed. Fix the configuration or retry 'start <port>'.");
-        }
-    }
-    else if(strcmp(command, "status") == 0)
-    {
-        PrintServerStatus(server);
-    }
-    else if(strcmp(command, "clients") == 0)
-    {
-        PrintServerClients(0);
-    }
-    else if(strcmp(command, "bluetooth") == 0)
-    {
-        PrintServerClients(1);
-    }
-    else if(strncmp(command, "db", sizeof("db") - 1) == 0 && (command[sizeof("db") - 1] == '\0' || isspace((unsigned char)command[sizeof("db") - 1])))
-    {
-        if(!server->databaseInitialized)
-        {
-            puts("Initialize the database first: start <port>");
-        }
-        else
-        {
-            ExecuteDatabaseCliCommand(command + sizeof("db") - 1, stdout);
-        }
-    }
-    else if(strcmp(command, "clear") == 0)
-    {
-        if(isatty(STDOUT_FILENO))
-        {
-            fputs("\033[2J\033[H", stdout);
-        }
-    }
-    else if(strcmp(command, "quit") == 0 || strcmp(command, "exit") == 0)
-    {
-        funlockfile(stdout);
-        return 1;
-    }
-    else
-    {
-        printf("Unknown command: %s. Type 'help'.\n", command);
-    }
-    fflush(stdout);
-    funlockfile(stdout);
-    return 0;
-}
-
-static int ProcessServerCliInput(ServerCli *cli, const char *input, size_t length, ServerState *server)
-{
-    for(size_t index = 0; index < length; ++index)
-    {
-        if(input[index] == '\n')
-        {
-            int stopRequested = 0;
-
-            if(cli->discardingInput)
-            {
-                puts("CLI input is too long; command discarded.");
-            }
-            else
-            {
-                cli->input[cli->inputLength] = '\0';
-                stopRequested = ExecuteServerCliCommand(cli->input, server);
-            }
-            cli->inputLength = 0;
-            cli->discardingInput = 0;
-            if(stopRequested)
-            {
-                return 1;
-            }
-            if(cli->interactive)
-            {
-                fputs("iot-server> ", stdout);
-            }
-            fflush(stdout);
-        }
-        else if(!cli->discardingInput)
-        {
-            if(input[index] == '\0' || cli->inputLength == sizeof(cli->input) - 1)
-            {
-                /* Discard the whole line; never execute a truncated command. */
-                cli->discardingInput = 1;
-            }
-            else
-            {
-                cli->input[cli->inputLength++] = input[index];
-            }
-        }
-    }
-    return 0;
-}
-
-static int ReadServerCli(ServerCli *cli, ServerState *server)
-{
-    char input[SERVER_CLI_INPUT_SIZE];
-    ssize_t length = read(STDIN_FILENO, input, sizeof(input));
-
-    if(length > 0)
-    {
-        return ProcessServerCliInput(cli, input, (size_t)length, server);
-    }
-    if(length < 0 && (errno == EINTR || errno == EAGAIN))
-    {
-        return 0;
-    }
-    if(length == 0 && (cli->inputLength > 0 || cli->discardingInput))
-    {
-        if(ProcessServerCliInput(cli, "\n", 1, server) != 0)
-        {
-            return 1;
-        }
-    }
-    cli->enabled = 0;
-    puts(server->socket >= 0 ? "Server CLI input closed; server continues running." : "Server CLI input closed before server start.");
-    fflush(stdout);
-    return 0;
-}
-
-static int ParsePort(const char *port)
+int ParseServerPort(const char *port)
 {
     char *endPointer;
     long parsedPort;
@@ -1790,7 +1596,7 @@ static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8
     return connection->sendAll(connection->context, resultFrame, sizeof(resultFrame));
 }
 
-static int RequestMemberBluetoothConnection(const char *memberId)
+int RequestMemberBluetoothConnection(const char *memberId)
 {
     return RequestRegisteredBluetoothConnection(memberId, NULL);
 }

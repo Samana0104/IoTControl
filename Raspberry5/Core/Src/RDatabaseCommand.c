@@ -1,5 +1,5 @@
-#include "IotDatabaseCommand.h"
-#include "IotDatabase.h"
+#include "RDatabaseCommand.h"
+#include "RDatabase.h"
 
 #include <ctype.h>
 #include <errno.h>

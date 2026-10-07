@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "IotBluetooth.h"
+#include "RBluetooth.h"
 #include "IoTPacket.h"
 
 typedef struct _BluetoothDeviceRecord

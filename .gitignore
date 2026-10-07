@@ -1,0 +1,5 @@
+# Build output (VS Code CMake Tools builds into the workspace root)
+build/
+
+# Editor settings
+.vscode/

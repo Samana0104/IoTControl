@@ -1,12 +1,12 @@
 #pragma once
 
-#include "IotBluetooth.h"
-#include "IotSocket.h"
+#include "RBluetooth.h"
+#include "RSocket.h"
 
 #include <netinet/in.h>
 #include <stddef.h>
 
-/* Server operations exposed to the CLI; the state itself stays in IotSocket.c. */
+/* Server operations exposed to the CLI; the state itself stays in RSocket.c. */
 typedef struct _ServerState ServerState;
 
 typedef struct _ServerClientSnapshot
@@ -26,6 +26,8 @@ typedef struct _ServerClientSnapshot
 int ParseServerPort(const char *port);
 /* Initializes DB/TLS on first use, then binds and listens. Returns 0 on success. */
 int StartServerListener(ServerState *server, const char *port);
+/* Same as SIGINT/SIGTERM: the server loop stops and cleans up workers. */
+void RequestServerStop(void);
 int IsServerRunning(const ServerState *server);
 int GetServerPort(const ServerState *server);
 int IsServerDatabaseInitialized(const ServerState *server);
