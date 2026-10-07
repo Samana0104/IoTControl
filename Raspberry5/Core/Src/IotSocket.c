@@ -1,10 +1,13 @@
 #include "IotSocket.h"
 #include "IotBluetooth.h"
 #include "IotDatabase.h"
+#include "IotDatabaseCommand.h"
 #include "IoTPacket.h"
 
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <poll.h>
@@ -16,6 +19,7 @@
 #include <string.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -25,9 +29,29 @@
 #define TLS_HANDSHAKE_TIMEOUT_SECONDS 5
 #define BLUETOOTH_CONNECT_TIMEOUT_MS 5000
 #define BLUETOOTH_PAIR_TIMEOUT_SECONDS 30
+#define SERVER_CLI_INPUT_SIZE (DATABASE_COMMAND_MAX_SQL_SIZE + 8)
+#define SERVER_POLL_TIMEOUT_MS 500
+#define TLS_CONFIG_FILE "tls_config.txt"
+#define TLS_CONFIG_PATH_SIZE 4096
+#define TLS_CONFIG_LINE_SIZE (TLS_CONFIG_PATH_SIZE * 2)
+
+typedef struct _TlsConfig
+{
+    char certificateFile[TLS_CONFIG_PATH_SIZE];
+    char privateKeyFile[TLS_CONFIG_PATH_SIZE];
+} TlsConfig;
+
+typedef struct _TlsConfigField
+{
+    const char *key;
+    char *value;
+    size_t valueSize;
+    int seen;
+} TlsConfigField;
 
 typedef struct _BluetoothReceiveContext
 {
+    struct _ClientInfo *owner;
     int bluetoothFd;
     int stopFd;
     char memberId[MEM_ID_SIZE + 1];
@@ -45,6 +69,7 @@ typedef struct _ClientInfo
     int bluetoothFd;
     int bluetoothStopFd;
     int bluetoothReceiveStarted;
+    int bluetoothReceiving;
     pthread_t bluetoothReceiveThread;
     int authenticated;
     int inUse;
@@ -59,6 +84,36 @@ typedef struct _ClientInfo
     int sendComplete;
     int sendResult;
 } ClientInfo;
+
+typedef struct _ServerClientSnapshot
+{
+    int index;
+    int fd;
+    int connected;
+    int authenticated;
+    int bluetoothFd;
+    int bluetoothReceiving;
+    char ip[INET_ADDRSTRLEN];
+    char memberId[MEM_ID_SIZE + 1];
+    char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
+} ServerClientSnapshot;
+
+typedef struct _ServerCli
+{
+    int enabled;
+    int interactive;
+    int discardingInput;
+    size_t inputLength;
+    char input[SERVER_CLI_INPUT_SIZE];
+} ServerCli;
+
+typedef struct _ServerState
+{
+    int socket;
+    int port;
+    int databaseInitialized;
+    SSL_CTX *tlsContext;
+} ServerState;
 
 typedef enum
 {
@@ -87,11 +142,29 @@ typedef struct _PacketHandler
 } PacketHandler;
 
 static ClientInfo clientInfo[MAX_CLNT];
+/* BT sessions use only identity/BT lifecycle fields, independently of TCP sessions. */
+static ClientInfo bluetoothClients[MAX_CLNT];
 static int clientCount;
+static int clientCleanupCount;
 static pthread_mutex_t clientMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t clientIdleCond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t bluetoothPairMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t bluetoothConnectMutex = PTHREAD_MUTEX_INITIALIZER;
+static volatile sig_atomic_t serverStopRequested;
 
 static int ParsePort(const char *port);
+static int StartServerListener(ServerState *server, const char *port);
+static void HandleServerStopSignal(int signalNumber);
+static void StopServerClients(void);
+static size_t GetServerClientSnapshots(ServerClientSnapshot *snapshots);
+static size_t GetServerBluetoothSnapshots(ServerClientSnapshot *snapshots);
+static void PrintServerCliHelp(void);
+static void PrintServerStatus(const ServerState *server);
+static void PrintServerClients(int bluetoothOnly);
+static void ConnectBluetoothFromCli(const char *arguments, const ServerState *server);
+static int ExecuteServerCliCommand(char *input, ServerState *server);
+static int ProcessServerCliInput(ServerCli *cli, const char *input, size_t length, ServerState *server);
+static int ReadServerCli(ServerCli *cli, ServerState *server);
 static int SetSocketTimeout(int socketFd, int timeoutSeconds);
 static int InitializeClients(void);
 static int GetClientCount(void);
@@ -99,6 +172,9 @@ static ClientInfo *RegisterClient(int clientSocket, SSL *tls, const struct socka
 static void UnregisterClientThread(ClientInfo *client);
 static void StopClient(ClientInfo *client);
 static SSL_CTX *CreateTlsServerContext(void);
+static char *TrimTlsConfigText(char *text);
+static int ReadTlsConfigLine(FILE *file, char *line, size_t lineSize);
+static int LoadTlsConfig(const char *filePath, TlsConfig *config);
 static int ReceiveAll(ClientInfo *client, void *buffer, size_t length);
 static int WaitForReceiveData(ClientInfo *client, int timeoutMs);
 static int SendAll(ClientInfo *client, const void *buffer, size_t length);
@@ -119,7 +195,11 @@ static int ProcessConData(PacketConnection *connection, const uint8_t *data, siz
 static int ProcessMemData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ProcessChatData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint8_t *data, size_t length);
+static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8_t *data, size_t length);
+static int RequestMemberBluetoothConnection(const char *memberId);
+static int RequestRegisteredBluetoothConnection(const char *memberId, const char *requestedMac);
 static int ConnectMemberBluetoothDevice(ClientInfo *client);
+static int ConnectRegisteredBluetoothDevice(ClientInfo *client, const char *requestedMac);
 static int StartBluetoothReceive(ClientInfo *client);
 static void StopBluetoothReceive(int bluetoothFd, int stopFd, pthread_t receiveThread, int receiveStarted);
 static void DisconnectClientBluetooth(ClientInfo *client);
@@ -136,21 +216,33 @@ static const PacketHandler PACKET_HANDLERS[] =
     {CMD_CON_DATA, sizeof(ConData), sizeof(ConData), ProcessConData},
     {CMD_MEM_DATA, sizeof(MemData), sizeof(MemData), ProcessMemData},
     {CMD_CHAT_DATA, 0, MAX_MESSAGE_SIZE, ProcessChatData},
-    {CMD_BLUETOOTH_REGISTER, sizeof(BluetoothRegisterData), sizeof(BluetoothRegisterData), ProcessBluetoothRegisterData}
+    {CMD_BLUETOOTH_REGISTER, sizeof(BluetoothRegisterData), sizeof(BluetoothRegisterData), ProcessBluetoothRegisterData},
+    {CMD_BLUETOOTH_CONNECT, sizeof(BluetoothConnectData), sizeof(BluetoothConnectData), ProcessBluetoothConnectData}
 };
 
 int StartServer(const char *port)
 {
-    int serverSocket;
-    int serverPort;
-    int socketOption = 1;
-    struct sockaddr_in serverAddress;
-    SSL_CTX *tlsContext;
+    return StartServerWithCli(port, isatty(STDIN_FILENO));
+}
 
-    serverPort = ParsePort(port);
-    if(serverPort < 0)
+int StartServerWithCli(const char *port, int enableCli)
+{
+    int result = -1;
+    ServerState server = {.socket = -1};
+    struct sigaction stopAction = {0};
+    struct sigaction originalInterruptAction;
+    struct sigaction originalTerminateAction;
+    int signalHandlersInstalled = 0;
+    ServerCli cli = {.enabled = enableCli != 0, .interactive = isatty(STDIN_FILENO)};
+
+    if(port != NULL && ParsePort(port) < 0)
     {
         fprintf(stderr, "Invalid port: %s\n", port);
+        return -1;
+    }
+    if(port == NULL && !cli.enabled)
+    {
+        fputs("A port is required when the CLI is disabled.\n", stderr);
         return -1;
     }
 
@@ -160,56 +252,53 @@ int StartServer(const char *port)
         return -1;
     }
 
-    if(InitializeDatabase() != 0)
-    {
-        return -1;
-    }
-
-    tlsContext = CreateTlsServerContext();
-    if(tlsContext == NULL)
-    {
-        return -1;
-    }
-
     signal(SIGPIPE, SIG_IGN);
 
-    serverSocket = socket(PF_INET, SOCK_STREAM, 0);
-    if(serverSocket < 0)
+    serverStopRequested = 0;
+    stopAction.sa_handler = HandleServerStopSignal;
+    sigemptyset(&stopAction.sa_mask);
+    if(sigaction(SIGINT, &stopAction, &originalInterruptAction) != 0)
     {
-        perror("socket()");
-        return -1;
+        perror("sigaction(SIGINT)");
+        goto cleanup;
     }
-
-    if(setsockopt(serverSocket,SOL_SOCKET,SO_REUSEADDR,&socketOption,sizeof(socketOption)) < 0)
+    if(sigaction(SIGTERM, &stopAction, &originalTerminateAction) != 0)
     {
-        perror("setsockopt()");
-        close(serverSocket);
-        return -1;
+        perror("sigaction(SIGTERM)");
+        sigaction(SIGINT, &originalInterruptAction, NULL);
+        goto cleanup;
     }
-
-    memset(&serverAddress, 0, sizeof(serverAddress));
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddress.sin_port = htons((uint16_t)serverPort);
-
-    if(bind(serverSocket,(struct sockaddr *)&serverAddress,sizeof(serverAddress)) < 0)
+    signalHandlersInstalled = 1;
+    if(port != NULL)
     {
-        perror("bind()");
-        close(serverSocket);
-        return -1;
+        if(StartServerListener(&server, port) != 0)
+        {
+            goto cleanup;
+        }
     }
-
-    if(listen(serverSocket, LISTEN_BACKLOG) < 0)
+    else
     {
-        perror("listen()");
-        close(serverSocket);
-        return -1;
+        puts("IoT server CLI ready. Use 'start <port>' to start listening.");
     }
-
-    printf("IoT server started on port %d\n", serverPort);
-
-    while(1)
+    if(cli.enabled)
     {
+        PrintServerCliHelp();
+        if(cli.interactive)
+        {
+            fputs("iot-server> ", stdout);
+        }
+    }
+    fflush(stdout);
+    result = 0;
+
+    while(!serverStopRequested)
+    {
+        struct pollfd events[2] =
+        {
+            {.fd = server.socket, .events = POLLIN},
+            {.fd = cli.enabled ? STDIN_FILENO : -1, .events = POLLIN}
+        };
+        int pollResult;
         int clientSocket;
         socklen_t clientAddressSize = sizeof(struct sockaddr_in);
         struct sockaddr_in clientAddress;
@@ -219,7 +308,49 @@ int StartServer(const char *port)
         pthread_t receiveThread;
         int createResult;
 
-        clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressSize);
+        pollResult = poll(events, sizeof(events) / sizeof(events[0]), SERVER_POLL_TIMEOUT_MS);
+        if(pollResult < 0)
+        {
+            if(errno == EINTR)
+            {
+                continue;
+            }
+            perror("poll(server)");
+            result = -1;
+            break;
+        }
+        if(serverStopRequested)
+        {
+            break;
+        }
+        if(events[1].revents & (POLLIN | POLLHUP))
+        {
+            if(ReadServerCli(&cli, &server) != 0)
+            {
+                break;
+            }
+        }
+        if(events[1].revents & (POLLERR | POLLNVAL))
+        {
+            cli.enabled = 0;
+            fputs("Server CLI input unavailable.\n", stderr);
+        }
+        if(server.socket < 0 && !cli.enabled)
+        {
+            puts("Server has not been started; exiting.");
+            break;
+        }
+        if(events[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+        {
+            fputs("Listening socket failed\n", stderr);
+            result = -1;
+            break;
+        }
+        if(!(events[0].revents & POLLIN))
+        {
+            continue;
+        }
+        clientSocket = accept(server.socket, (struct sockaddr *)&clientAddress, &clientAddressSize);
         if(clientSocket < 0)
         {
             if(errno == EINTR)
@@ -238,7 +369,7 @@ int StartServer(const char *port)
             continue;
         }
 
-        tls = SSL_new(tlsContext);
+        tls = SSL_new(server.tlsContext);
         if(tls == NULL || SSL_set_fd(tls, clientSocket) != 1 || SSL_accept(tls) != 1)
         {
             fputs("TLS handshake failed\n", stderr);
@@ -291,7 +422,460 @@ int StartServer(const char *port)
         pthread_detach(receiveThread);
 
         printf("Client connected: ip=%s, fd=%d, clients=%d\n", client->ip,client->fd,GetClientCount());
+        fflush(stdout);
     }
+
+    puts("Stopping server; waiting for client and Bluetooth workers...");
+    fflush(stdout);
+
+cleanup:
+    if(server.socket >= 0)
+    {
+        close(server.socket);
+    }
+    StopServerClients();
+    SSL_CTX_free(server.tlsContext);
+    if(signalHandlersInstalled)
+    {
+        sigaction(SIGINT, &originalInterruptAction, NULL);
+        sigaction(SIGTERM, &originalTerminateAction, NULL);
+    }
+    if(result == 0)
+    {
+        puts("IoT server stopped.");
+    }
+    return result;
+}
+
+static int StartServerListener(ServerState *server, const char *port)
+{
+    int serverSocket;
+    int serverPort = ParsePort(port);
+    int socketOption = 1;
+    struct sockaddr_in serverAddress = {0};
+
+    if(serverPort < 0)
+    {
+        fprintf(stderr, "Invalid port: %s\n", port == NULL ? "(null)" : port);
+        return -1;
+    }
+    if(!server->databaseInitialized)
+    {
+        if(InitializeDatabase() != 0)
+        {
+            return -1;
+        }
+        server->databaseInitialized = 1;
+    }
+    if(server->tlsContext == NULL)
+    {
+        server->tlsContext = CreateTlsServerContext();
+        if(server->tlsContext == NULL)
+        {
+            return -1;
+        }
+    }
+
+    serverSocket = socket(PF_INET, SOCK_STREAM, 0);
+    if(serverSocket < 0)
+    {
+        perror("socket()");
+        return -1;
+    }
+    if(setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &socketOption, sizeof(socketOption)) < 0)
+    {
+        perror("setsockopt()");
+        close(serverSocket);
+        return -1;
+    }
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+    serverAddress.sin_port = htons((uint16_t)serverPort);
+    if(bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("bind()");
+        close(serverSocket);
+        return -1;
+    }
+    if(listen(serverSocket, LISTEN_BACKLOG) < 0)
+    {
+        perror("listen()");
+        close(serverSocket);
+        return -1;
+    }
+
+    server->socket = serverSocket;
+    server->port = serverPort;
+    printf("IoT server started on port %d\n", serverPort);
+    fflush(stdout);
+    return 0;
+}
+
+static void HandleServerStopSignal(int signalNumber)
+{
+    (void)signalNumber;
+    serverStopRequested = 1;
+}
+
+static void StopServerClients(void)
+{
+    pthread_mutex_lock(&clientMutex);
+    for(int index = 0; index < MAX_CLNT; ++index)
+    {
+        if(clientInfo[index].inUse)
+        {
+            StopClient(&clientInfo[index]);
+        }
+    }
+    while(clientCount > 0 || clientCleanupCount > 0)
+    {
+        pthread_cond_wait(&clientIdleCond, &clientMutex);
+    }
+    pthread_mutex_unlock(&clientMutex);
+
+    /* TCP request workers have finished; no new external BT requests can arrive. */
+    pthread_mutex_lock(&bluetoothConnectMutex);
+    for(int index = 0; index < MAX_CLNT; ++index)
+    {
+        if(bluetoothClients[index].inUse)
+        {
+            DisconnectClientBluetooth(&bluetoothClients[index]);
+            pthread_mutex_lock(&clientMutex);
+            bluetoothClients[index].inUse = 0;
+            pthread_mutex_unlock(&clientMutex);
+        }
+    }
+    pthread_mutex_unlock(&bluetoothConnectMutex);
+}
+
+static size_t GetServerClientSnapshots(ServerClientSnapshot *snapshots)
+{
+    size_t snapshotCount = 0;
+
+    pthread_mutex_lock(&clientMutex);
+    for(int index = 0; index < MAX_CLNT; ++index)
+    {
+        ClientInfo *client = &clientInfo[index];
+        ServerClientSnapshot *snapshot;
+
+        if(!client->inUse)
+        {
+            continue;
+        }
+        snapshot = &snapshots[snapshotCount++];
+        snapshot->index = client->index;
+        snapshot->fd = client->fd;
+        snapshot->authenticated = client->authenticated;
+        snapshot->bluetoothFd = client->bluetoothFd;
+        snapshot->bluetoothReceiving = client->bluetoothReceiving;
+        memcpy(snapshot->ip, client->ip, sizeof(snapshot->ip));
+        memcpy(snapshot->memberId, client->memberId, sizeof(snapshot->memberId));
+        memcpy(snapshot->bluetoothMac, client->bluetoothMac, sizeof(snapshot->bluetoothMac));
+        pthread_mutex_lock(&client->sendMutex);
+        snapshot->connected = client->connected;
+        pthread_mutex_unlock(&client->sendMutex);
+    }
+    pthread_mutex_unlock(&clientMutex);
+    return snapshotCount;
+}
+
+static size_t GetServerBluetoothSnapshots(ServerClientSnapshot *snapshots)
+{
+    size_t snapshotCount = 0;
+
+    pthread_mutex_lock(&clientMutex);
+    for(int index = 0; index < MAX_CLNT * 2; ++index)
+    {
+        const ClientInfo *client = index < MAX_CLNT ? &clientInfo[index] : &bluetoothClients[index - MAX_CLNT];
+        ServerClientSnapshot *snapshot;
+
+        if(!client->inUse || client->bluetoothFd < 0)
+        {
+            continue;
+        }
+        snapshot = &snapshots[snapshotCount++];
+        memset(snapshot, 0, sizeof(*snapshot));
+        snapshot->index = client->index;
+        snapshot->bluetoothFd = client->bluetoothFd;
+        snapshot->bluetoothReceiving = client->bluetoothReceiving;
+        memcpy(snapshot->memberId, client->memberId, sizeof(snapshot->memberId));
+        memcpy(snapshot->bluetoothMac, client->bluetoothMac, sizeof(snapshot->bluetoothMac));
+    }
+    pthread_mutex_unlock(&clientMutex);
+    return snapshotCount;
+}
+
+static void PrintServerCliHelp(void)
+{
+    puts("\n=== IoT server CLI ===");
+    puts("  start <port> Start listening on the specified port (1..65535)");
+    puts("  help        Show this command list");
+    puts("  status      Show server port and runtime session counts");
+    puts("  clients     List TCP clients, IDs and authentication state");
+    puts("  bluetooth   List current BT sockets, MACs and receiver state");
+    puts("  bt-connect <id> Connect the member's DB-registered Bluetooth device");
+    puts("  db <SQL>    Run one INSERT/UPDATE/SELECT statement (UPDATE needs WHERE)");
+    puts("  clear       Clear the terminal screen");
+    puts("  quit / exit Stop accepting, disconnect clients and stop the server");
+    puts("CLI commands are local only. 'db insert/update' changes DB records.\n");
+}
+
+static void PrintServerStatus(const ServerState *server)
+{
+    ServerClientSnapshot snapshots[MAX_CLNT * 2];
+    size_t snapshotCount = GetServerClientSnapshots(snapshots);
+    size_t bluetoothCount = GetServerBluetoothSnapshots(snapshots);
+    size_t receiverCount = 0;
+
+    for(size_t index = 0; index < bluetoothCount; ++index)
+    {
+        if(snapshots[index].bluetoothFd >= 0)
+        {
+            receiverCount += snapshots[index].bluetoothReceiving != 0;
+        }
+    }
+    if(server->socket >= 0)
+    {
+        printf("Server: running\nListen: 0.0.0.0:%d (TCP/TLS)\n", server->port);
+    }
+    else
+    {
+        puts("Server: not started\nListen: none (use 'start <port>')");
+    }
+    printf("TCP sessions: %zu/%d\nBT sockets: %zu (active receivers: %zu)\n", snapshotCount, MAX_CLNT, bluetoothCount, receiverCount);
+}
+
+static void PrintServerClients(int bluetoothOnly)
+{
+    ServerClientSnapshot snapshots[MAX_CLNT * 2];
+    size_t snapshotCount = bluetoothOnly ? GetServerBluetoothSnapshots(snapshots) : GetServerClientSnapshots(snapshots);
+    size_t rowCount = 0;
+
+    if(bluetoothOnly)
+    {
+        puts("Runtime BT sockets (not a list of DB registrations):");
+        puts("SLOT ID       MAC               FD  RX");
+    }
+    else
+    {
+        puts("SLOT FD  IP              ID       AUTH LINK");
+    }
+    for(size_t index = 0; index < snapshotCount; ++index)
+    {
+        const ServerClientSnapshot *snapshot = &snapshots[index];
+        const char *memberId = snapshot->memberId[0] != '\0' ? snapshot->memberId : "-";
+
+        if(bluetoothOnly)
+        {
+            if(snapshot->bluetoothFd < 0)
+            {
+                continue;
+            }
+            printf("%-4d %-8s %-17s %-3d %s\n", snapshot->index, memberId, snapshot->bluetoothMac, snapshot->bluetoothFd, snapshot->bluetoothReceiving ? "running" : "stopped");
+        }
+        else
+        {
+            printf("%-4d %-3d %-15s %-8s %-4s %s\n", snapshot->index, snapshot->fd, snapshot->ip, memberId, snapshot->authenticated ? "yes" : "no", snapshot->connected ? "connected" : "closing");
+        }
+        ++rowCount;
+    }
+    if(rowCount == 0)
+    {
+        puts(bluetoothOnly ? "No runtime Bluetooth sockets." : "No TCP clients.");
+    }
+}
+
+static void ConnectBluetoothFromCli(const char *arguments, const ServerState *server)
+{
+    const char *memberId = arguments;
+
+    while(isspace((unsigned char)*memberId))
+    {
+        ++memberId;
+    }
+    if(*memberId == '\0' || strlen(memberId) > MEM_ID_SIZE || strpbrk(memberId, " \t\r\n\v\f") != NULL)
+    {
+        puts("Usage: bt-connect <member ID> (1..8 bytes; registered in DB)");
+    }
+    else if(server->socket < 0)
+    {
+        puts("Start the server first: start <port>");
+    }
+    else
+    {
+        int connectResult = RequestMemberBluetoothConnection(memberId);
+
+        printf("Bluetooth request: id=%s, result=%s\n", memberId, connectResult == 0 ? "connected" : connectResult == 1 ? "not registered" : "failed");
+    }
+    fflush(stdout);
+}
+
+static int ExecuteServerCliCommand(char *input, ServerState *server)
+{
+    char *command = input;
+    size_t length;
+
+    while(isspace((unsigned char)*command))
+    {
+        ++command;
+    }
+    length = strlen(command);
+    while(length > 0 && isspace((unsigned char)command[length - 1]))
+    {
+        command[--length] = '\0';
+    }
+    if(length == 0)
+    {
+        return 0;
+    }
+
+    /* Do not hold stdout's lock while connecting/joining a worker that logs. */
+    if(strncmp(command, "bt-connect", sizeof("bt-connect") - 1) == 0 && (command[sizeof("bt-connect") - 1] == '\0' || isspace((unsigned char)command[sizeof("bt-connect") - 1])))
+    {
+        ConnectBluetoothFromCli(command + sizeof("bt-connect") - 1, server);
+        return 0;
+    }
+
+    /* Keep each CLI response together while packet workers also print logs. */
+    flockfile(stdout);
+    if(strcmp(command, "help") == 0)
+    {
+        PrintServerCliHelp();
+    }
+    else if(strncmp(command, "start", sizeof("start") - 1) == 0 && (command[sizeof("start") - 1] == '\0' || isspace((unsigned char)command[sizeof("start") - 1])))
+    {
+        const char *port = command + sizeof("start") - 1;
+
+        while(isspace((unsigned char)*port))
+        {
+            ++port;
+        }
+        if(!isdigit((unsigned char)*port) || ParsePort(port) < 0)
+        {
+            puts("Usage: start <port> (1..65535)");
+        }
+        else if(server->socket >= 0)
+        {
+            printf("Server already running on port %d. Restart the process to change ports.\n", server->port);
+        }
+        else if(StartServerListener(server, port) != 0)
+        {
+            puts("Server start failed. Fix the configuration or retry 'start <port>'.");
+        }
+    }
+    else if(strcmp(command, "status") == 0)
+    {
+        PrintServerStatus(server);
+    }
+    else if(strcmp(command, "clients") == 0)
+    {
+        PrintServerClients(0);
+    }
+    else if(strcmp(command, "bluetooth") == 0)
+    {
+        PrintServerClients(1);
+    }
+    else if(strncmp(command, "db", sizeof("db") - 1) == 0 && (command[sizeof("db") - 1] == '\0' || isspace((unsigned char)command[sizeof("db") - 1])))
+    {
+        if(!server->databaseInitialized)
+        {
+            puts("Initialize the database first: start <port>");
+        }
+        else
+        {
+            ExecuteDatabaseCliCommand(command + sizeof("db") - 1, stdout);
+        }
+    }
+    else if(strcmp(command, "clear") == 0)
+    {
+        if(isatty(STDOUT_FILENO))
+        {
+            fputs("\033[2J\033[H", stdout);
+        }
+    }
+    else if(strcmp(command, "quit") == 0 || strcmp(command, "exit") == 0)
+    {
+        funlockfile(stdout);
+        return 1;
+    }
+    else
+    {
+        printf("Unknown command: %s. Type 'help'.\n", command);
+    }
+    fflush(stdout);
+    funlockfile(stdout);
+    return 0;
+}
+
+static int ProcessServerCliInput(ServerCli *cli, const char *input, size_t length, ServerState *server)
+{
+    for(size_t index = 0; index < length; ++index)
+    {
+        if(input[index] == '\n')
+        {
+            int stopRequested = 0;
+
+            if(cli->discardingInput)
+            {
+                puts("CLI input is too long; command discarded.");
+            }
+            else
+            {
+                cli->input[cli->inputLength] = '\0';
+                stopRequested = ExecuteServerCliCommand(cli->input, server);
+            }
+            cli->inputLength = 0;
+            cli->discardingInput = 0;
+            if(stopRequested)
+            {
+                return 1;
+            }
+            if(cli->interactive)
+            {
+                fputs("iot-server> ", stdout);
+            }
+            fflush(stdout);
+        }
+        else if(!cli->discardingInput)
+        {
+            if(input[index] == '\0' || cli->inputLength == sizeof(cli->input) - 1)
+            {
+                /* Discard the whole line; never execute a truncated command. */
+                cli->discardingInput = 1;
+            }
+            else
+            {
+                cli->input[cli->inputLength++] = input[index];
+            }
+        }
+    }
+    return 0;
+}
+
+static int ReadServerCli(ServerCli *cli, ServerState *server)
+{
+    char input[SERVER_CLI_INPUT_SIZE];
+    ssize_t length = read(STDIN_FILENO, input, sizeof(input));
+
+    if(length > 0)
+    {
+        return ProcessServerCliInput(cli, input, (size_t)length, server);
+    }
+    if(length < 0 && (errno == EINTR || errno == EAGAIN))
+    {
+        return 0;
+    }
+    if(length == 0 && (cli->inputLength > 0 || cli->discardingInput))
+    {
+        if(ProcessServerCliInput(cli, "\n", 1, server) != 0)
+        {
+            return 1;
+        }
+    }
+    cli->enabled = 0;
+    puts(server->socket >= 0 ? "Server CLI input closed; server continues running." : "Server CLI input closed before server start.");
+    fflush(stdout);
+    return 0;
 }
 
 static int ParsePort(const char *port)
@@ -328,8 +912,13 @@ static int InitializeClients(void)
     int i;
 
     memset(clientInfo, 0, sizeof(clientInfo));
+    memset(bluetoothClients, 0, sizeof(bluetoothClients));
     for(i = 0; i < MAX_CLNT; i++)
     {
+        bluetoothClients[i].index = i;
+        bluetoothClients[i].fd = -1;
+        bluetoothClients[i].bluetoothFd = -1;
+        bluetoothClients[i].bluetoothStopFd = -1;
         clientInfo[i].index = i;
         clientInfo[i].fd = -1;
         clientInfo[i].bluetoothFd = -1;
@@ -389,6 +978,7 @@ static ClientInfo *RegisterClient(int clientSocket, SSL *tls, const struct socka
             client->bluetoothFd = -1;
             client->bluetoothStopFd = -1;
             client->bluetoothReceiveStarted = 0;
+            client->bluetoothReceiving = 0;
             memset(client->memberId, 0, sizeof(client->memberId));
             memset(client->bluetoothMac, 0, sizeof(client->bluetoothMac));
             inet_ntop(AF_INET,&clientAddress->sin_addr,client->ip,sizeof(client->ip));
@@ -410,6 +1000,7 @@ static void UnregisterClientThread(ClientInfo *client)
     pthread_t bluetoothReceiveThread = 0;
     SSL *tlsToFree = NULL;
     int remainingClients = 0;
+    char clientIp[INET_ADDRSTRLEN];
 
     pthread_mutex_lock(&clientMutex);
     client->threadCount--;
@@ -425,10 +1016,13 @@ static void UnregisterClientThread(ClientInfo *client)
         client->bluetoothFd = -1;
         client->bluetoothStopFd = -1;
         client->bluetoothReceiveStarted = 0;
+        client->bluetoothReceiving = 0;
         client->tls = NULL;
         client->inUse = 0;
         clientCount--;
         remainingClients = clientCount;
+        ++clientCleanupCount;
+        memcpy(clientIp, client->ip, sizeof(clientIp));
     }
     pthread_mutex_unlock(&clientMutex);
 
@@ -437,7 +1031,11 @@ static void UnregisterClientThread(ClientInfo *client)
         StopBluetoothReceive(bluetoothToClose, bluetoothStopFd, bluetoothReceiveThread, bluetoothReceiveStarted);
         SSL_free(tlsToFree);
         close(socketToClose);
-        printf("Client disconnected: ip=%s, clients=%d\n", client->ip, remainingClients);
+        printf("Client disconnected: ip=%s, clients=%d\n", clientIp, remainingClients);
+        pthread_mutex_lock(&clientMutex);
+        --clientCleanupCount;
+        pthread_cond_broadcast(&clientIdleCond);
+        pthread_mutex_unlock(&clientMutex);
     }
 }
 
@@ -460,15 +1058,180 @@ static void StopClient(ClientInfo *client)
     }
 }
 
+static char *TrimTlsConfigText(char *text)
+{
+    size_t length;
+
+    while(isspace((unsigned char)*text))
+    {
+        ++text;
+    }
+    length = strlen(text);
+    while(length > 0 && isspace((unsigned char)text[length - 1]))
+    {
+        text[--length] = '\0';
+    }
+    return text;
+}
+
+static int ReadTlsConfigLine(FILE *file, char *line, size_t lineSize)
+{
+    size_t length = 0;
+    int character;
+
+    while((character = fgetc(file)) != EOF && character != '\n')
+    {
+        if(character == '\0' || length + 1 >= lineSize)
+        {
+            return -1;
+        }
+        line[length++] = (char)character;
+    }
+    line[length] = '\0';
+    if(ferror(file))
+    {
+        return -1;
+    }
+    return character == EOF && length == 0 ? 0 : 1;
+}
+
+static int LoadTlsConfig(const char *filePath, TlsConfig *config)
+{
+    char line[TLS_CONFIG_LINE_SIZE];
+    TlsConfigField fields[] =
+    {
+        {"IOT_TLS_CERT_FILE", config->certificateFile, sizeof(config->certificateFile), 0},
+        {"IOT_TLS_KEY_FILE", config->privateKeyFile, sizeof(config->privateKeyFile), 0}
+    };
+    struct stat fileStatus;
+    int fileDescriptor = -1;
+    FILE *file = NULL;
+    int readResult;
+    int result = -1;
+    size_t lineNumber = 0;
+
+    memset(config, 0, sizeof(*config));
+    fileDescriptor = open(filePath, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if(fileDescriptor < 0)
+    {
+        fprintf(stderr, "Cannot open TLS config file '%s': %s\n", filePath, strerror(errno));
+        goto cleanup;
+    }
+    if(fstat(fileDescriptor, &fileStatus) != 0 || !S_ISREG(fileStatus.st_mode))
+    {
+        fputs("TLS config must be a regular file\n", stderr);
+        goto cleanup;
+    }
+    if(fileStatus.st_mode & (S_IRWXG | S_IRWXO))
+    {
+        fprintf(stderr, "TLS config permissions are too open. Run: chmod 600 %s\n", filePath);
+        goto cleanup;
+    }
+    file = fdopen(fileDescriptor, "r");
+    if(file == NULL)
+    {
+        fputs("Cannot read TLS config file\n", stderr);
+        goto cleanup;
+    }
+    fileDescriptor = -1;
+    while((readResult = ReadTlsConfigLine(file, line, sizeof(line))) > 0)
+    {
+        char *key = line;
+        char *value;
+        char *separator;
+        size_t valueLength;
+        TlsConfigField *field = NULL;
+
+        ++lineNumber;
+        if(lineNumber == 1 && strncmp(key, "\xEF\xBB\xBF", 3) == 0)
+        {
+            key += 3;
+        }
+        key = TrimTlsConfigText(key);
+        if(*key == '\0' || *key == '#')
+        {
+            continue;
+        }
+        separator = strchr(key, '=');
+        if(separator == NULL)
+        {
+            fprintf(stderr, "Expected KEY=value in TLS config at line %zu\n", lineNumber);
+            goto cleanup;
+        }
+        *separator = '\0';
+        key = TrimTlsConfigText(key);
+        value = TrimTlsConfigText(separator + 1);
+        valueLength = strlen(value);
+        if(*value == '\'' || *value == '"')
+        {
+            if(valueLength < 2 || value[valueLength - 1] != *value)
+            {
+                fprintf(stderr, "Unmatched quotes in TLS config at line %zu\n", lineNumber);
+                goto cleanup;
+            }
+            value[valueLength - 1] = '\0';
+            ++value;
+            valueLength -= 2;
+        }
+        for(size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); ++index)
+        {
+            if(strcmp(key, fields[index].key) == 0)
+            {
+                field = &fields[index];
+                break;
+            }
+        }
+        if(field == NULL || field->seen)
+        {
+            fprintf(stderr, "Unknown or duplicate TLS config key at line %zu\n", lineNumber);
+            goto cleanup;
+        }
+        if(valueLength == 0 || valueLength >= field->valueSize)
+        {
+            fprintf(stderr, "Invalid value length for %s at line %zu\n", field->key, lineNumber);
+            goto cleanup;
+        }
+        memcpy(field->value, value, valueLength + 1);
+        field->seen = 1;
+    }
+    if(readResult < 0)
+    {
+        fprintf(stderr, "Unreadable, binary or oversized TLS config line at line %zu\n", lineNumber + 1);
+        goto cleanup;
+    }
+    for(size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); ++index)
+    {
+        if(!fields[index].seen)
+        {
+            fprintf(stderr, "Missing %s in TLS config\n", fields[index].key);
+            goto cleanup;
+        }
+    }
+    result = 0;
+
+cleanup:
+    if(file != NULL)
+    {
+        fclose(file);
+    }
+    if(fileDescriptor >= 0)
+    {
+        close(fileDescriptor);
+    }
+    if(result != 0)
+    {
+        memset(config, 0, sizeof(*config));
+    }
+    return result;
+}
+
 static SSL_CTX *CreateTlsServerContext(void)
 {
-    const char *certificateFile = getenv("IOT_TLS_CERT_FILE");
-    const char *privateKeyFile = getenv("IOT_TLS_KEY_FILE");
+    TlsConfig config;
     SSL_CTX *tlsContext;
 
-    if(certificateFile == NULL || privateKeyFile == NULL)
+    if(LoadTlsConfig(TLS_CONFIG_FILE, &config) != 0)
     {
-        fputs("IOT_TLS_CERT_FILE and IOT_TLS_KEY_FILE must be set\n", stderr);
         return NULL;
     }
 
@@ -479,7 +1242,7 @@ static SSL_CTX *CreateTlsServerContext(void)
         return NULL;
     }
 
-    if(SSL_CTX_set_min_proto_version(tlsContext, TLS1_2_VERSION) != 1 || SSL_CTX_use_certificate_chain_file(tlsContext, certificateFile) != 1 || SSL_CTX_use_PrivateKey_file(tlsContext, privateKeyFile, SSL_FILETYPE_PEM) != 1 || SSL_CTX_check_private_key(tlsContext) != 1)
+    if(SSL_CTX_set_min_proto_version(tlsContext, TLS1_2_VERSION) != 1 || SSL_CTX_use_certificate_chain_file(tlsContext, config.certificateFile) != 1 || SSL_CTX_use_PrivateKey_file(tlsContext, config.privateKeyFile, SSL_FILETYPE_PEM) != 1 || SSL_CTX_check_private_key(tlsContext) != 1)
     {
         fputs("TLS certificate initialization failed\n", stderr);
         ERR_print_errors_fp(stderr);
@@ -823,7 +1586,6 @@ static int ProcessMemData(PacketConnection *connection, const uint8_t *data, siz
     size_t memberIdLength;
     size_t passwordLength;
     int verifyResult;
-    int bluetoothResult;
 
     (void)length;
     memcpy(&memData, data, sizeof(memData));
@@ -833,19 +1595,21 @@ static int ProcessMemData(PacketConnection *connection, const uint8_t *data, siz
 
     if(verifyResult == 1)
     {
+        pthread_mutex_lock(&clientMutex);
         memcpy(client->memberId, memData.id, memberIdLength);
         client->memberId[memberIdLength] = '\0';
-        bluetoothResult = ConnectMemberBluetoothDevice(client);
-        verifyResult = bluetoothResult >= 0 ? 1 : 0;
-        client->authenticated = verifyResult == 1;
+        client->authenticated = 1;
+        pthread_mutex_unlock(&clientMutex);
     }
 
     sodium_memzero(&memData, sizeof(memData));
     if(verifyResult != 1)
     {
         DisconnectClientBluetooth(client);
+        pthread_mutex_lock(&clientMutex);
         client->memberId[0] = '\0';
         client->authenticated = 0;
+        pthread_mutex_unlock(&clientMutex);
         printf("[%s] Member authentication failed\n", client->ip);
         return -1;
     }
@@ -903,7 +1667,7 @@ static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint
         goto cleanup;
     }
 
-    if(ConnectMemberBluetoothDevice(client) != 0)
+    if(RequestMemberBluetoothConnection(client->memberId) != 0)
     {
         goto cleanup;
     }
@@ -918,9 +1682,128 @@ cleanup:
     return processResult;
 }
 
+static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8_t *data, size_t length)
+{
+    BluetoothConnectData request;
+    BluetoothConnectResult result = {.connected = BLUETOOTH_CONNECT_FAILED};
+    uint8_t resultFrame[HEADER_SIZE + sizeof(result)] = {HEADER_RESULT_0, HEADER_RESULT_1, CMD_BLUETOOTH_CONNECT, sizeof(result)};
+    char memberId[MEM_ID_SIZE + 1];
+    char requestedMac[BLUETOOTH_MAC_TEXT_SIZE];
+    size_t memberIdLength;
+    size_t passwordLength;
+    int verifyResult;
+
+    if(connection->transport != PACKET_TRANSPORT_TCP || data == NULL || length != sizeof(request))
+    {
+        return -1;
+    }
+    memcpy(&request, data, sizeof(request));
+    memberIdLength = strnlen(request.id, sizeof(request.id));
+    passwordLength = strnlen(request.pw, sizeof(request.pw));
+    memcpy(memberId, request.id, memberIdLength);
+    memberId[memberIdLength] = '\0';
+    memcpy(requestedMac, request.mac, sizeof(request.mac));
+    requestedMac[sizeof(request.mac)] = '\0';
+    verifyResult = memberIdLength > 0 && passwordLength > 0 && strnlen(request.mac, sizeof(request.mac)) == sizeof(request.mac) ? VerifyMember(request.id, memberIdLength, request.pw, passwordLength) : 0;
+    sodium_memzero(&request, sizeof(request));
+
+    if(verifyResult == 1 && RequestRegisteredBluetoothConnection(memberId, requestedMac) == 0)
+    {
+        result.connected = BLUETOOTH_CONNECT_SUCCEEDED;
+    }
+    memcpy(resultFrame + HEADER_SIZE, &result, sizeof(result));
+    printf("[%s] Bluetooth request: id=%s, result=%u\n", connection->label, verifyResult == 1 ? memberId : "-", result.connected);
+    /* BT is server-owned already; losing this result recipient must not close it. */
+    return connection->sendAll(connection->context, resultFrame, sizeof(resultFrame));
+}
+
+static int RequestMemberBluetoothConnection(const char *memberId)
+{
+    return RequestRegisteredBluetoothConnection(memberId, NULL);
+}
+
+static int RequestRegisteredBluetoothConnection(const char *memberId, const char *requestedMac)
+{
+    ClientInfo *bluetoothClient = NULL;
+    ClientInfo *availableClient = NULL;
+    size_t memberIdLength;
+    int result;
+    int keepSession;
+    int connectError;
+
+    if(memberId == NULL || (memberIdLength = strnlen(memberId, MEM_ID_SIZE + 1)) == 0 || memberIdLength > MEM_ID_SIZE)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    /* Serialize lookup/connect/replace: CLI, registration and external requests. */
+    pthread_mutex_lock(&bluetoothConnectMutex);
+    if(serverStopRequested)
+    {
+        pthread_mutex_unlock(&bluetoothConnectMutex);
+        errno = ECANCELED;
+        return -1;
+    }
+    pthread_mutex_lock(&clientMutex);
+    for(int index = 0; index < MAX_CLNT; ++index)
+    {
+        ClientInfo *candidate = &bluetoothClients[index];
+
+        if(candidate->inUse && strcmp(candidate->memberId, memberId) == 0)
+        {
+            bluetoothClient = candidate;
+            break;
+        }
+        if(availableClient == NULL && (!candidate->inUse || !candidate->bluetoothReceiving))
+        {
+            availableClient = candidate;
+        }
+    }
+    pthread_mutex_unlock(&clientMutex);
+    if(bluetoothClient == NULL)
+    {
+        bluetoothClient = availableClient;
+        if(bluetoothClient == NULL)
+        {
+            fprintf(stderr, "Bluetooth session limit reached: id=%s\n", memberId);
+            pthread_mutex_unlock(&bluetoothConnectMutex);
+            errno = ENOSPC;
+            return -1;
+        }
+        DisconnectClientBluetooth(bluetoothClient);
+        pthread_mutex_lock(&clientMutex);
+        memcpy(bluetoothClient->memberId, memberId, memberIdLength + 1);
+        bluetoothClient->inUse = 1;
+        pthread_mutex_unlock(&clientMutex);
+    }
+
+    result = requestedMac == NULL ? ConnectMemberBluetoothDevice(bluetoothClient) : ConnectRegisteredBluetoothDevice(bluetoothClient, requestedMac);
+    connectError = errno;
+    pthread_mutex_lock(&clientMutex);
+    keepSession = bluetoothClient->bluetoothReceiving;
+    pthread_mutex_unlock(&clientMutex);
+    if(result != 0 && !keepSession)
+    {
+        DisconnectClientBluetooth(bluetoothClient);
+        pthread_mutex_lock(&clientMutex);
+        bluetoothClient->inUse = 0;
+        pthread_mutex_unlock(&clientMutex);
+    }
+    pthread_mutex_unlock(&bluetoothConnectMutex);
+    errno = connectError;
+    return result;
+}
+
 static int ConnectMemberBluetoothDevice(ClientInfo *client)
 {
+    return ConnectRegisteredBluetoothDevice(client, NULL);
+}
+
+static int ConnectRegisteredBluetoothDevice(ClientInfo *client, const char *requestedMac)
+{
     BluetoothDeviceRecord deviceRecord;
+    const char *source = client->ip[0] != '\0' ? client->ip : "BT";
     uint8_t rfcommChannel;
     int queryResult;
     int bluetoothFd;
@@ -928,35 +1811,67 @@ static int ConnectMemberBluetoothDevice(ClientInfo *client)
     queryResult = GetMemberBluetoothDevice(client->memberId, strlen(client->memberId), &deviceRecord);
     if(queryResult == 0)
     {
-        printf("[%s] HC-05 registration required: id=%s\n", client->ip, client->memberId);
+        printf("[%s] HC-05 registration required: id=%s\n", source, client->memberId);
         return 1;
     }
     if(queryResult < 0)
     {
-        fprintf(stderr, "[%s] HC-05 database lookup failed: id=%s\n", client->ip, client->memberId);
+        fprintf(stderr, "[%s] HC-05 database lookup failed: id=%s\n", source, client->memberId);
+        errno = EIO;
         return -1;
     }
 
+    if(requestedMac != NULL && strcasecmp(requestedMac, deviceRecord.mac) != 0)
+    {
+        fprintf(stderr, "[BT] ID/MAC binding mismatch: id=%s\n", client->memberId);
+        errno = EACCES;
+        return -1;
+    }
+
+    pthread_mutex_lock(&clientMutex);
+    if(client->inUse && client->bluetoothReceiving && strcasecmp(client->bluetoothMac, deviceRecord.mac) == 0)
+    {
+        pthread_mutex_unlock(&clientMutex);
+        printf("Bluetooth already connected: id=%s, mac=%s\n", client->memberId, deviceRecord.mac);
+        return 0;
+    }
+    for(int index = 0; index < MAX_CLNT; ++index)
+    {
+        const ClientInfo *other = &bluetoothClients[index];
+
+        if(other != client && other->inUse && other->bluetoothReceiving && strcasecmp(other->bluetoothMac, deviceRecord.mac) == 0)
+        {
+            pthread_mutex_unlock(&clientMutex);
+            fprintf(stderr, "Bluetooth MAC already connected to another member: id=%s, mac=%s\n", client->memberId, deviceRecord.mac);
+            errno = EADDRINUSE;
+            return -1;
+        }
+    }
+    pthread_mutex_unlock(&clientMutex);
+
+    /* A stopped receiver's RFCOMM socket must be released before reconnecting. */
+    DisconnectClientBluetooth(client);
     bluetoothFd = ConnectBluetoothDevice(deviceRecord.mac, BLUETOOTH_CONNECT_TIMEOUT_MS, &rfcommChannel);
     if(bluetoothFd < 0)
     {
-        fprintf(stderr, "[%s] HC-05 connection failed: id=%s, mac=%s: %s\n", client->ip, client->memberId, deviceRecord.mac, strerror(errno));
+        fprintf(stderr, "[%s] HC-05 connection failed: id=%s, mac=%s: %s\n", source, client->memberId, deviceRecord.mac, strerror(errno));
         return -1;
     }
 
-    DisconnectClientBluetooth(client);
+    pthread_mutex_lock(&clientMutex);
     client->bluetoothFd = bluetoothFd;
     memcpy(client->bluetoothMac, deviceRecord.mac, sizeof(client->bluetoothMac));
+    pthread_mutex_unlock(&clientMutex);
     if(StartBluetoothReceive(client) != 0)
     {
         int receiveError = errno;
 
         DisconnectClientBluetooth(client);
-        fprintf(stderr, "[%s] Bluetooth receiver initialization failed: id=%s, mac=%s: %s\n", client->ip, client->memberId, deviceRecord.mac, strerror(receiveError));
+        fprintf(stderr, "[%s] Bluetooth receiver initialization failed: id=%s, mac=%s: %s\n", source, client->memberId, deviceRecord.mac, strerror(receiveError));
         errno = receiveError;
         return -1;
     }
-    printf("[%s] HC-05 connected: id=%s, mac=%s, channel=%u\n", client->ip, client->memberId, client->bluetoothMac, (unsigned int)rfcommChannel);
+    printf("[%s] HC-05 connected: id=%s, mac=%s, channel=%u\n", source, client->memberId, client->bluetoothMac, (unsigned int)rfcommChannel);
     return 0;
 }
 
@@ -977,21 +1892,27 @@ static int StartBluetoothReceive(ClientInfo *client)
         free(context);
         return -1;
     }
+    pthread_mutex_lock(&clientMutex);
+    context->owner = client;
     context->bluetoothFd = client->bluetoothFd;
     memcpy(context->memberId, client->memberId, sizeof(context->memberId));
     memcpy(context->mac, client->bluetoothMac, sizeof(context->mac));
     client->bluetoothStopFd = context->stopFd;
+    client->bluetoothReceiving = 1;
 
     createResult = pthread_create(&client->bluetoothReceiveThread, NULL, ReceiveBluetooth, context);
     if(createResult != 0)
     {
         close(context->stopFd);
         client->bluetoothStopFd = -1;
+        client->bluetoothReceiving = 0;
+        pthread_mutex_unlock(&clientMutex);
         free(context);
         errno = createResult;
         return -1;
     }
     client->bluetoothReceiveStarted = 1;
+    pthread_mutex_unlock(&clientMutex);
     return 0;
 }
 
@@ -1025,11 +1946,23 @@ static void StopBluetoothReceive(int bluetoothFd, int stopFd, pthread_t receiveT
 
 static void DisconnectClientBluetooth(ClientInfo *client)
 {
-    StopBluetoothReceive(client->bluetoothFd, client->bluetoothStopFd, client->bluetoothReceiveThread, client->bluetoothReceiveStarted);
+    int bluetoothFd;
+    int stopFd;
+    int receiveStarted;
+    pthread_t receiveThread;
+
+    pthread_mutex_lock(&clientMutex);
+    bluetoothFd = client->bluetoothFd;
+    stopFd = client->bluetoothStopFd;
+    receiveThread = client->bluetoothReceiveThread;
+    receiveStarted = client->bluetoothReceiveStarted;
     client->bluetoothFd = -1;
     client->bluetoothStopFd = -1;
     client->bluetoothReceiveStarted = 0;
+    client->bluetoothReceiving = 0;
     memset(client->bluetoothMac, 0, sizeof(client->bluetoothMac));
+    pthread_mutex_unlock(&clientMutex);
+    StopBluetoothReceive(bluetoothFd, stopFd, receiveThread, receiveStarted);
 }
 
 static void *ReceiveBluetooth(void *arg)
@@ -1049,6 +1982,12 @@ static void *ReceiveBluetooth(void *arg)
     snprintf(label, sizeof(label), "BT id=%s mac=%s", context->memberId, context->mac);
     ReceivePackets(&connection);
 
+    pthread_mutex_lock(&clientMutex);
+    if(context->owner->bluetoothFd == context->bluetoothFd && context->owner->bluetoothStopFd == context->stopFd)
+    {
+        context->owner->bluetoothReceiving = 0;
+    }
+    pthread_mutex_unlock(&clientMutex);
     printf("[BT id=%s mac=%s] Receiver stopped\n", context->memberId, context->mac);
     fflush(stdout);
     free(context);
@@ -1174,7 +2113,7 @@ static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd)
     if(connection->transport == PACKET_TRANSPORT_BLUETOOTH)
     {
         /* This link belongs to an already registered member/MAC binding. */
-        if(cmd == CMD_MEM_DATA || cmd == CMD_BLUETOOTH_REGISTER)
+        if(cmd == CMD_MEM_DATA || cmd == CMD_BLUETOOTH_REGISTER || cmd == CMD_BLUETOOTH_CONNECT)
         {
             snprintf(logBuffer, sizeof(logBuffer), "Management command not allowed from %s: cmd=%u\n", connection->label, cmd);
             LogFile(logBuffer);
@@ -1185,7 +2124,7 @@ static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd)
     {
         ClientInfo *client = (ClientInfo *)connection->context;
 
-        if(cmd != CMD_MEM_DATA && !client->authenticated)
+        if(cmd != CMD_MEM_DATA && cmd != CMD_BLUETOOTH_CONNECT && !client->authenticated)
         {
             snprintf(logBuffer, sizeof(logBuffer), "Unauthenticated command from %s: %u\n", connection->label, cmd);
             LogFile(logBuffer);
@@ -1286,7 +2225,7 @@ static void ReceivePackets(PacketConnection *connection)
 
             fflush(stdout);
 
-            if(header.cmd == CMD_MEM_DATA || header.cmd == CMD_BLUETOOTH_REGISTER)
+            if(header.cmd == CMD_MEM_DATA || header.cmd == CMD_BLUETOOTH_REGISTER || header.cmd == CMD_BLUETOOTH_CONNECT)
             {
                 sodium_memzero(receiveData, header.dataLen);
             }

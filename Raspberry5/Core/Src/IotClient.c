@@ -2,7 +2,9 @@
 #include "IoTPacket.h"
 
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <signal.h>
@@ -13,11 +15,23 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
 #define TLS_HANDSHAKE_TIMEOUT_SECONDS 5
+#define BLUETOOTH_RESULT_TIMEOUT_SECONDS 90
+#define TLS_CLIENT_CONFIG_PATH_SIZE 4096
+#define TLS_CLIENT_CONFIG_LINE_SIZE (TLS_CLIENT_CONFIG_PATH_SIZE + 128)
 
+typedef struct _TlsClientConfig
+{
+    char certificateAuthorityFile[TLS_CLIENT_CONFIG_PATH_SIZE];
+} TlsClientConfig;
+
+static char *TrimTlsClientConfigText(char *text);
+static int ReadTlsClientConfigLine(FILE *file, char *line, size_t lineSize);
+static int LoadTlsClientConfig(const char *filePath, TlsClientConfig *config);
 static int ParsePort(const char *port);
 static int SetSocketTimeout(int socketFd, int timeoutSeconds);
 static int SendPacket(IotClient *client, uint8_t cmd, const void *data, size_t length);
@@ -39,7 +53,7 @@ int ConnectClient(IotClient *client, const char *serverIp, const char *port)
     int serverPort;
     int socketFd;
     struct sockaddr_in serverAddress;
-    const char *certificateAuthorityFile;
+    TlsClientConfig config;
     SSL_CTX *tlsContext = NULL;
     SSL *tls = NULL;
 
@@ -55,18 +69,15 @@ int ConnectClient(IotClient *client, const char *serverIp, const char *port)
         return -1;
     }
 
-    certificateAuthorityFile = getenv("IOT_TLS_CA_FILE");
-    if(certificateAuthorityFile == NULL)
-    {
-        fputs("IOT_TLS_CA_FILE must be set\n", stderr);
-        errno = EINVAL;
-        return -1;
-    }
-
     serverPort = ParsePort(port);
     if(serverPort < 0)
     {
         errno = EINVAL;
+        return -1;
+    }
+
+    if(LoadTlsClientConfig(TLS_CLIENT_CONFIG_FILE, &config) != 0)
+    {
         return -1;
     }
 
@@ -100,7 +111,7 @@ int ConnectClient(IotClient *client, const char *serverIp, const char *port)
     }
 
     tlsContext = SSL_CTX_new(TLS_client_method());
-    if(tlsContext == NULL || SSL_CTX_set_min_proto_version(tlsContext, TLS1_2_VERSION) != 1 || SSL_CTX_load_verify_locations(tlsContext, certificateAuthorityFile, NULL) != 1)
+    if(tlsContext == NULL || SSL_CTX_set_min_proto_version(tlsContext, TLS1_2_VERSION) != 1 || SSL_CTX_load_verify_locations(tlsContext, config.certificateAuthorityFile, NULL) != 1)
     {
         ERR_print_errors_fp(stderr);
         SSL_CTX_free(tlsContext);
@@ -145,6 +156,162 @@ int ConnectClient(IotClient *client, const char *serverIp, const char *port)
     client->tlsContext = tlsContext;
     client->tls = tls;
     return 0;
+}
+
+static char *TrimTlsClientConfigText(char *text)
+{
+    size_t length;
+
+    while(isspace((unsigned char)*text))
+    {
+        ++text;
+    }
+    length = strlen(text);
+    while(length > 0 && isspace((unsigned char)text[length - 1]))
+    {
+        text[--length] = '\0';
+    }
+    return text;
+}
+
+static int ReadTlsClientConfigLine(FILE *file, char *line, size_t lineSize)
+{
+    size_t length = 0;
+    int character;
+
+    while((character = fgetc(file)) != EOF && character != '\n')
+    {
+        if(character == '\0' || length + 1 >= lineSize)
+        {
+            return -1;
+        }
+        line[length++] = (char)character;
+    }
+    line[length] = '\0';
+    if(ferror(file))
+    {
+        return -1;
+    }
+    return character == EOF && length == 0 ? 0 : 1;
+}
+
+static int LoadTlsClientConfig(const char *filePath, TlsClientConfig *config)
+{
+    char line[TLS_CLIENT_CONFIG_LINE_SIZE];
+    struct stat fileStatus;
+    int fileDescriptor = -1;
+    FILE *file = NULL;
+    int readResult;
+    int result = -1;
+    int configError = EINVAL;
+    int seen = 0;
+    size_t lineNumber = 0;
+
+    memset(config, 0, sizeof(*config));
+    fileDescriptor = open(filePath, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if(fileDescriptor < 0)
+    {
+        configError = errno;
+        fprintf(stderr, "Cannot open client TLS config file '%s': %s\n", filePath, strerror(configError));
+        goto cleanup;
+    }
+    if(fstat(fileDescriptor, &fileStatus) != 0 || !S_ISREG(fileStatus.st_mode))
+    {
+        fputs("Client TLS config must be a regular file\n", stderr);
+        goto cleanup;
+    }
+    if(fileStatus.st_mode & (S_IRWXG | S_IRWXO))
+    {
+        configError = EACCES;
+        fprintf(stderr, "Client TLS config permissions are too open. Run: chmod 600 %s\n", filePath);
+        goto cleanup;
+    }
+    file = fdopen(fileDescriptor, "r");
+    if(file == NULL)
+    {
+        configError = errno;
+        fputs("Cannot read client TLS config file\n", stderr);
+        goto cleanup;
+    }
+    fileDescriptor = -1;
+    while((readResult = ReadTlsClientConfigLine(file, line, sizeof(line))) > 0)
+    {
+        char *key = line;
+        char *separator;
+        char *value;
+        size_t valueLength;
+
+        ++lineNumber;
+        if(lineNumber == 1 && strncmp(key, "\xEF\xBB\xBF", 3) == 0)
+        {
+            key += 3;
+        }
+        key = TrimTlsClientConfigText(key);
+        if(*key == '\0' || *key == '#')
+        {
+            continue;
+        }
+        separator = strchr(key, '=');
+        if(separator == NULL)
+        {
+            fprintf(stderr, "Expected KEY=value in client TLS config at line %zu\n", lineNumber);
+            goto cleanup;
+        }
+        *separator = '\0';
+        key = TrimTlsClientConfigText(key);
+        value = TrimTlsClientConfigText(separator + 1);
+        valueLength = strlen(value);
+        if(*value == '\'' || *value == '"')
+        {
+            if(valueLength < 2 || value[valueLength - 1] != *value)
+            {
+                fprintf(stderr, "Unmatched quotes in client TLS config at line %zu\n", lineNumber);
+                goto cleanup;
+            }
+            value[valueLength - 1] = '\0';
+            ++value;
+            valueLength -= 2;
+        }
+        if(strcmp(key, "IOT_TLS_CA_FILE") != 0 || seen)
+        {
+            fprintf(stderr, "Unknown or duplicate client TLS config key at line %zu\n", lineNumber);
+            goto cleanup;
+        }
+        if(valueLength == 0 || valueLength >= sizeof(config->certificateAuthorityFile))
+        {
+            fprintf(stderr, "Invalid IOT_TLS_CA_FILE length at line %zu\n", lineNumber);
+            goto cleanup;
+        }
+        memcpy(config->certificateAuthorityFile, value, valueLength + 1);
+        seen = 1;
+    }
+    if(readResult < 0)
+    {
+        fputs("Unreadable, binary or oversized client TLS config line\n", stderr);
+        goto cleanup;
+    }
+    if(!seen)
+    {
+        fputs("Missing IOT_TLS_CA_FILE in client TLS config\n", stderr);
+        goto cleanup;
+    }
+    result = 0;
+
+cleanup:
+    if(file != NULL)
+    {
+        fclose(file);
+    }
+    if(fileDescriptor >= 0)
+    {
+        close(fileDescriptor);
+    }
+    if(result != 0)
+    {
+        memset(config, 0, sizeof(*config));
+        errno = configError;
+    }
+    return result;
 }
 
 int AuthenticateClient(IotClient *client, const char *memberId, const char *password)
@@ -202,6 +369,80 @@ int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const c
     memcpy(registerData.pin, pin, pinLength);
     result = SendPacket(client, CMD_BLUETOOTH_REGISTER, &registerData, sizeof(registerData));
     sodium_memzero(&registerData, sizeof(registerData));
+    return result;
+}
+
+int RequestBluetoothConnection(IotClient *client, const char *memberId, const char *password, const char *bluetoothMac)
+{
+    BluetoothConnectData request = {0};
+    BluetoothConnectResult response;
+    uint8_t responseHeader[HEADER_SIZE];
+    struct timeval originalTimeout;
+    struct timeval resultTimeout = {.tv_sec = BLUETOOTH_RESULT_TIMEOUT_SECONDS};
+    socklen_t timeoutLength = sizeof(originalTimeout);
+    size_t memberIdLength;
+    size_t passwordLength;
+    int result = -1;
+    int requestError;
+
+    if(client == NULL || client->fd < 0 || client->tls == NULL || memberId == NULL || password == NULL || bluetoothMac == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    memberIdLength = strnlen(memberId, MEM_ID_SIZE + 1);
+    passwordLength = strnlen(password, MEM_PW_SIZE + 1);
+    if(memberIdLength == 0 || memberIdLength > MEM_ID_SIZE || passwordLength == 0 || passwordLength > MEM_PW_SIZE || strnlen(bluetoothMac, BLUETOOTH_MAC_SIZE + 1) != BLUETOOTH_MAC_SIZE)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    if(getsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &originalTimeout, &timeoutLength) != 0 || setsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &resultTimeout, sizeof(resultTimeout)) != 0)
+    {
+        return -1;
+    }
+    memcpy(request.id, memberId, memberIdLength);
+    memcpy(request.pw, password, passwordLength);
+    memcpy(request.mac, bluetoothMac, sizeof(request.mac));
+    result = SendPacket(client, CMD_BLUETOOTH_CONNECT, &request, sizeof(request));
+    sodium_memzero(&request, sizeof(request));
+    if(result != 0)
+    {
+        goto cleanup;
+    }
+    result = -1;
+    do
+    {
+        if(ReceiveAll(client, responseHeader, sizeof(responseHeader)) != 0)
+        {
+            goto cleanup;
+        }
+    }
+    while(responseHeader[0] == HEADER_REQUEST_0 && responseHeader[1] == HEADER_REQUEST_1 && responseHeader[3] == RQ_FLAG_RETRY);
+
+    if(responseHeader[0] != HEADER_RESULT_0 || responseHeader[1] != HEADER_RESULT_1 || responseHeader[2] != CMD_BLUETOOTH_CONNECT || responseHeader[3] != sizeof(response))
+    {
+        errno = EPROTO;
+        goto cleanup;
+    }
+    if(ReceiveAll(client, &response, sizeof(response)) != 0)
+    {
+        goto cleanup;
+    }
+    if(response.connected != BLUETOOTH_CONNECT_FAILED && response.connected != BLUETOOTH_CONNECT_SUCCEEDED)
+    {
+        errno = EPROTO;
+        goto cleanup;
+    }
+    result = response.connected;
+
+cleanup:
+    requestError = errno;
+    if(setsockopt(client->fd, SOL_SOCKET, SO_RCVTIMEO, &originalTimeout, sizeof(originalTimeout)) != 0 && result >= 0)
+    {
+        return -1;
+    }
+    errno = requestError;
     return result;
 }
 

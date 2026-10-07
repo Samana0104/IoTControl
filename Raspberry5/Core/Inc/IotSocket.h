@@ -7,3 +7,5 @@
 #define MAX_CLNT 30
 
 int StartServer(const char *port);
+/* With the CLI enabled, a NULL port waits for 'start <port>'. */
+int StartServerWithCli(const char *port, int enableCli);

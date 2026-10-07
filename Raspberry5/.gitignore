@@ -7,3 +7,12 @@
 # Project executables
 /iot_client
 /iot_server
+
+# Local database credentials (plain text; never commit this file)
+/db_config.txt
+
+# Local server TLS paths
+/tls_config.txt
+
+# Local client trusted CA path
+/tls_client_config.txt

@@ -1,37 +1,72 @@
 #include "IotDatabase.h"
 
+#include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <mysql.h>
 #include <mysqld_error.h>
 #include <sodium.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
+#define DB_CONFIG_FILE "db_config.txt"
+#define DB_CONFIG_VALUE_SIZE 256
+#define DB_CONFIG_PASSWORD_SIZE 1024
+#define DB_CONFIG_LINE_SIZE 2048
 #define DB_DEFAULT_HOST "127.0.0.1"
 #define DB_DEFAULT_PORT 3306
 #define DB_TIMEOUT_SECONDS 5
 #define PASSWORD_HASH_BUFFER_SIZE 256
 
+typedef struct _DatabaseConfig
+{
+    char host[DB_CONFIG_VALUE_SIZE];
+    char user[DB_CONFIG_VALUE_SIZE];
+    char password[DB_CONFIG_PASSWORD_SIZE];
+    char name[DB_CONFIG_VALUE_SIZE];
+    unsigned int port;
+} DatabaseConfig;
+
+typedef struct _DatabaseConfigField
+{
+    const char *key;
+    char *value;
+    size_t valueSize;
+    int required;
+    int allowEmpty;
+    int seen;
+} DatabaseConfigField;
+
 static const char MEMBER_QUERY[] = "SELECT pw_hash FROM member WHERE id = ? LIMIT 1";
 static const char BLUETOOTH_DEVICE_QUERY[] = "SELECT mac_address FROM bluetooth WHERE id = ? LIMIT 1";
 static const char BLUETOOTH_REGISTER_QUERY[] = "INSERT INTO bluetooth(id, mac_address) VALUES(?, ?)";
 static char dummyPasswordHash[crypto_pwhash_STRBYTES];
+static DatabaseConfig databaseConfig;
+static int databaseConfigLoaded;
 
-static unsigned int GetDatabasePort(void);
-static const char *GetEnvironmentOrDefault(const char *name, const char *defaultValue);
+static char *TrimDatabaseConfigText(char *text);
+static int ReadDatabaseConfigLine(FILE *file, char *line, size_t lineSize);
+static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config);
 static MYSQL *ConnectDatabase(void);
 
 int InitializeDatabase(void)
 {
     static const char DUMMY_PASSWORD[] = "invalid-password";
+    DatabaseConfig loadedConfig;
     MYSQL *connection;
 
-    if(getenv("IOT_DB_USER") == NULL || getenv("IOT_DB_PASSWORD") == NULL || getenv("IOT_DB_NAME") == NULL)
+    databaseConfigLoaded = 0;
+    sodium_memzero(&databaseConfig, sizeof(databaseConfig));
+    if(LoadDatabaseConfig(DB_CONFIG_FILE, &loadedConfig) != 0)
     {
-        fputs("IOT_DB_USER, IOT_DB_PASSWORD and IOT_DB_NAME must be set\n", stderr);
         return -1;
     }
+    databaseConfig = loadedConfig;
+    databaseConfigLoaded = 1;
+    sodium_memzero(&loadedConfig, sizeof(loadedConfig));
 
     if(sodium_init() < 0)
     {
@@ -59,6 +94,32 @@ int InitializeDatabase(void)
 
     mysql_close(connection);
     return 0;
+}
+
+MYSQL *OpenDatabaseConnection(void)
+{
+    MYSQL *connection;
+
+    if(mysql_thread_init() != 0)
+    {
+        fputs("MariaDB thread initialization failed\n", stderr);
+        return NULL;
+    }
+    connection = ConnectDatabase();
+    if(connection == NULL)
+    {
+        mysql_thread_end();
+    }
+    return connection;
+}
+
+void CloseDatabaseConnection(MYSQL *connection)
+{
+    if(connection != NULL)
+    {
+        mysql_close(connection);
+        mysql_thread_end();
+    }
 }
 
 int VerifyMember(const char *memberId, size_t memberIdLength, const char *password, size_t passwordLength)
@@ -342,43 +403,209 @@ cleanup:
     return registerResult;
 }
 
-static unsigned int GetDatabasePort(void)
+static char *TrimDatabaseConfigText(char *text)
 {
-    const char *portText = getenv("IOT_DB_PORT");
-    char *endPointer;
-    unsigned long port;
+    size_t length;
 
-    if(portText == NULL || *portText == '\0')
+    while(isspace((unsigned char)*text))
     {
-        return DB_DEFAULT_PORT;
+        ++text;
     }
-
-    errno = 0;
-    port = strtoul(portText, &endPointer, 10);
-    if(errno != 0 || *endPointer != '\0' || port == 0 || port > 65535)
+    length = strlen(text);
+    while(length > 0 && isspace((unsigned char)text[length - 1]))
     {
-        return 0;
+        text[--length] = '\0';
     }
-
-    return (unsigned int)port;
+    return text;
 }
 
-static const char *GetEnvironmentOrDefault(const char *name, const char *defaultValue)
+static int ReadDatabaseConfigLine(FILE *file, char *line, size_t lineSize)
 {
-    const char *value = getenv(name);
+    size_t length = 0;
+    int character;
 
-    return value == NULL || *value == '\0' ? defaultValue : value;
+    while((character = fgetc(file)) != EOF && character != '\n')
+    {
+        if(character == '\0' || length + 1 >= lineSize)
+        {
+            return -1;
+        }
+        line[length++] = (char)character;
+    }
+    line[length] = '\0';
+    if(ferror(file))
+    {
+        return -1;
+    }
+    return character == EOF && length == 0 ? 0 : 1;
+}
+
+static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config)
+{
+    char line[DB_CONFIG_LINE_SIZE] = {0};
+    char portText[16] = {0};
+    DatabaseConfigField fields[] =
+    {
+        {"IOT_DB_HOST", config->host, sizeof(config->host), 0, 0, 0},
+        {"IOT_DB_PORT", portText, sizeof(portText), 0, 0, 0},
+        {"IOT_DB_USER", config->user, sizeof(config->user), 1, 0, 0},
+        {"IOT_DB_PASSWORD", config->password, sizeof(config->password), 1, 1, 0},
+        {"IOT_DB_NAME", config->name, sizeof(config->name), 1, 0, 0}
+    };
+    struct stat fileStatus;
+    int fileDescriptor = -1;
+    FILE *file = NULL;
+    int readResult;
+    int result = -1;
+    size_t lineNumber = 0;
+    unsigned long port;
+    char *endPointer;
+
+    memset(config, 0, sizeof(*config));
+    memcpy(config->host, DB_DEFAULT_HOST, sizeof(DB_DEFAULT_HOST));
+    snprintf(portText, sizeof(portText), "%u", (unsigned int)DB_DEFAULT_PORT);
+    fileDescriptor = open(filePath, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if(fileDescriptor < 0)
+    {
+        fprintf(stderr, "Cannot open DB config file '%s': %s\n", filePath, strerror(errno));
+        goto cleanup;
+    }
+    if(fstat(fileDescriptor, &fileStatus) != 0 || !S_ISREG(fileStatus.st_mode))
+    {
+        fputs("DB config must be a regular file\n", stderr);
+        goto cleanup;
+    }
+    if(fileStatus.st_mode & (S_IRWXG | S_IRWXO))
+    {
+        fprintf(stderr, "DB config permissions are too open. Run: chmod 600 %s\n", filePath);
+        goto cleanup;
+    }
+    file = fdopen(fileDescriptor, "r");
+    if(file == NULL)
+    {
+        fputs("Cannot read DB config file\n", stderr);
+        goto cleanup;
+    }
+    fileDescriptor = -1;
+
+    while((readResult = ReadDatabaseConfigLine(file, line, sizeof(line))) > 0)
+    {
+        char *key;
+        char *value;
+        char *separator;
+        size_t valueLength;
+        DatabaseConfigField *field = NULL;
+
+        ++lineNumber;
+        key = line;
+        if(lineNumber == 1 && strncmp(key, "\xEF\xBB\xBF", 3) == 0)
+        {
+            key += 3;
+        }
+        key = TrimDatabaseConfigText(key);
+        if(*key == '\0' || *key == '#')
+        {
+            continue;
+        }
+        separator = strchr(key, '=');
+        if(separator == NULL)
+        {
+            fprintf(stderr, "Expected KEY=value in DB config at line %zu\n", lineNumber);
+            goto cleanup;
+        }
+        *separator = '\0';
+        key = TrimDatabaseConfigText(key);
+        value = TrimDatabaseConfigText(separator + 1);
+        valueLength = strlen(value);
+        if(*value == '\'' || *value == '"')
+        {
+            if(valueLength < 2 || value[valueLength - 1] != *value)
+            {
+                fprintf(stderr, "Unmatched quotes in DB config at line %zu\n", lineNumber);
+                goto cleanup;
+            }
+            value[valueLength - 1] = '\0';
+            ++value;
+            valueLength -= 2;
+        }
+        for(size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); ++index)
+        {
+            if(strcmp(key, fields[index].key) == 0)
+            {
+                field = &fields[index];
+                break;
+            }
+        }
+        if(field == NULL || field->seen)
+        {
+            fprintf(stderr, "Unknown or duplicate DB config key at line %zu\n", lineNumber);
+            goto cleanup;
+        }
+        if(valueLength >= field->valueSize || (!field->allowEmpty && valueLength == 0))
+        {
+            fprintf(stderr, "Invalid value length for %s at line %zu\n", field->key, lineNumber);
+            goto cleanup;
+        }
+        memcpy(field->value, value, valueLength + 1);
+        field->seen = 1;
+    }
+    if(readResult < 0)
+    {
+        fprintf(stderr, "Unreadable, binary or oversized DB config line at line %zu\n", lineNumber + 1);
+        goto cleanup;
+    }
+    for(size_t index = 0; index < sizeof(fields) / sizeof(fields[0]); ++index)
+    {
+        if(fields[index].required && !fields[index].seen)
+        {
+            fprintf(stderr, "Missing %s in DB config\n", fields[index].key);
+            goto cleanup;
+        }
+    }
+    for(size_t index = 0; portText[index] != '\0'; ++index)
+    {
+        if(!isdigit((unsigned char)portText[index]))
+        {
+            fputs("Invalid IOT_DB_PORT in DB config\n", stderr);
+            goto cleanup;
+        }
+    }
+    errno = 0;
+    port = strtoul(portText, &endPointer, 10);
+    if(errno != 0 || *endPointer != '\0' || port == 0 || port > UINT16_MAX)
+    {
+        fputs("Invalid IOT_DB_PORT in DB config\n", stderr);
+        goto cleanup;
+    }
+    config->port = (unsigned int)port;
+    result = 0;
+
+cleanup:
+    if(file != NULL)
+    {
+        fclose(file);
+    }
+    if(fileDescriptor >= 0)
+    {
+        close(fileDescriptor);
+    }
+    sodium_memzero(line, sizeof(line));
+    sodium_memzero(portText, sizeof(portText));
+    if(result != 0)
+    {
+        sodium_memzero(config, sizeof(*config));
+    }
+    return result;
 }
 
 static MYSQL *ConnectDatabase(void)
 {
     MYSQL *connection;
-    unsigned int port = GetDatabasePort();
     unsigned int timeoutSeconds = DB_TIMEOUT_SECONDS;
 
-    if(port == 0)
+    if(!databaseConfigLoaded)
     {
-        fputs("Invalid IOT_DB_PORT\n", stderr);
+        fputs("DB configuration has not been loaded\n", stderr);
         return NULL;
     }
 
@@ -393,7 +620,7 @@ static MYSQL *ConnectDatabase(void)
     mysql_options(connection, MYSQL_OPT_READ_TIMEOUT, &timeoutSeconds);
     mysql_options(connection, MYSQL_OPT_WRITE_TIMEOUT, &timeoutSeconds);
 
-    if(mysql_real_connect(connection, GetEnvironmentOrDefault("IOT_DB_HOST", DB_DEFAULT_HOST), getenv("IOT_DB_USER"), getenv("IOT_DB_PASSWORD"), getenv("IOT_DB_NAME"), port, NULL, 0) == NULL)
+    if(mysql_real_connect(connection, databaseConfig.host, databaseConfig.user, databaseConfig.password, databaseConfig.name, databaseConfig.port, NULL, 0) == NULL)
     {
         fprintf(stderr, "MariaDB connection failed: %s\n", mysql_error(connection));
         mysql_close(connection);

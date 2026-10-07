@@ -36,3 +36,16 @@ typedef struct _BluetoothRegisterData
     char mac[BLUETOOTH_MAC_SIZE];
     char pin[BLUETOOTH_PIN_SIZE];
 } BluetoothRegisterData;
+
+typedef struct _BluetoothConnectData
+{
+    /* Credentials are sent only over TLS and are not retained by the BT client. */
+    char id[MEM_ID_SIZE];
+    char pw[MEM_PW_SIZE];
+    char mac[BLUETOOTH_MAC_SIZE];
+} BluetoothConnectData;
+
+typedef struct _BluetoothConnectResult
+{
+    uint8_t connected; /* 1: connected, 0: authentication/binding/connection failed. */
+} BluetoothConnectResult;

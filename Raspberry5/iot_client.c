@@ -8,10 +8,14 @@
 #include <unistd.h>
 
 #define INPUT_BUFFER_SIZE (MAX_MESSAGE_SIZE + 2)
+#define BLUETOOTH_REGISTER_COMMAND "bt-register "
+#define BLUETOOTH_CONNECT_COMMAND "bt-connect "
 
 static void DiscardRemainingInput(void);
 static int ReadInput(const char *prompt, char *buffer, size_t bufferSize);
-static int ReadPassword(char *password, size_t passwordSize);
+static int ReadHiddenInput(const char *prompt, char *buffer, size_t bufferSize);
+static int RunBluetoothConnectionRequest(IotClient *client, const char *memberId, const char *bluetoothMac);
+static int RunBluetoothConnectCommand(IotClient *client, const char *sessionMemberId, char *arguments);
 
 int main(int argc, char *argv[])
 {
@@ -19,10 +23,15 @@ int main(int argc, char *argv[])
     char message[INPUT_BUFFER_SIZE];
     char memberId[MEM_ID_SIZE + 2];
     char password[MEM_PW_SIZE + 2];
+    char bluetoothPin[BLUETOOTH_PIN_SIZE + 2];
+
+    /* Show command results immediately while the existing session waits for input. */
+    setvbuf(stdout, NULL, _IOLBF, 0);
 
     if(argc != 3)
     {
         printf("Usage: %s <server IP> <port>\n", argv[0]);
+        printf("TLS CA config: %s (IOT_TLS_CA_FILE=<CA certificate path>)\n", TLS_CLIENT_CONFIG_FILE);
         return 1;
     }
 
@@ -33,7 +42,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if(ReadInput("ID: ", memberId, sizeof(memberId)) != 0 || ReadPassword(password, sizeof(password)) != 0)
+    if(ReadInput("ID: ", memberId, sizeof(memberId)) != 0 || ReadHiddenInput("Password: ", password, sizeof(password)) != 0)
     {
         fputs("Invalid credentials input\n", stderr);
         sodium_memzero(password, sizeof(password));
@@ -50,7 +59,7 @@ int main(int argc, char *argv[])
     }
 
     sodium_memzero(password, sizeof(password));
-    puts("Credentials sent. Enter a message or 'quit'.");
+    puts("Credentials sent. Enter a message, 'bt-register <MAC>', 'bt-connect <ID> <MAC>', or 'quit'.");
 
     while(fgets(message, sizeof(message), stdin) != NULL)
     {
@@ -74,6 +83,37 @@ int main(int argc, char *argv[])
             break;
         }
 
+        if(strcmp(message, "bt-connect") == 0)
+        {
+            puts("Usage: bt-connect <ID> <MAC> (password is requested separately); <ID> may be omitted to use the login ID.");
+            continue;
+        }
+        if(strncmp(message, BLUETOOTH_CONNECT_COMMAND, sizeof(BLUETOOTH_CONNECT_COMMAND) - 1) == 0)
+        {
+            if(RunBluetoothConnectCommand(&client, memberId, message + sizeof(BLUETOOTH_CONNECT_COMMAND) - 1) < 0)
+            {
+                DisconnectClient(&client);
+                return 1;
+            }
+            continue;
+        }
+
+        if(strncmp(message, BLUETOOTH_REGISTER_COMMAND, sizeof(BLUETOOTH_REGISTER_COMMAND) - 1) == 0)
+        {
+            const char *bluetoothMac = message + sizeof(BLUETOOTH_REGISTER_COMMAND) - 1;
+
+            if(ReadHiddenInput("HC-05 PIN: ", bluetoothPin, sizeof(bluetoothPin)) != 0 || RegisterBluetoothDevice(&client, bluetoothMac, bluetoothPin) != 0)
+            {
+                sodium_memzero(bluetoothPin, sizeof(bluetoothPin));
+                perror("RegisterBluetoothDevice()");
+                DisconnectClient(&client);
+                return 1;
+            }
+            sodium_memzero(bluetoothPin, sizeof(bluetoothPin));
+            puts("Bluetooth registration request sent.");
+            continue;
+        }
+
         if(SendChatMessage(&client, message) != 0)
         {
             perror("SendChatMessage()");
@@ -86,6 +126,47 @@ int main(int argc, char *argv[])
 
     DisconnectClient(&client);
     return 0;
+}
+
+static int RunBluetoothConnectCommand(IotClient *client, const char *sessionMemberId, char *arguments)
+{
+    char *savePointer;
+    char *first = strtok_r(arguments, " \t", &savePointer);
+    char *second = strtok_r(NULL, " \t", &savePointer);
+    char *extra = strtok_r(NULL, " \t", &savePointer);
+    const char *memberId = second != NULL ? first : sessionMemberId;
+    const char *bluetoothMac = second != NULL ? second : first;
+
+    if(first == NULL || extra != NULL || strlen(memberId) == 0 || strlen(memberId) > MEM_ID_SIZE || strlen(bluetoothMac) != BLUETOOTH_MAC_SIZE)
+    {
+        puts("Usage: bt-connect <ID> <MAC> (or bt-connect <MAC> for the login ID)");
+        return 0;
+    }
+    return RunBluetoothConnectionRequest(client, memberId, bluetoothMac);
+}
+
+static int RunBluetoothConnectionRequest(IotClient *client, const char *memberId, const char *bluetoothMac)
+{
+    char password[MEM_PW_SIZE + 2];
+    int result;
+
+    if(ReadHiddenInput("Password: ", password, sizeof(password)) != 0)
+    {
+        sodium_memzero(password, sizeof(password));
+        fputs("Invalid password input\n", stderr);
+        return -1;
+    }
+    result = RequestBluetoothConnection(client, memberId, password, bluetoothMac);
+    sodium_memzero(password, sizeof(password));
+    if(result < 0)
+    {
+        perror("RequestBluetoothConnection()");
+    }
+    else
+    {
+        printf("BT result: %d (%s)\n", result, result == BLUETOOTH_CONNECT_SUCCEEDED ? "connected" : "failed");
+    }
+    return result;
 }
 
 static void DiscardRemainingInput(void)
@@ -120,7 +201,7 @@ static int ReadInput(const char *prompt, char *buffer, size_t bufferSize)
     return 0;
 }
 
-static int ReadPassword(char *password, size_t passwordSize)
+static int ReadHiddenInput(const char *prompt, char *buffer, size_t bufferSize)
 {
     struct termios originalSettings;
     struct termios hiddenSettings;
@@ -137,7 +218,7 @@ static int ReadPassword(char *password, size_t passwordSize)
         }
     }
 
-    result = ReadInput("Password: ", password, passwordSize);
+    result = ReadInput(prompt, buffer, bufferSize);
     if(terminalSettingsChanged)
     {
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &originalSettings);

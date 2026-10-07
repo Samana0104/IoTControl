@@ -9,6 +9,11 @@
 #define HEADER_OK_1 'k'
 #define HEADER_REQUEST_0 'R'
 #define HEADER_REQUEST_1 'Q'
+#define HEADER_RESULT_0 'R'
+#define HEADER_RESULT_1 'S'
+
+#define BLUETOOTH_CONNECT_FAILED 0
+#define BLUETOOTH_CONNECT_SUCCEEDED 1
 
 /* RQ.dataLen carries a flag; OK.dataLen carries the payload length. */
 #define RQ_FLAG_INITIAL 0
@@ -29,5 +34,7 @@ typedef enum
     CMD_CON_DATA,
     CMD_MEM_DATA,
     CMD_CHAT_DATA,
-    CMD_BLUETOOTH_REGISTER
+    CMD_BLUETOOTH_REGISTER,
+    /* TCP/TLS request: BluetoothConnectData; response: RS + BluetoothConnectResult. */
+    CMD_BLUETOOTH_CONNECT
 } CmdList;

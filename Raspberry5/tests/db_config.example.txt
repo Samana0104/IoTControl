@@ -1,0 +1,7 @@
+# DB connection settings. Values are literal; do not use "export".
+# Copy this file to db_config.txt, edit the password, then chmod 600 db_config.txt.
+IOT_DB_HOST=127.0.0.1
+IOT_DB_PORT=3306
+IOT_DB_USER=iot_server
+IOT_DB_PASSWORD=CHANGE_ME
+IOT_DB_NAME=iot_control
