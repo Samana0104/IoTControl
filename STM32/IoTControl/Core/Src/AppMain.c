@@ -4,8 +4,10 @@
 #include "SFan.h"
 #include "SZS040.h"
 #include "tim.h"
+#include "i2c.h"
 #include "SIotProtocol.h"
 #include "usart.h"
+#include "SClcd.h"
 
 #ifdef DEBUG_BUILD
 #include "SCLI.h"
@@ -59,6 +61,18 @@ void AppInit(void)
 {
     SLOG_INFO("Boot STM32");
 
+    if(SClcdInit(&hi2c1,0x27))
+    {
+        SClcdSetCursor(0, 0);
+        SClcdWriteString("IoTControl");
+        SClcdSetCursor(0, 1);
+        SClcdPrintf("Temp: %d C", 25);
+    }
+    else
+    {
+        SLOG_ERROR("CLcd init failed");
+    }
+    
     // UART 연결: USART2 = 시리얼(CLI), USART1 = 블루투스(ZS-040)
 #ifdef DEBUG_BUILD
     SCLIInit(&huart2);
