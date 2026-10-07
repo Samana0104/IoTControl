@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <poll.h>
@@ -189,6 +190,7 @@ static int WaitForBluetoothPacketData(void *context, int timeoutMs);
 static int ValidatePacketPermission(PacketConnection *connection, uint8_t cmd);
 static void ReceivePackets(PacketConnection *connection);
 static const PacketHandler *FindPacketHandler(uint8_t cmd);
+static int GetPacketMemberId(const PacketConnection *connection, char memberId[MEM_ID_SIZE + 1]);
 static int ProcessDhtData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ProcessFanData(PacketConnection *connection, const uint8_t *data, size_t length);
 static int ProcessConData(PacketConnection *connection, const uint8_t *data, size_t length);
@@ -1549,33 +1551,104 @@ static const PacketHandler *FindPacketHandler(uint8_t cmd)
     return NULL;
 }
 
+static int GetPacketMemberId(const PacketConnection *connection, char memberId[MEM_ID_SIZE + 1])
+{
+    if(connection == NULL || connection->context == NULL)
+    {
+        return -1;
+    }
+    if(connection->transport == PACKET_TRANSPORT_BLUETOOTH)
+    {
+        const BluetoothReceiveContext *bluetooth = connection->context;
+
+        memcpy(memberId, bluetooth->memberId, MEM_ID_SIZE + 1);
+    }
+    else if(connection->transport == PACKET_TRANSPORT_TCP)
+    {
+        const ClientInfo *client = connection->context;
+
+        pthread_mutex_lock(&clientMutex);
+        if(!client->authenticated)
+        {
+            pthread_mutex_unlock(&clientMutex);
+            return -1;
+        }
+        memcpy(memberId, client->memberId, MEM_ID_SIZE + 1);
+        pthread_mutex_unlock(&clientMutex);
+    }
+    else
+    {
+        return -1;
+    }
+    memberId[MEM_ID_SIZE] = '\0';
+    return memberId[0] != '\0' ? 0 : -1;
+}
+
 static int ProcessDhtData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     DhtData dhtData;
+    char memberId[MEM_ID_SIZE + 1];
+    uint64_t affectedRows;
 
-    (void)length;
+    if(data == NULL || length != sizeof(dhtData) || GetPacketMemberId(connection, memberId) != 0)
+    {
+        return -1;
+    }
     memcpy(&dhtData, data, sizeof(dhtData));
     printf("[%s] DHT: temp=%u, humi=%u\n", connection->label, (unsigned int)dhtData.temp, (unsigned int)dhtData.humi);
+    if(UpdateDhtData(memberId, strlen(memberId), &dhtData, &affectedRows) != 0)
+    {
+        fprintf(stderr, "[%s] DHT DB UPDATE failed: id=%s\n", connection->label, memberId);
+    }
+    else
+    {
+        printf("[%s] DHT DB UPDATE: id=%s, affected=%" PRIu64 "\n", connection->label, memberId, affectedRows);
+    }
+    /* DB errors must not tear down an otherwise valid TCP/BT connection. */
     return 0;
 }
 
 static int ProcessFanData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     FanData fanData;
+    uint64_t affectedRows;
 
-    (void)length;
+    if(connection == NULL || data == NULL || length != sizeof(fanData))
+    {
+        return -1;
+    }
     memcpy(&fanData, data, sizeof(fanData));
     printf("[%s] FAN: fanSpeed=%u\n", connection->label, (unsigned int)fanData.fanSpeed);
+    if(UpdateFanData(&fanData, &affectedRows) != 0)
+    {
+        fprintf(stderr, "[%s] FAN DB UPDATE failed: singleton_id=1\n", connection->label);
+    }
+    else
+    {
+        printf("[%s] FAN DB UPDATE: singleton_id=1, affected=%" PRIu64 "\n", connection->label, affectedRows);
+    }
     return 0;
 }
 
 static int ProcessConData(PacketConnection *connection, const uint8_t *data, size_t length)
 {
     ConData conData;
+    uint64_t affectedRows;
 
-    (void)length;
+    if(connection == NULL || data == NULL || length != sizeof(conData))
+    {
+        return -1;
+    }
     memcpy(&conData, data, sizeof(conData));
     printf("[%s] CON: tempData=%u\n", connection->label, (unsigned int)conData.tempData);
+    if(UpdateConData(&conData, &affectedRows) != 0)
+    {
+        fprintf(stderr, "[%s] CON DB UPDATE failed: singleton_id=1\n", connection->label);
+    }
+    else
+    {
+        printf("[%s] CON DB UPDATE: singleton_id=1, affected=%" PRIu64 "\n", connection->label, affectedRows);
+    }
     return 0;
 }
 

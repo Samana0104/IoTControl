@@ -43,6 +43,9 @@ typedef struct _DatabaseConfigField
 static const char MEMBER_QUERY[] = "SELECT pw_hash FROM member WHERE id = ? LIMIT 1";
 static const char BLUETOOTH_DEVICE_QUERY[] = "SELECT mac_address FROM bluetooth WHERE id = ? LIMIT 1";
 static const char BLUETOOTH_REGISTER_QUERY[] = "INSERT INTO bluetooth(id, mac_address) VALUES(?, ?)";
+static const char DHT_UPDATE_QUERY[] = "UPDATE dht SET temp = ?, humi = ? WHERE id = ?";
+static const char FAN_UPDATE_QUERY[] = "UPDATE fan SET speed = ? WHERE singleton_id = 1";
+static const char CON_UPDATE_QUERY[] = "UPDATE con_data SET temp = ? WHERE singleton_id = 1";
 static char dummyPasswordHash[crypto_pwhash_STRBYTES];
 static DatabaseConfig databaseConfig;
 static int databaseConfigLoaded;
@@ -51,6 +54,7 @@ static char *TrimDatabaseConfigText(char *text);
 static int ReadDatabaseConfigLine(FILE *file, char *line, size_t lineSize);
 static int LoadDatabaseConfig(const char *filePath, DatabaseConfig *config);
 static MYSQL *ConnectDatabase(void);
+static int ExecuteSensorUpdate(const char *query, MYSQL_BIND *parameters, uint64_t *affectedRows);
 
 int InitializeDatabase(void)
 {
@@ -120,6 +124,134 @@ void CloseDatabaseConnection(MYSQL *connection)
         mysql_close(connection);
         mysql_thread_end();
     }
+}
+
+static int ExecuteSensorUpdate(const char *query, MYSQL_BIND *parameters, uint64_t *affectedRows)
+{
+    MYSQL *connection;
+    MYSQL_STMT *statement = NULL;
+    my_ulonglong count;
+    int result = -1;
+
+    if(affectedRows != NULL)
+    {
+        *affectedRows = 0;
+    }
+    connection = OpenDatabaseConnection();
+    if(connection == NULL)
+    {
+        errno = EIO;
+        return -1;
+    }
+    /* This dedicated connection must persist the UPDATE even if the DB default differs. */
+    if(mysql_autocommit(connection, 1) != 0)
+    {
+        fprintf(stderr, "Sensor DB autocommit failed (MariaDB error %u)\n", mysql_errno(connection));
+        goto cleanup;
+    }
+    statement = mysql_stmt_init(connection);
+    if(statement == NULL)
+    {
+        fputs("Sensor DB statement initialization failed\n", stderr);
+        goto cleanup;
+    }
+    if(mysql_stmt_prepare(statement, query, (unsigned long)strlen(query)) != 0 || mysql_stmt_bind_param(statement, parameters) != 0 || mysql_stmt_execute(statement) != 0)
+    {
+        fprintf(stderr, "Sensor DB UPDATE failed (MariaDB error %u)\n", mysql_stmt_errno(statement));
+        goto cleanup;
+    }
+    count = mysql_stmt_affected_rows(statement);
+    if(count == (my_ulonglong)-1)
+    {
+        fputs("Sensor DB UPDATE affected-row retrieval failed\n", stderr);
+        goto cleanup;
+    }
+    if(affectedRows != NULL)
+    {
+        *affectedRows = (uint64_t)count;
+    }
+    result = 0;
+
+cleanup:
+    if(statement != NULL)
+    {
+        mysql_stmt_close(statement);
+    }
+    CloseDatabaseConnection(connection);
+    if(result != 0)
+    {
+        errno = EIO;
+    }
+    return result;
+}
+
+int UpdateDhtData(const char *memberId, size_t memberIdLength, const DhtData *data, uint64_t *affectedRows)
+{
+    MYSQL_BIND parameters[3] = {0};
+    unsigned long idLength = (unsigned long)memberIdLength;
+
+    if(affectedRows != NULL)
+    {
+        *affectedRows = 0;
+    }
+    if(memberId == NULL || memberIdLength == 0 || memberIdLength > MEM_ID_SIZE || data == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    parameters[0].buffer_type = MYSQL_TYPE_SHORT;
+    parameters[0].buffer = (void *)&data->temp;
+    parameters[0].buffer_length = sizeof(data->temp);
+    parameters[0].is_unsigned = 1;
+    parameters[1].buffer_type = MYSQL_TYPE_SHORT;
+    parameters[1].buffer = (void *)&data->humi;
+    parameters[1].buffer_length = sizeof(data->humi);
+    parameters[1].is_unsigned = 1;
+    parameters[2].buffer_type = MYSQL_TYPE_STRING;
+    parameters[2].buffer = (void *)memberId;
+    parameters[2].buffer_length = idLength;
+    parameters[2].length = &idLength;
+    return ExecuteSensorUpdate(DHT_UPDATE_QUERY, parameters, affectedRows);
+}
+
+int UpdateFanData(const FanData *data, uint64_t *affectedRows)
+{
+    MYSQL_BIND parameters[1] = {0};
+
+    if(affectedRows != NULL)
+    {
+        *affectedRows = 0;
+    }
+    if(data == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    parameters[0].buffer_type = MYSQL_TYPE_SHORT;
+    parameters[0].buffer = (void *)&data->fanSpeed;
+    parameters[0].buffer_length = sizeof(data->fanSpeed);
+    parameters[0].is_unsigned = 1;
+    return ExecuteSensorUpdate(FAN_UPDATE_QUERY, parameters, affectedRows);
+}
+
+int UpdateConData(const ConData *data, uint64_t *affectedRows)
+{
+    MYSQL_BIND parameters[1] = {0};
+
+    if(affectedRows != NULL)
+    {
+        *affectedRows = 0;
+    }
+    if(data == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    parameters[0].buffer_type = MYSQL_TYPE_SHORT;
+    parameters[0].buffer = (void *)&data->tempData;
+    parameters[0].buffer_length = sizeof(data->tempData);
+    parameters[0].is_unsigned = 1;
+    return ExecuteSensorUpdate(CON_UPDATE_QUERY, parameters, affectedRows);
 }
 
 int VerifyMember(const char *memberId, size_t memberIdLength, const char *password, size_t passwordLength)

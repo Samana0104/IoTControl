@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IoTProtocol.h"
+#include "IoTPacket.h"
 
 #define TLS_CLIENT_CONFIG_FILE "tls_client_config.txt"
 
@@ -23,4 +24,6 @@ int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const c
    Returns 1 for connected, 0 for server rejection/failure, -1 for local/transport error. */
 int RequestBluetoothConnection(IotClient *client, const char *memberId, const char *password, const char *bluetoothMac);
 int SendChatMessage(IotClient *client, const char *message);
+/* Sends OK, waits for RQ, then sends exactly sizeof(DhtData) payload bytes. */
+int SendDhtData(IotClient *client, const DhtData *data);
 void DisconnectClient(IotClient *client);

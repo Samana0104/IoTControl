@@ -446,6 +446,16 @@ cleanup:
     return result;
 }
 
+int SendDhtData(IotClient *client, const DhtData *data)
+{
+    if(client == NULL || client->fd < 0 || client->tls == NULL || data == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    return SendPacket(client, CMD_DHT11_DATA, data, sizeof(*data));
+}
+
 int SendChatMessage(IotClient *client, const char *message)
 {
     size_t messageLength;

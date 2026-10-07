@@ -1,8 +1,11 @@
 #include "IotClient.h"
 #include "IoTPacket.h"
 
+#include <ctype.h>
+#include <errno.h>
 #include <sodium.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
@@ -16,6 +19,8 @@ static int ReadInput(const char *prompt, char *buffer, size_t bufferSize);
 static int ReadHiddenInput(const char *prompt, char *buffer, size_t bufferSize);
 static int RunBluetoothConnectionRequest(IotClient *client, const char *memberId, const char *bluetoothMac);
 static int RunBluetoothConnectCommand(IotClient *client, const char *sessionMemberId, char *arguments);
+static int ParseDhtValue(const char **arguments, uint16_t *value);
+static int RunDhtCommand(IotClient *client, const char *arguments);
 
 int main(int argc, char *argv[])
 {
@@ -59,7 +64,7 @@ int main(int argc, char *argv[])
     }
 
     sodium_memzero(password, sizeof(password));
-    puts("Credentials sent. Enter a message, 'bt-register <MAC>', 'bt-connect <ID> <MAC>', or 'quit'.");
+    puts("Credentials sent. Enter a message, 'dht <temp> <humi>', 'bt-register <MAC>', 'bt-connect <ID> <MAC>', or 'quit'.");
 
     while(fgets(message, sizeof(message), stdin) != NULL)
     {
@@ -81,6 +86,16 @@ int main(int argc, char *argv[])
         if(strcmp(message, "quit") == 0)
         {
             break;
+        }
+
+        if(strncmp(message, "dht", sizeof("dht") - 1) == 0 && (message[sizeof("dht") - 1] == '\0' || isspace((unsigned char)message[sizeof("dht") - 1])))
+        {
+            if(RunDhtCommand(&client, message + sizeof("dht") - 1) < 0)
+            {
+                DisconnectClient(&client);
+                return 1;
+            }
+            continue;
         }
 
         if(strcmp(message, "bt-connect") == 0)
@@ -125,6 +140,57 @@ int main(int argc, char *argv[])
     }
 
     DisconnectClient(&client);
+    return 0;
+}
+
+static int ParseDhtValue(const char **arguments, uint16_t *value)
+{
+    char *endPointer;
+    unsigned long parsedValue;
+
+    while(isspace((unsigned char)**arguments))
+    {
+        ++*arguments;
+    }
+    if(!isdigit((unsigned char)**arguments))
+    {
+        return -1;
+    }
+    errno = 0;
+    parsedValue = strtoul(*arguments, &endPointer, 10);
+    if(errno != 0 || parsedValue > UINT16_MAX || (*endPointer != '\0' && !isspace((unsigned char)*endPointer)))
+    {
+        return -1;
+    }
+    *arguments = endPointer;
+    *value = (uint16_t)parsedValue;
+    return 0;
+}
+
+static int RunDhtCommand(IotClient *client, const char *arguments)
+{
+    DhtData dhtData;
+
+    if(ParseDhtValue(&arguments, &dhtData.temp) != 0 || ParseDhtValue(&arguments, &dhtData.humi) != 0)
+    {
+        puts("Usage: dht <temp> <humi> (decimal integers: 0..65535)");
+        return 0;
+    }
+    while(isspace((unsigned char)*arguments))
+    {
+        ++arguments;
+    }
+    if(*arguments != '\0')
+    {
+        puts("Usage: dht <temp> <humi> (decimal integers: 0..65535)");
+        return 0;
+    }
+    if(SendDhtData(client, &dhtData) != 0)
+    {
+        perror("SendDhtData()");
+        return -1;
+    }
+    printf("DHT data sent: temp=%u, humi=%u\n", (unsigned int)dhtData.temp, (unsigned int)dhtData.humi);
     return 0;
 }
 

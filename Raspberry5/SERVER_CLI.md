@@ -112,6 +112,63 @@ SQL은 호출자가 제공하는 신뢰된 관리용 문자열입니다. 외부 
 CMake의 `iot_server`에 새 소스를 등록했습니다. 직접 gcc로 빌드한다면 기존 서버 소스 목록에
 `Core/Src/IotDatabaseCommand.c`도 포함해야 합니다.
 
+## 센서 수신 시 DB UPDATE
+
+`ProcessDhtData` / `ProcessFanData` / `ProcessConData`는 정상 패킷을 받은 뒤 DB UPDATE를 실행합니다.
+TCP/WiFi와 Bluetooth 모두 기존 공용 수신 경로를 사용하며, 패킷 형식은 바꾸지 않았습니다.
+DB 실행 함수는 `IotDatabase.h` / `IotDatabase.c`의 `UpdateDhtData` / `UpdateFanData` / `UpdateConData`입니다.
+
+```sql
+UPDATE dht SET temp = ?, humi = ? WHERE id = ?;
+UPDATE fan SET speed = ? WHERE singleton_id = 1;
+UPDATE con_data SET temp = ? WHERE singleton_id = 1;
+```
+
+DHT의 ID는 패킷에 추가하지 않고 TCP 세션의 인증된 회원 ID 또는 BT 수신 컨텍스트의 회원 ID를 사용합니다.
+숫자와 ID는 prepared statement로 바인딩하며, 수신한 uint16_t 값을 그대로 저장합니다. 별도 소수점 배율 변환은 하지 않습니다.
+FAN/CON은 공용 단일 행이므로 여러 장치가 보내면 마지막으로 성공한 UPDATE 값이 남습니다.
+
+INSERT 또는 upsert는 하지 않습니다. `dht`의 해당 ID 행과 `fan` / `con_data`의 `singleton_id=1` 행을 미리 준비해야 합니다.
+변경 행 수는 `DB UPDATE: ... affected=N` 로그로 확인합니다. `affected=0`은 값이 같거나 대상 행이 없는 경우입니다.
+각 호출은 별도 DB 연결을 사용하며 autocommit으로 반영합니다. DB 계정에는 각 테이블에 대한 UPDATE 권한이 필요합니다.
+DB 오류는 로그로 남기고 TCP/BT 연결을 유지합니다. 오류 데이터에 대한 자동 재시도·저장 큐나 클라이언트 저장 완료 응답은 추가하지 않았습니다.
+`dht.updated_at`은 기존 테이블의 `ON UPDATE CURRENT_TIMESTAMP` 동작을 따르므로 데이터 값이 바뀌었을 때 갱신됩니다.
+
+## 테스트 클라이언트 DHT 송신 명령
+
+`iot_client`를 빌드하고 로그인한 뒤 기존 명령 입력 화면에서 `dht <temp> <humi>`를 입력합니다.
+이는 서버 CLI 명령이 아니라 TCP/TLS 클라이언트 명령입니다.
+
+```sh
+cmake --build build --target iot_client --parallel
+./build/iot_client <서버_IP> 5000
+```
+
+```text
+ID: test
+Password: (숨김 입력)
+dht 10 10
+DHT data sent: temp=10, humi=10
+```
+
+`SendDhtData(client, &dhtData)`는 기존 `SendPacket`을 재사용합니다. 헤더 길이와 명령은 상수/sizeof를 사용하며
+온도·습도는 기존 `DhtData` 구조체에 담습니다. 음수·소수·65535 초과·누락/추가 인자는 거부하고 연결을 유지합니다.
+
+```text
+클라이언트 → 서버: 'o', 'k', CMD_DHT11_DATA (=0), sizeof(DhtData) (=4)
+클라이언트 ← 서버: 'R', 'Q', CMD_DHT11_DATA, RQ_FLAG_INITIAL (=0)
+클라이언트 → 서버: DhtData { .temp = 10, .humi = 10 }
+서버:              인증된 회원 ID의 dht 행 UPDATE
+```
+
+클라이언트의 `DHT data sent`는 데이터 송신 완료 메시지이지 DB 저장 확인 응답이 아닙니다.
+서버의 `DHT DB UPDATE: id=test, affected=N` 로그와 아래 서버 CLI 조회로 실제 값을 확인합니다.
+해당 ID의 `dht` 행은 미리 존재해야 합니다.
+
+```text
+iot-server> db select id, temp, humi FROM dht WHERE id='test';
+```
+
 ## 등록된 Bluetooth 장치 연결 요청
 
 서버를 시작한 뒤 서버 CLI에서 회원 ID를 지정합니다. MAC 자체가 아니라 `bluetooth.id`를 사용합니다.
@@ -218,6 +275,8 @@ sh tests/run_database_config_test.sh
 sh tests/run_database_command_test.sh
 sh tests/run_tls_config_test.sh
 sh tests/run_client_tls_config_test.sh
+sh tests/run_sensor_database_test.sh
+sh tests/run_client_dht_test.sh
 ```
 
 CLI 입력 처리, 상태 스냅샷, BT 수신 상태, TCP/BT 종료 및 실제 로컬 TLS 접속을 테스트합니다.
@@ -226,6 +285,8 @@ TLS 통합 테스트는 기존 `iot_client` 연결 하나에서 BT 요청의 결
 외부 TCP 클라이언트 없이 서버 CLI만으로 BT를 연결하는 경로도 확인합니다.
 DB 설정 테스트는 파일 파싱·권한·오류 처리·비밀번호 로그 노출 방지와 DB 연결에 전달하는 설정 값을 검사합니다.
 DB 명령 테스트는 실제 DB 대신 모의 MariaDB API로 단일 문장 검사, WHERE 누락 거부, 변경 행 수, SELECT 콜백·NULL·바이너리 출력과 오류 시 자원 정리를 확인합니다.
+센서 DB 테스트는 ID/단일 행 UPDATE SQL과 값 바인딩·오류 시 자원 정리를 검사합니다. 수신 테스트도 DB 저장 함수 호출을 모의 대상으로 검사합니다.
+클라이언트 DHT 테스트는 CLI 숫자 입력과 OK/RQ/DATA 순서를 검사합니다. 로컬 TLS 통합 테스트는 로그인 후 DHT 송신이 회원 ID를 사용한 서버 DB UPDATE 함수까지 전달되는지 확인합니다.
 TLS 설정 테스트는 경로 파싱·권한·누락/중복 키·크기 제한을 검사하며, TLS 통합 테스트에서 파일 기반 인증서 로딩과 실패 후 재시도를 확인합니다.
 클라이언트 TLS 설정 테스트도 파일 파싱을 확인하고, 통합 테스트에서 환경 변수 무시·잘못된 CA 거부·서버 IP 검증 유지를 확인합니다.
 실제 DB나 Bluetooth 장치에 접속하지 않으며, TLS 테스트 인증서는 `/tmp`에 별도로 생성합니다.
