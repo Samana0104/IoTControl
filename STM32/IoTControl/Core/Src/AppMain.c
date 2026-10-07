@@ -7,6 +7,7 @@
 #include "tim.h"
 #include "i2c.h"
 #include "SIotProtocol.h"
+#include "IoTPacketCodec.h"
 #include "usart.h"
 #include "SClcd.h"
 
@@ -20,28 +21,51 @@
 static SIntervalMS interval500MS;
 static SIntervalMS interval2Sec;
 
-static void HandleBluetoothPacket(uint8_t cmd, const uint8_t *data, uint8_t length)
+// 서버 → 장치 REQ_FAN: 팬 속도(0..100%) 적용 후 ACK_FAN으로 결과 응답
+static void HandleFanControl(const uint8_t *data, uint16_t length)
 {
-    if (cmd == CMD_CHAT_DATA)
+    FanData fanData;
+    uint8_t result = RESULT_FAIL;
+
+    if (ReadFanData(data, length, &fanData) == 0 && fanData.fanSpeed <= SFAN_MAX_PERCENT)
+    {
+        SFanSetSpeed((uint8_t)fanData.fanSpeed);
+        result = RESULT_SUCCESS;
+        SLOG_INFO("bt fan control: speed=%u%%", (unsigned int)fanData.fanSpeed);
+    }
+    else
+    {
+        SLOG_WARN("bt fan control rejected: length=%u", (unsigned int)length);
+    }
+    SIotProtocolSendPacket(ACK_FAN, &result, RESULT_DATA_SIZE);
+}
+
+static void HandleBluetoothPacket(uint16_t cmd, const uint8_t *data, uint16_t length)
+{
+    if (cmd == REQ_FAN)
+    {
+        HandleFanControl(data, length);
+    }
+    else if (cmd == NFY_CHAT)
     {
         SLOG_INFO("bt chat rx (%u bytes): %.*s", (unsigned int)length, (int)length, (const char *)data);
     }
     else
     {
         // 센서/제어 명령의 응용 동작은 해당 cmd의 처리부에서 연결.
-        SLOG_INFO("bt packet rx: cmd=%u, length=%u", (unsigned int)cmd, (unsigned int)length);
+        SLOG_INFO("bt packet rx: cmd=0x%04X, length=%u", (unsigned int)cmd, (unsigned int)length);
     }
 }
 
-static void HandleBluetoothSend(uint8_t cmd, bool success)
+static void HandleBluetoothSend(uint16_t cmd, bool success)
 {
     if (success)
     {
-        SLOG_INFO("bt DATA transmitted: cmd=%u", (unsigned int)cmd);
+        SLOG_INFO("bt frame transmitted: cmd=0x%04X", (unsigned int)cmd);
     }
     else
     {
-        SLOG_ERROR("bt send failed: cmd=%u (RQ timeout/mismatch or UART error)", (unsigned int)cmd);
+        SLOG_ERROR("bt send failed: cmd=0x%04X (invalid length or UART error)", (unsigned int)cmd);
     }
 }
 

@@ -1,4 +1,0 @@
-# Copy to tls_config.txt, adjust paths, and run: chmod 600 tls_config.txt
-# Relative paths are resolved from the server's working directory.
-IOT_TLS_CERT_FILE=./cert/server.crt
-IOT_TLS_KEY_FILE=./cert/server.key
