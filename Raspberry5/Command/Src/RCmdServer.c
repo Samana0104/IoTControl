@@ -3,26 +3,32 @@
 #include <ctype.h>
 #include <stdio.h>
 
-// DB/TLS 초기화 후 포트 listen 시작
-static void ServerStart(ServerState *server, const char *args)
+// DB/TLS 초기화 후 listen 시작, 포트를 생략하면 main에서 설정한 포트 사용
+static void ServerStart(TCPServer *server, const char *args)
 {
-    const char *port = args;
+    if(IsServerRunning(server))
+    {
+        printf("Server already running on %s:%d. Restart the process to change ports.\n", server->ip, GetServerPort(server));
+        return;
+    }
+    if(*args != '\0')
+    {
+        int port = ParseServerPort(args);
 
-    if(!isdigit((unsigned char)*port) || ParseServerPort(port) < 0)
-    {
-        puts("Usage: server start <port> (1..65535)");
+        if(!isdigit((unsigned char)*args) || port < 0)
+        {
+            puts("Usage: server start [port] (1..65535)");
+            return;
+        }
+        server->port = port;
     }
-    else if(IsServerRunning(server))
+    if(OpenServer(server) != 0)
     {
-        printf("Server already running on port %d. Restart the process to change ports.\n", GetServerPort(server));
-    }
-    else if(StartServerListener(server, port) != 0)
-    {
-        puts("Server start failed. Fix the configuration or retry 'server start <port>'.");
+        puts("Server start failed. Fix the configuration or retry 'server start [port]'.");
     }
 }
 
-static void ServerStatus(ServerState *server, const char *args)
+static void ServerStatus(TCPServer *server, const char *args)
 {
     ServerClientSnapshot snapshots[MAX_CLNT * 2];
     size_t snapshotCount = GetServerClientSnapshots(snapshots);
@@ -40,17 +46,17 @@ static void ServerStatus(ServerState *server, const char *args)
     }
     if(IsServerRunning(server))
     {
-        printf("Server: running\nListen: 0.0.0.0:%d (TCP/TLS)\n", GetServerPort(server));
+        printf("Server: running\nListen: %s:%d (TCP/TLS)\n", server->ip, GetServerPort(server));
     }
     else
     {
-        puts("Server: not started\nListen: none (use 'server start <port>')");
+        printf("Server: not started\nListen: none (configured %s:%d, use 'server start [port]')\n", server->ip, GetServerPort(server));
     }
     printf("TCP sessions: %zu/%d\nBT sockets: %zu (active receivers: %zu)\n", snapshotCount, MAX_CLNT, bluetoothCount, receiverCount);
     funlockfile(stdout);
 }
 
-static void ServerClients(ServerState *server, const char *args)
+static void ServerClients(TCPServer *server, const char *args)
 {
     ServerClientSnapshot snapshots[MAX_CLNT * 2];
     size_t snapshotCount = GetServerClientSnapshots(snapshots);
@@ -80,7 +86,7 @@ static const RCommand SERVER_COMMANDS[] =
     {"clients", ServerClients}
 };
 
-void RCmdServer(ServerState *server, const char *args)
+void RCmdServer(TCPServer *server, const char *args)
 {
     RCommandDispatch(server, args, "server", SERVER_COMMANDS, RCOMMAND_COUNT(SERVER_COMMANDS));
 }

@@ -9,9 +9,9 @@
 #include <strings.h>
 #include <unistd.h>
 
-static void CmdHelp(ServerState *server, const char *args);
-static void CmdClear(ServerState *server, const char *args);
-static void CmdQuit(ServerState *server, const char *args);
+static void CmdHelp(TCPServer *server, const char *args);
+static void CmdClear(TCPServer *server, const char *args);
+static void CmdQuit(TCPServer *server, const char *args);
 static void PrintCommandList(const char *group, const RCommand *commands, size_t count);
 
 static const RCommand COMMANDS[] =
@@ -25,7 +25,7 @@ static const RCommand COMMANDS[] =
     {"exit", CmdQuit}
 };
 
-void RCommandExecute(ServerState *server, char *line)
+void RCommandExecute(TCPServer *server, char *line)
 {
     char *command = (char *)RCommandSkipSpace(line);
     size_t length = strlen(command);
@@ -59,7 +59,7 @@ const char *RCommandSkipSpace(const char *text)
     return text;
 }
 
-void RCommandDispatch(ServerState *server, const char *args, const char *group, const RCommand *commands, size_t count)
+void RCommandDispatch(TCPServer *server, const char *args, const char *group, const RCommand *commands, size_t count)
 {
     const char *input = RCommandSkipSpace(args);
     size_t nameLength = 0;
@@ -89,14 +89,14 @@ void RCommandDispatch(ServerState *server, const char *args, const char *group, 
     funlockfile(stdout);
 }
 
-static void CmdHelp(ServerState *server, const char *args)
+static void CmdHelp(TCPServer *server, const char *args)
 {
     (void)server;
     (void)args;
     RCommandPrintHelp();
 }
 
-static void CmdClear(ServerState *server, const char *args)
+static void CmdClear(TCPServer *server, const char *args)
 {
     (void)server;
     (void)args;
@@ -106,7 +106,7 @@ static void CmdClear(ServerState *server, const char *args)
     }
 }
 
-static void CmdQuit(ServerState *server, const char *args)
+static void CmdQuit(TCPServer *server, const char *args)
 {
     (void)server;
     (void)args;

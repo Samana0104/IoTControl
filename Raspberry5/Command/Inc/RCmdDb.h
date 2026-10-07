@@ -3,4 +3,4 @@
 #include "RCommand.h"
 
 // db <select|insert|update> ...
-void RCmdDb(ServerState *server, const char *args);
+void RCmdDb(TCPServer *server, const char *args);

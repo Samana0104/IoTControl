@@ -3,4 +3,4 @@
 #include "RCommand.h"
 
 // server <start|status|clients> ...
-void RCmdServer(ServerState *server, const char *args);
+void RCmdServer(TCPServer *server, const char *args);

@@ -3,4 +3,4 @@
 #include "RCommand.h"
 
 // bt <list|connect> ...
-void RCmdBt(ServerState *server, const char *args);
+void RCmdBt(TCPServer *server, const char *args);

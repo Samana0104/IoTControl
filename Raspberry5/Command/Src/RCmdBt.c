@@ -4,7 +4,7 @@
 #include <string.h>
 
 // DB 등록 목록이 아니라 현재 서버가 보유한 BT 소켓 상태
-static void BtList(ServerState *server, const char *args)
+static void BtList(TCPServer *server, const char *args)
 {
     ServerClientSnapshot snapshots[MAX_CLNT * 2];
     size_t snapshotCount = GetServerBluetoothSnapshots(snapshots);
@@ -36,7 +36,7 @@ static void BtList(ServerState *server, const char *args)
 
 // DB에 등록된 회원 Bluetooth MAC으로 연결 또는 재연결
 // 연결 중 로그를 찍는 워커를 기다리므로 stdout 락을 잡지 않는다.
-static void BtConnect(ServerState *server, const char *args)
+static void BtConnect(TCPServer *server, const char *args)
 {
     const char *memberId = args;
 
@@ -46,7 +46,7 @@ static void BtConnect(ServerState *server, const char *args)
     }
     else if(!IsServerRunning(server))
     {
-        puts("Start the server first: server start <port>");
+        puts("Start the server first: server start [port]");
     }
     else
     {
@@ -62,7 +62,7 @@ static const RCommand BT_COMMANDS[] =
     {"connect", BtConnect}
 };
 
-void RCmdBt(ServerState *server, const char *args)
+void RCmdBt(TCPServer *server, const char *args)
 {
     RCommandDispatch(server, args, "bt", BT_COMMANDS, RCOMMAND_COUNT(BT_COMMANDS));
 }

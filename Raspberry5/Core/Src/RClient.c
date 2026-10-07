@@ -317,6 +317,7 @@ cleanup:
 int AuthenticateClient(IotClient *client, const char *memberId, const char *password)
 {
     MemData memData;
+    uint8_t payload[MEM_DATA_SIZE];
     size_t memberIdLength;
     size_t passwordLength;
     int result;
@@ -338,14 +339,17 @@ int AuthenticateClient(IotClient *client, const char *memberId, const char *pass
     memset(&memData, 0, sizeof(memData));
     memcpy(memData.id, memberId, memberIdLength);
     memcpy(memData.pw, password, passwordLength);
-    result = SendPacket(client, CMD_MEM_DATA, &memData, sizeof(memData));
+    EncodeMemData(&memData, payload, sizeof(payload));
+    result = SendPacket(client, CMD_MEM_DATA, payload, sizeof(payload));
     sodium_memzero(&memData, sizeof(memData));
+    sodium_memzero(payload, sizeof(payload));
     return result;
 }
 
 int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const char *pin)
 {
     BluetoothRegisterData registerData;
+    uint8_t payload[BLUETOOTH_REGISTER_DATA_SIZE];
     size_t macLength;
     size_t pinLength;
     int result;
@@ -367,8 +371,10 @@ int RegisterBluetoothDevice(IotClient *client, const char *bluetoothMac, const c
     memset(&registerData, 0, sizeof(registerData));
     memcpy(registerData.mac, bluetoothMac, macLength);
     memcpy(registerData.pin, pin, pinLength);
-    result = SendPacket(client, CMD_BLUETOOTH_REGISTER, &registerData, sizeof(registerData));
+    EncodeBluetoothRegisterData(&registerData, payload, sizeof(payload));
+    result = SendPacket(client, CMD_BLUETOOTH_REGISTER, payload, sizeof(payload));
     sodium_memzero(&registerData, sizeof(registerData));
+    sodium_memzero(payload, sizeof(payload));
     return result;
 }
 
@@ -376,7 +382,9 @@ int RequestBluetoothConnection(IotClient *client, const char *memberId, const ch
 {
     BluetoothConnectData request = {0};
     BluetoothConnectResult response;
+    uint8_t payload[BLUETOOTH_CONNECT_DATA_SIZE];
     uint8_t responseHeader[HEADER_SIZE];
+    uint8_t responseData[BLUETOOTH_CONNECT_RESULT_SIZE];
     struct timeval originalTimeout;
     struct timeval resultTimeout = {.tv_sec = BLUETOOTH_RESULT_TIMEOUT_SECONDS};
     socklen_t timeoutLength = sizeof(originalTimeout);
@@ -404,8 +412,10 @@ int RequestBluetoothConnection(IotClient *client, const char *memberId, const ch
     memcpy(request.id, memberId, memberIdLength);
     memcpy(request.pw, password, passwordLength);
     memcpy(request.mac, bluetoothMac, sizeof(request.mac));
-    result = SendPacket(client, CMD_BLUETOOTH_CONNECT, &request, sizeof(request));
+    EncodeBluetoothConnectData(&request, payload, sizeof(payload));
+    result = SendPacket(client, CMD_BLUETOOTH_CONNECT, payload, sizeof(payload));
     sodium_memzero(&request, sizeof(request));
+    sodium_memzero(payload, sizeof(payload));
     if(result != 0)
     {
         goto cleanup;
@@ -420,15 +430,16 @@ int RequestBluetoothConnection(IotClient *client, const char *memberId, const ch
     }
     while(responseHeader[0] == HEADER_REQUEST_0 && responseHeader[1] == HEADER_REQUEST_1 && responseHeader[3] == RQ_FLAG_RETRY);
 
-    if(responseHeader[0] != HEADER_RESULT_0 || responseHeader[1] != HEADER_RESULT_1 || responseHeader[2] != CMD_BLUETOOTH_CONNECT || responseHeader[3] != sizeof(response))
+    if(responseHeader[0] != HEADER_RESULT_0 || responseHeader[1] != HEADER_RESULT_1 || responseHeader[2] != CMD_BLUETOOTH_CONNECT || responseHeader[3] != BLUETOOTH_CONNECT_RESULT_SIZE)
     {
         errno = EPROTO;
         goto cleanup;
     }
-    if(ReceiveAll(client, &response, sizeof(response)) != 0)
+    if(ReceiveAll(client, responseData, sizeof(responseData)) != 0)
     {
         goto cleanup;
     }
+    DecodeBluetoothConnectResult(responseData, sizeof(responseData), &response);
     if(response.connected != BLUETOOTH_CONNECT_FAILED && response.connected != BLUETOOTH_CONNECT_SUCCEEDED)
     {
         errno = EPROTO;
@@ -448,12 +459,15 @@ cleanup:
 
 int SendDhtData(IotClient *client, const DhtData *data)
 {
+    uint8_t payload[DHT_DATA_SIZE];
+
     if(client == NULL || client->fd < 0 || client->tls == NULL || data == NULL)
     {
         errno = EINVAL;
         return -1;
     }
-    return SendPacket(client, CMD_DHT11_DATA, data, sizeof(*data));
+    EncodeDhtData(data, payload, sizeof(payload));
+    return SendPacket(client, CMD_DHT11_DATA, payload, sizeof(payload));
 }
 
 int SendChatMessage(IotClient *client, const char *message)
@@ -533,10 +547,7 @@ static int SendPacket(IotClient *client, uint8_t cmd, const void *data, size_t l
         return -1;
     }
 
-    sendHeader[0] = HEADER_OK_0;
-    sendHeader[1] = HEADER_OK_1;
-    sendHeader[2] = cmd;
-    sendHeader[3] = (uint8_t)length;
+    EncodePacketHeader(sendHeader, HEADER_OK_0, HEADER_OK_1, cmd, (uint8_t)length);
 
     if(SendAll(client, sendHeader, sizeof(sendHeader)) != 0)
     {
