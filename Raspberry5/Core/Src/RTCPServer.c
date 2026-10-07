@@ -1,4 +1,4 @@
-#include "RSocket.h"
+#include "RTCPServer.h"
 #include "RBluetooth.h"
 #include "RDatabase.h"
 #include "RCommand.h"
@@ -88,14 +88,6 @@ typedef struct _ClientInfo
     int sendResult;
 } ClientInfo;
 
-struct _ServerState
-{
-    int socket;
-    int port;
-    int databaseInitialized;
-    SSL_CTX *tlsContext;
-};
-
 /* Console input is line-buffered here and each line is handed to RCommandExecute(). */
 typedef struct _ServerConsole
 {
@@ -146,8 +138,8 @@ static volatile sig_atomic_t serverStopRequested;
 static void HandleServerStopSignal(int signalNumber);
 static void StopServerClients(void);
 static void ShowServerConsole(const ServerConsole *console);
-static void ReadServerConsole(ServerConsole *console, ServerState *server);
-static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, ServerState *server);
+static void ReadServerConsole(ServerConsole *console, TCPServer *server);
+static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, TCPServer *server);
 static int SetSocketTimeout(int socketFd, int timeoutSeconds);
 static int InitializeClients(void);
 static int GetClientCount(void);
@@ -194,40 +186,38 @@ static void LogFile(const char *message);
 
 static const PacketHandler PACKET_HANDLERS[] =
 {
-    {CMD_DHT11_DATA, sizeof(DhtData), sizeof(DhtData), ProcessDhtData},
-    {CMD_FAN_DATA, sizeof(FanData), sizeof(FanData), ProcessFanData},
-    {CMD_CON_DATA, sizeof(ConData), sizeof(ConData), ProcessConData},
-    {CMD_MEM_DATA, sizeof(MemData), sizeof(MemData), ProcessMemData},
+    {CMD_DHT11_DATA, DHT_DATA_SIZE, DHT_DATA_SIZE, ProcessDhtData},
+    {CMD_FAN_DATA, FAN_DATA_SIZE, FAN_DATA_SIZE, ProcessFanData},
+    {CMD_CON_DATA, CON_DATA_SIZE, CON_DATA_SIZE, ProcessConData},
+    {CMD_MEM_DATA, MEM_DATA_SIZE, MEM_DATA_SIZE, ProcessMemData},
     {CMD_CHAT_DATA, 0, MAX_MESSAGE_SIZE, ProcessChatData},
-    {CMD_BLUETOOTH_REGISTER, sizeof(BluetoothRegisterData), sizeof(BluetoothRegisterData), ProcessBluetoothRegisterData},
-    {CMD_BLUETOOTH_CONNECT, sizeof(BluetoothConnectData), sizeof(BluetoothConnectData), ProcessBluetoothConnectData}
+    {CMD_BLUETOOTH_REGISTER, BLUETOOTH_REGISTER_DATA_SIZE, BLUETOOTH_REGISTER_DATA_SIZE, ProcessBluetoothRegisterData},
+    {CMD_BLUETOOTH_CONNECT, BLUETOOTH_CONNECT_DATA_SIZE, BLUETOOTH_CONNECT_DATA_SIZE, ProcessBluetoothConnectData}
 };
 
-int StartServer(const char *port)
+int InitServer(TCPServer *server, const char *ip, int port)
 {
-    return StartServerWithCli(port, isatty(STDIN_FILENO));
-}
-
-int StartServerWithCli(const char *port, int enableCli)
-{
-    int result = -1;
-    ServerState server = {.socket = -1};
     struct sigaction stopAction = {0};
-    struct sigaction originalInterruptAction;
-    struct sigaction originalTerminateAction;
-    int signalHandlersInstalled = 0;
-    ServerConsole console = {.enabled = enableCli != 0, .interactive = isatty(STDIN_FILENO)};
+    struct in_addr address;
 
-    if(port != NULL && ParseServerPort(port) < 0)
+    memset(server, 0, sizeof(*server));
+    server->socket = -1;
+    if(ip == NULL)
     {
-        fprintf(stderr, "Invalid port: %s\n", port);
+        ip = "0.0.0.0";
+    }
+    if(strlen(ip) >= sizeof(server->ip) || inet_pton(AF_INET, ip, &address) != 1)
+    {
+        fprintf(stderr, "Invalid server IP: %s\n", ip);
         return -1;
     }
-    if(port == NULL && !console.enabled)
+    if(port < 0 || port > 65535)
     {
-        fputs("A port is required when the CLI is disabled.\n", stderr);
+        fprintf(stderr, "Invalid port: %d\n", port);
         return -1;
     }
+    strcpy(server->ip, ip);
+    server->port = port;
 
     if(InitializeClients() != 0)
     {
@@ -236,42 +226,108 @@ int StartServerWithCli(const char *port, int enableCli)
     }
 
     signal(SIGPIPE, SIG_IGN);
-
     serverStopRequested = 0;
     stopAction.sa_handler = HandleServerStopSignal;
     sigemptyset(&stopAction.sa_mask);
-    if(sigaction(SIGINT, &stopAction, &originalInterruptAction) != 0)
+    if(sigaction(SIGINT, &stopAction, &server->originalInterruptAction) != 0)
     {
         perror("sigaction(SIGINT)");
-        goto cleanup;
+        return -1;
     }
-    if(sigaction(SIGTERM, &stopAction, &originalTerminateAction) != 0)
+    if(sigaction(SIGTERM, &stopAction, &server->originalTerminateAction) != 0)
     {
         perror("sigaction(SIGTERM)");
-        sigaction(SIGINT, &originalInterruptAction, NULL);
-        goto cleanup;
+        sigaction(SIGINT, &server->originalInterruptAction, NULL);
+        return -1;
     }
-    signalHandlersInstalled = 1;
-    if(port != NULL)
+    server->signalHandlersInstalled = 1;
+    return 0;
+}
+
+int OpenServer(TCPServer *server)
+{
+    int serverSocket;
+    int socketOption = 1;
+    struct sockaddr_in serverAddress = {0};
+
+    if(server->socket >= 0)
     {
-        if(StartServerListener(&server, port) != 0)
+        printf("Server already running on %s:%d\n", server->ip, server->port);
+        return -1;
+    }
+    if(server->port <= 0)
+    {
+        puts("No port set. Use 'server start <port>'.");
+        return -1;
+    }
+    if(!server->databaseInitialized)
+    {
+        if(InitializeDatabase() != 0)
         {
-            goto cleanup;
+            return -1;
+        }
+        server->databaseInitialized = 1;
+    }
+    if(server->tlsContext == NULL)
+    {
+        server->tlsContext = CreateTlsServerContext();
+        if(server->tlsContext == NULL)
+        {
+            return -1;
         }
     }
-    else
+
+    serverSocket = socket(PF_INET, SOCK_STREAM, 0);
+    if(serverSocket < 0)
     {
-        puts("IoT server CLI ready. Use 'server start <port>' to start listening.");
+        perror("socket()");
+        return -1;
+    }
+    if(setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &socketOption, sizeof(socketOption)) < 0)
+    {
+        perror("setsockopt()");
+        close(serverSocket);
+        return -1;
+    }
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons((uint16_t)server->port);
+    inet_pton(AF_INET, server->ip, &serverAddress.sin_addr);
+    if(bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("bind()");
+        close(serverSocket);
+        return -1;
+    }
+    if(listen(serverSocket, LISTEN_BACKLOG) < 0)
+    {
+        perror("listen()");
+        close(serverSocket);
+        return -1;
+    }
+
+    server->socket = serverSocket;
+    printf("IoT server started on %s:%d\n", server->ip, server->port);
+    fflush(stdout);
+    return 0;
+}
+
+int RunServer(TCPServer *server)
+{
+    int result = 0;
+    ServerConsole console = {.enabled = 1, .interactive = isatty(STDIN_FILENO)};
+
+    if(server->socket < 0)
+    {
+        puts("IoT server console ready. Use 'server start [port]' to start listening.");
     }
     ShowServerConsole(&console);
     fflush(stdout);
-    result = 0;
 
     while(!serverStopRequested)
     {
         struct pollfd events[2] =
         {
-            {.fd = server.socket, .events = POLLIN},
+            {.fd = server->socket, .events = POLLIN},
             {.fd = console.enabled ? STDIN_FILENO : -1, .events = POLLIN}
         };
         int pollResult;
@@ -301,7 +357,7 @@ int StartServerWithCli(const char *port, int enableCli)
         }
         if(events[1].revents & (POLLIN | POLLHUP))
         {
-            ReadServerConsole(&console, &server);
+            ReadServerConsole(&console, server);
             if(serverStopRequested)
             {
                 break;
@@ -312,7 +368,7 @@ int StartServerWithCli(const char *port, int enableCli)
             console.enabled = 0;
             fputs("Server CLI input unavailable.\n", stderr);
         }
-        if(server.socket < 0 && !console.enabled)
+        if(server->socket < 0 && !console.enabled)
         {
             puts("Server has not been started; exiting.");
             break;
@@ -327,7 +383,7 @@ int StartServerWithCli(const char *port, int enableCli)
         {
             continue;
         }
-        clientSocket = accept(server.socket, (struct sockaddr *)&clientAddress, &clientAddressSize);
+        clientSocket = accept(server->socket, (struct sockaddr *)&clientAddress, &clientAddressSize);
         if(clientSocket < 0)
         {
             if(errno == EINTR)
@@ -346,7 +402,7 @@ int StartServerWithCli(const char *port, int enableCli)
             continue;
         }
 
-        tls = SSL_new(server.tlsContext);
+        tls = SSL_new(server->tlsContext);
         if(tls == NULL || SSL_set_fd(tls, clientSocket) != 1 || SSL_accept(tls) != 1)
         {
             fputs("TLS handshake failed\n", stderr);
@@ -402,90 +458,29 @@ int StartServerWithCli(const char *port, int enableCli)
         fflush(stdout);
     }
 
-    puts("Stopping server; waiting for client and Bluetooth workers...");
-    fflush(stdout);
-
-cleanup:
-    if(server.socket >= 0)
-    {
-        close(server.socket);
-    }
-    StopServerClients();
-    SSL_CTX_free(server.tlsContext);
-    if(signalHandlersInstalled)
-    {
-        sigaction(SIGINT, &originalInterruptAction, NULL);
-        sigaction(SIGTERM, &originalTerminateAction, NULL);
-    }
-    if(result == 0)
-    {
-        puts("IoT server stopped.");
-    }
     return result;
 }
 
-int StartServerListener(ServerState *server, const char *port)
+void CloseServer(TCPServer *server)
 {
-    int serverSocket;
-    int serverPort = ParseServerPort(port);
-    int socketOption = 1;
-    struct sockaddr_in serverAddress = {0};
-
-    if(serverPort < 0)
-    {
-        fprintf(stderr, "Invalid port: %s\n", port == NULL ? "(null)" : port);
-        return -1;
-    }
-    if(!server->databaseInitialized)
-    {
-        if(InitializeDatabase() != 0)
-        {
-            return -1;
-        }
-        server->databaseInitialized = 1;
-    }
-    if(server->tlsContext == NULL)
-    {
-        server->tlsContext = CreateTlsServerContext();
-        if(server->tlsContext == NULL)
-        {
-            return -1;
-        }
-    }
-
-    serverSocket = socket(PF_INET, SOCK_STREAM, 0);
-    if(serverSocket < 0)
-    {
-        perror("socket()");
-        return -1;
-    }
-    if(setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &socketOption, sizeof(socketOption)) < 0)
-    {
-        perror("setsockopt()");
-        close(serverSocket);
-        return -1;
-    }
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddress.sin_port = htons((uint16_t)serverPort);
-    if(bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
-    {
-        perror("bind()");
-        close(serverSocket);
-        return -1;
-    }
-    if(listen(serverSocket, LISTEN_BACKLOG) < 0)
-    {
-        perror("listen()");
-        close(serverSocket);
-        return -1;
-    }
-
-    server->socket = serverSocket;
-    server->port = serverPort;
-    printf("IoT server started on port %d\n", serverPort);
+    puts("Stopping server; waiting for client and Bluetooth workers...");
     fflush(stdout);
-    return 0;
+    if(server->socket >= 0)
+    {
+        close(server->socket);
+        server->socket = -1;
+    }
+    StopServerClients();
+    SSL_CTX_free(server->tlsContext);
+    server->tlsContext = NULL;
+    if(server->signalHandlersInstalled)
+    {
+        sigaction(SIGINT, &server->originalInterruptAction, NULL);
+        sigaction(SIGTERM, &server->originalTerminateAction, NULL);
+        server->signalHandlersInstalled = 0;
+    }
+    puts("IoT server stopped.");
+    fflush(stdout);
 }
 
 void RequestServerStop(void)
@@ -493,17 +488,17 @@ void RequestServerStop(void)
     serverStopRequested = 1;
 }
 
-int IsServerRunning(const ServerState *server)
+int IsServerRunning(const TCPServer *server)
 {
     return server->socket >= 0;
 }
 
-int GetServerPort(const ServerState *server)
+int GetServerPort(const TCPServer *server)
 {
     return server->port;
 }
 
-int IsServerDatabaseInitialized(const ServerState *server)
+int IsServerDatabaseInitialized(const TCPServer *server)
 {
     return server->databaseInitialized;
 }
@@ -528,7 +523,7 @@ static void ShowServerConsole(const ServerConsole *console)
     fflush(stdout);
 }
 
-static void ReadServerConsole(ServerConsole *console, ServerState *server)
+static void ReadServerConsole(ServerConsole *console, TCPServer *server)
 {
     char input[SERVER_CONSOLE_INPUT_SIZE];
     ssize_t length = read(STDIN_FILENO, input, sizeof(input));
@@ -555,7 +550,7 @@ static void ReadServerConsole(ServerConsole *console, ServerState *server)
     fflush(stdout);
 }
 
-static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, ServerState *server)
+static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, TCPServer *server)
 {
     for(size_t index = 0; index < length; ++index)
     {
@@ -1396,11 +1391,10 @@ static int ProcessDhtData(PacketConnection *connection, const uint8_t *data, siz
     char memberId[MEM_ID_SIZE + 1];
     uint64_t affectedRows;
 
-    if(data == NULL || length != sizeof(dhtData) || GetPacketMemberId(connection, memberId) != 0)
+    if(data == NULL || DecodeDhtData(data, length, &dhtData) != 0 || GetPacketMemberId(connection, memberId) != 0)
     {
         return -1;
     }
-    memcpy(&dhtData, data, sizeof(dhtData));
     printf("[%s] DHT: temp=%u, humi=%u\n", connection->label, (unsigned int)dhtData.temp, (unsigned int)dhtData.humi);
     if(UpdateDhtData(memberId, strlen(memberId), &dhtData, &affectedRows) != 0)
     {
@@ -1419,11 +1413,10 @@ static int ProcessFanData(PacketConnection *connection, const uint8_t *data, siz
     FanData fanData;
     uint64_t affectedRows;
 
-    if(connection == NULL || data == NULL || length != sizeof(fanData))
+    if(connection == NULL || data == NULL || DecodeFanData(data, length, &fanData) != 0)
     {
         return -1;
     }
-    memcpy(&fanData, data, sizeof(fanData));
     printf("[%s] FAN: fanSpeed=%u\n", connection->label, (unsigned int)fanData.fanSpeed);
     if(UpdateFanData(&fanData, &affectedRows) != 0)
     {
@@ -1441,11 +1434,10 @@ static int ProcessConData(PacketConnection *connection, const uint8_t *data, siz
     ConData conData;
     uint64_t affectedRows;
 
-    if(connection == NULL || data == NULL || length != sizeof(conData))
+    if(connection == NULL || data == NULL || DecodeConData(data, length, &conData) != 0)
     {
         return -1;
     }
-    memcpy(&conData, data, sizeof(conData));
     printf("[%s] CON: tempData=%u\n", connection->label, (unsigned int)conData.tempData);
     if(UpdateConData(&conData, &affectedRows) != 0)
     {
@@ -1466,8 +1458,10 @@ static int ProcessMemData(PacketConnection *connection, const uint8_t *data, siz
     size_t passwordLength;
     int verifyResult;
 
-    (void)length;
-    memcpy(&memData, data, sizeof(memData));
+    if(DecodeMemData(data, length, &memData) != 0)
+    {
+        return -1;
+    }
     memberIdLength = strnlen(memData.id, MEM_ID_SIZE);
     passwordLength = strnlen(memData.pw, MEM_PW_SIZE);
     verifyResult = VerifyMember(memData.id, memberIdLength, memData.pw, passwordLength);
@@ -1510,8 +1504,10 @@ static int ProcessBluetoothRegisterData(PacketConnection *connection, const uint
     int registerResult;
     int processResult = -1;
 
-    (void)length;
-    memcpy(&registerData, data, sizeof(registerData));
+    if(DecodeBluetoothRegisterData(data, length, &registerData) != 0)
+    {
+        return -1;
+    }
     pthread_mutex_lock(&bluetoothPairMutex);
     macLength = strnlen(registerData.mac, BLUETOOTH_MAC_SIZE);
     pinLength = strnlen(registerData.pin, BLUETOOTH_PIN_SIZE);
@@ -1565,18 +1561,17 @@ static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8
 {
     BluetoothConnectData request;
     BluetoothConnectResult result = {.connected = BLUETOOTH_CONNECT_FAILED};
-    uint8_t resultFrame[HEADER_SIZE + sizeof(result)] = {HEADER_RESULT_0, HEADER_RESULT_1, CMD_BLUETOOTH_CONNECT, sizeof(result)};
+    uint8_t resultFrame[HEADER_SIZE + BLUETOOTH_CONNECT_RESULT_SIZE];
     char memberId[MEM_ID_SIZE + 1];
     char requestedMac[BLUETOOTH_MAC_TEXT_SIZE];
     size_t memberIdLength;
     size_t passwordLength;
     int verifyResult;
 
-    if(connection->transport != PACKET_TRANSPORT_TCP || data == NULL || length != sizeof(request))
+    if(connection->transport != PACKET_TRANSPORT_TCP || data == NULL || DecodeBluetoothConnectData(data, length, &request) != 0)
     {
         return -1;
     }
-    memcpy(&request, data, sizeof(request));
     memberIdLength = strnlen(request.id, sizeof(request.id));
     passwordLength = strnlen(request.pw, sizeof(request.pw));
     memcpy(memberId, request.id, memberIdLength);
@@ -1590,7 +1585,8 @@ static int ProcessBluetoothConnectData(PacketConnection *connection, const uint8
     {
         result.connected = BLUETOOTH_CONNECT_SUCCEEDED;
     }
-    memcpy(resultFrame + HEADER_SIZE, &result, sizeof(result));
+    EncodePacketHeader(resultFrame, HEADER_RESULT_0, HEADER_RESULT_1, CMD_BLUETOOTH_CONNECT, BLUETOOTH_CONNECT_RESULT_SIZE);
+    EncodeBluetoothConnectResult(&result, resultFrame + HEADER_SIZE, BLUETOOTH_CONNECT_RESULT_SIZE);
     printf("[%s] Bluetooth request: id=%s, result=%u\n", connection->label, verifyResult == 1 ? memberId : "-", result.connected);
     /* BT is server-owned already; losing this result recipient must not close it. */
     return connection->sendAll(connection->context, resultFrame, sizeof(resultFrame));
@@ -2031,10 +2027,7 @@ static void ReceivePackets(PacketConnection *connection)
             break;
         }
 
-        header.head0 = (char)headerData[0];
-        header.head1 = (char)headerData[1];
-        header.cmd = headerData[2];
-        header.dataLen = headerData[3];
+        DecodePacketHeader(headerData, &header);
 
         if(header.head0 != HEADER_OK_0 || header.head1 != HEADER_OK_1)
         {
@@ -2064,10 +2057,7 @@ static void ReceivePackets(PacketConnection *connection)
             break;
         }
 
-        requestHeader[0] = HEADER_REQUEST_0;
-        requestHeader[1] = HEADER_REQUEST_1;
-        requestHeader[2] = header.cmd;
-        requestHeader[3] = RQ_FLAG_INITIAL;
+        EncodePacketHeader(requestHeader, HEADER_REQUEST_0, HEADER_REQUEST_1, header.cmd, RQ_FLAG_INITIAL);
 
         do
         {

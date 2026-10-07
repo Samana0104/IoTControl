@@ -16,6 +16,10 @@ build/
 # Project executables
 /iot_client
 /iot_server
+/iot_bt_client
+/iot_password_hash
+/IotMain
+/RMain
 
 # Local database credentials (plain text; never commit this file)
 /db_config.txt
