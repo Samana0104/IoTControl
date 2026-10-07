@@ -1,15 +1,15 @@
-#include "RCtrlFan.h"
+#include "RPacketFan.h"
 #include "IoTPacketCodec.h"
 #include "RDatabase.h"
 #include "RLog.h"
-#include "RSession.h"
 
 #include <inttypes.h>
 
 #define FAN_MAX_PERCENT 100
 
-int RCtrlFanReceive(const RCtrlContext *context, const uint8_t *payload, size_t length)
+int RPacketFanReceive(RSession *session, const uint8_t *payload, size_t length)
 {
+    const char *label = RSessionGetLabel(session);
     FanData data;
     uint64_t affectedRows;
 
@@ -17,38 +17,41 @@ int RCtrlFanReceive(const RCtrlContext *context, const uint8_t *payload, size_t 
     {
         return -1;
     }
-    RLOG_INFO("[%s] FAN: fanSpeed=%u", context->label, (unsigned int)data.fanSpeed);
+    RLOG_INFO("[%s] FAN: fanSpeed=%u", label, (unsigned int)data.fanSpeed);
     if(UpdateFanData(&data, &affectedRows) != 0)
     {
-        RLOG_WARN("[%s] FAN DB UPDATE failed: singleton_id=1", context->label);
+        RLOG_WARN("[%s] FAN DB UPDATE failed: singleton_id=1", label);
     }
     else
     {
-        RLOG_INFO("[%s] FAN DB UPDATE: singleton_id=1, affected=%" PRIu64, context->label, affectedRows);
+        RLOG_INFO("[%s] FAN DB UPDATE: singleton_id=1, affected=%" PRIu64, label, affectedRows);
     }
     return 0;
 }
 
-int RCtrlFanReceiveAck(const RCtrlContext *context, const uint8_t *payload, size_t length)
+int RPacketFanReceiveAck(RSession *session, const uint8_t *payload, size_t length)
 {
+    const char *label = RSessionGetLabel(session);
+    int fd = RSessionGetFd(session);
+    char memberId[MEM_ID_SIZE + 1];
     ResultData result;
 
-    if(ReadResultData(payload, length, &result) != 0)
+    if(RSessionGetMemberId(session, memberId) != 0 || ReadResultData(payload, length, &result) != 0)
     {
         return -1;
     }
     if(result.result == RESULT_SUCCESS)
     {
-        RLOG_INFO("[%s] FAN control applied: id=%s, fd=%d", context->label, context->memberId, context->fd);
+        RLOG_INFO("[%s] FAN control applied: id=%s, fd=%d", label, memberId, fd);
     }
     else
     {
-        RLOG_WARN("[%s] FAN control rejected by device: id=%s, fd=%d, result=%u", context->label, context->memberId, context->fd, (unsigned int)result.result);
+        RLOG_WARN("[%s] FAN control rejected by device: id=%s, fd=%d, result=%u", label, memberId, fd, (unsigned int)result.result);
     }
     return 0;
 }
 
-int RCtrlFanSetSpeed(int fd, uint8_t percent)
+int RPacketFanSetSpeed(int fd, uint8_t percent)
 {
     FanData data = {.fanSpeed = percent};
     uint8_t frame[HEADER_SIZE + FAN_DATA_SIZE];

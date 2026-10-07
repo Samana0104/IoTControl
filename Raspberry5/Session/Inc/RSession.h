@@ -2,6 +2,7 @@
 
 #include "IoTPacket.h"
 #include "RBluetooth.h"
+#include "RThreadPool.h"
 
 #include <netinet/in.h>
 #include <openssl/ssl.h>
@@ -19,11 +20,13 @@ typedef enum
     SESSION_BLUETOOTH
 } RSessionType;
 
-// TCP(TLS) 연결이든 서버가 연 HC-05 RFCOMM 연결이든 fd 하나 = 세션 하나
+// TCP(TLS) 연결이든 서버가 연 HC-05 RFCOMM 연결이든 fd 하나 = 세션 하나.
+// 모든 세션의 송수신은 epoll I/O 스레드 하나가 처리함.
 typedef struct _RSession RSession;
 
-// 세션마다 수신 스레드에서 한 번 호출됨. 반환하면 그 세션을 닫음.
-typedef void (*RSessionReceiver)(RSession *session);
+// CRC 검사를 통과한 프레임 하나를 스레드풀 워커에서 처리. 같은 세션의 프레임은 순서대로 하나씩 전달됨.
+// payload는 호출 동안만 유효. 0: 계속, -1: 이미 넣은 송신을 보낸 뒤 세션 닫기
+typedef int (*RSessionHandler)(RSession *session, uint16_t cmd, const uint8_t *payload, size_t length);
 
 typedef struct _RSessionSnapshot
 {
@@ -38,21 +41,21 @@ typedef struct _RSessionSnapshot
 
 /* ---- 세션 테이블 ---- */
 
-// 세션 테이블 초기화. receiver는 모든 세션 공통 패킷 처리 루프.
-int RSessionInit(RSessionReceiver receiver);
-// 모든 세션을 끊고 워커 스레드가 끝날 때까지 대기. 이후 BT 연결은 거부.
+// 세션 테이블과 epoll I/O 스레드 시작. handler는 pool의 워커에서 실행됨.
+int RSessionInit(RSessionHandler handler, RThreadPool *pool);
+// 모든 세션을 닫고 처리 중인 작업이 끝날 때까지 기다린 뒤 I/O 스레드 종료. pool은 그 다음에 멈춤.
 void RSessionCloseAll(void);
 
-// TLS 핸드셰이크가 끝난 소켓을 세션으로 등록하고 송신/수신 스레드 시작.
-// 성공/실패 모두 fd와 tls의 소유권을 가져감. 0: 시작됨, -1: 세션 가득 참 또는 스레드 실패
+// accept한 소켓과 SSL_set_fd까지 마친 tls를 세션으로 등록. TLS 핸드셰이크는 I/O 스레드가 진행.
+// 성공/실패 모두 fd와 tls의 소유권을 가져감. 0: 등록됨, -1: 세션 가득 참 또는 실패
 int RSessionOpenTcp(int fd, SSL *tls, const struct sockaddr_in *address);
-// 회원의 HC-05(mac은 DB에 등록된 값)에 RFCOMM 연결하고 수신 스레드 시작.
+// 회원의 HC-05(mac은 DB에 등록된 값)에 RFCOMM 연결하고 세션으로 등록 (연결하는 동안 호출 스레드가 대기).
 // 같은 회원이 같은 MAC으로 이미 연결돼 있으면 그대로 성공.
 // 성공: 세션 fd, -1: 실패 (errno: ENOSPC 가득 참, EADDRINUSE 다른 회원이 사용 중, ECANCELED 종료 중 등)
 int RSessionOpenBt(const char *memberId, const char *mac);
 
-// 완성된 프레임(Make*Packet 결과)을 fd의 세션으로 전송.
-// 0: 전송함, 1: 그 fd의 연결된 세션 없음, -1: 전송 실패 (errno 설정)
+// 완성된 프레임(Make*Packet 결과)을 fd 세션의 송신 큐에 넣음.
+// 0: 넣음 (I/O 스레드가 전송), 1: 그 fd의 연결된 세션 없음, -1: 실패 (errno 설정)
 int RSessionSend(int fd, const uint8_t *frame, size_t frameLength);
 // 회원의 연결된 BT 세션 fd, 없으면 -1
 int RSessionFindBtFd(const char *memberId);
@@ -60,13 +63,9 @@ int RSessionFindBtFd(const char *memberId);
 // snapshots는 MAX_SESSION개를 담을 수 있어야 함. 채운 개수를 반환.
 size_t RSessionGetSnapshots(RSessionSnapshot *snapshots);
 
-/* ---- 세션 하나 (수신 스레드의 RSessionReceiver 안에서 사용) ---- */
+/* ---- 세션 하나 (RSessionHandler 안에서 사용) ---- */
 
-// 0: length만큼 수신, -1: 연결 끊김/중지
-int RSessionReceive(RSession *session, void *buffer, size_t length);
-// 1: 데이터 있음, 0: 시간 초과, -1: 연결 끊김/중지
-int RSessionWaitForData(RSession *session, int timeoutMs);
-// 0: 전송함, -1: 실패
+// 프레임을 이 세션의 송신 큐에 넣음. 0: 넣음, -1: 닫힘(ENOTCONN) 또는 큐 가득 참(ENOBUFS)
 int RSessionSendFrame(RSession *session, const void *frame, size_t frameLength);
 
 RSessionType RSessionGetType(const RSession *session);

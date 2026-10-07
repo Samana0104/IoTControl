@@ -2,6 +2,7 @@
 
 #include "IoTPacket.h"
 #include "IoTProtocol.h"
+#include "RThreadPool.h"
 
 #include <netinet/in.h>
 #include <openssl/ssl.h>
@@ -18,6 +19,9 @@ typedef struct _TCPServer
     int socket;
     int databaseInitialized;
     SSL_CTX *tlsContext;
+    /* Runs packet handlers for every session. */
+    RThreadPool threadPool;
+    int threadPoolStarted;
 
     int signalHandlersInstalled;
     struct sigaction originalInterruptAction;
@@ -41,8 +45,3 @@ int ParseServerPort(const char *port);
 int IsServerRunning(const TCPServer *server);
 int GetServerPort(const TCPServer *server);
 int IsServerDatabaseInitialized(const TCPServer *server);
-
-/* Connects the member's HC-05 registered in DB as a server-owned BT session.
-   0: connected, 1: not registered in DB, -1: failed (errno set). */
-int RequestMemberBluetoothConnection(const char *memberId);
-

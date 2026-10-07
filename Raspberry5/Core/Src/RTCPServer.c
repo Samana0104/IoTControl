@@ -1,14 +1,9 @@
 #include "RTCPServer.h"
-#include "RBluetooth.h"
 #include "RDatabase.h"
 #include "RCommand.h"
-#include "RCtrlCon.h"
-#include "RCtrlDht.h"
-#include "RCtrlFan.h"
 #include "RDatabaseCommand.h"
+#include "RPacket.h"
 #include "RSession.h"
-#include "IoTPacket.h"
-#include "IoTPacketCodec.h"
 #include "RLog.h"
 
 #include <arpa/inet.h>
@@ -18,23 +13,18 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <poll.h>
-#include <pthread.h>
 #include <signal.h>
-#include <sodium.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <unistd.h>
 
 #define LISTEN_BACKLOG 5
-#define DATA_WAIT_TIMEOUT_MS 5000
-#define TLS_HANDSHAKE_TIMEOUT_SECONDS 5
-#define BLUETOOTH_PAIR_TIMEOUT_SECONDS 30
 #define SERVER_POLL_TIMEOUT_MS 500
+/* Packet handlers may block on DB, password hashing, BT pairing (30 s) or BT connect (5 s). */
+#define SERVER_WORKER_COUNT 8
 #define SERVER_CONSOLE_INPUT_SIZE (DATABASE_COMMAND_MAX_SQL_SIZE + 8)
 #define SERVER_CONSOLE_PROMPT "iot-server> "
 #define TLS_CONFIG_FILE "tls_config.txt"
@@ -65,54 +55,16 @@ typedef struct _ServerConsole
     char input[SERVER_CONSOLE_INPUT_SIZE];
 } ServerConsole;
 
-typedef int (*ProcessPacketData)(RSession *session, const uint8_t *data, size_t length);
-
-/* Exactly one of processData (server session/state) or controllerData (device data) is set. */
-typedef struct _PacketHandler
-{
-    uint16_t cmd;
-    size_t minDataLength;
-    size_t maxDataLength;
-    ProcessPacketData processData;
-    RCtrlHandler controllerData;
-} PacketHandler;
-
-static pthread_mutex_t bluetoothPairMutex = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t serverStopRequested;
 
 static void HandleServerStopSignal(int signalNumber);
 static void ShowServerConsole(const ServerConsole *console);
 static void ReadServerConsole(ServerConsole *console, TCPServer *server);
 static void ProcessServerConsoleInput(ServerConsole *console, const char *input, size_t length, TCPServer *server);
-static int SetSocketTimeout(int socketFd, int timeoutSeconds);
 static SSL_CTX *CreateTlsServerContext(void);
 static char *TrimTlsConfigText(char *text);
 static int ReadTlsConfigLine(FILE *file, char *line, size_t lineSize);
 static int LoadTlsConfig(const char *filePath, TlsConfig *config);
-static int ValidatePacketPermission(RSession *session, uint16_t cmd);
-static void ReceivePackets(RSession *session);
-static const PacketHandler *FindPacketHandler(uint16_t cmd);
-static int SendAck(RSession *session, uint16_t reqCmd, int succeeded);
-static int ProcessControllerData(RSession *session, RCtrlHandler handler, const uint8_t *data, size_t length);
-static int ProcessMemData(RSession *session, const uint8_t *data, size_t length);
-static int ProcessChatData(RSession *session, const uint8_t *data, size_t length);
-static int ProcessBluetoothRegisterData(RSession *session, const uint8_t *data, size_t length);
-static int ProcessBluetoothConnectData(RSession *session, const uint8_t *data, size_t length);
-static int RequestRegisteredBluetoothConnection(const char *memberId, const char *requestedMac);
-
-static const PacketHandler PACKET_HANDLERS[] =
-{
-    /* Server: login and Bluetooth session management */
-    {REQ_LOGIN, MEM_DATA_SIZE, MEM_DATA_SIZE, ProcessMemData, NULL},
-    {REQ_BT_REGISTER, BLUETOOTH_REGISTER_DATA_SIZE, BLUETOOTH_REGISTER_DATA_SIZE, ProcessBluetoothRegisterData, NULL},
-    {REQ_BT_CONNECT, BLUETOOTH_CONNECT_DATA_SIZE, BLUETOOTH_CONNECT_DATA_SIZE, ProcessBluetoothConnectData, NULL},
-    {NFY_CHAT, 0, MAX_CHAT_SIZE, ProcessChatData, NULL},
-    /* Controller: device data and control results */
-    {NFY_DHT, DHT_DATA_SIZE, DHT_DATA_SIZE, NULL, RCtrlDhtReceive},
-    {NFY_FAN, FAN_DATA_SIZE, FAN_DATA_SIZE, NULL, RCtrlFanReceive},
-    {NFY_CON, CON_DATA_SIZE, CON_DATA_SIZE, NULL, RCtrlConReceive},
-    {ACK_FAN, RESULT_DATA_SIZE, RESULT_DATA_SIZE, NULL, RCtrlFanReceiveAck}
-};
 
 int InitServer(TCPServer *server, const char *ip, int port)
 {
@@ -138,7 +90,13 @@ int InitServer(TCPServer *server, const char *ip, int port)
     strcpy(server->ip, ip);
     server->port = port;
 
-    if(RSessionInit(ReceivePackets) != 0)
+    if(RThreadPoolStart(&server->threadPool, SERVER_WORKER_COUNT) != 0)
+    {
+        RLOG_ERROR("Thread pool start failed: %s", strerror(errno));
+        return -1;
+    }
+    server->threadPoolStarted = 1;
+    if(RSessionInit(RPacketProcess, &server->threadPool) != 0)
     {
         RLOG_ERROR("Session initialization failed");
         return -1;
@@ -309,33 +267,16 @@ int RunServer(TCPServer *server)
             continue;
         }
 
-        if(SetSocketTimeout(clientSocket, TLS_HANDSHAKE_TIMEOUT_SECONDS) != 0)
-        {
-            RLOG_ERROR("setsockopt(client timeout): %s", strerror(errno));
-            close(clientSocket);
-            continue;
-        }
-
         tls = SSL_new(server->tlsContext);
-        if(tls == NULL || SSL_set_fd(tls, clientSocket) != 1 || SSL_accept(tls) != 1)
+        if(tls == NULL || SSL_set_fd(tls, clientSocket) != 1)
         {
-            RLOG_WARN("TLS handshake failed");
+            RLOG_ERROR("SSL_new/SSL_set_fd failed");
             ERR_clear_error();
             SSL_free(tls);
             close(clientSocket);
             continue;
         }
-
-        if(SetSocketTimeout(clientSocket, 0) != 0)
-        {
-            RLOG_ERROR("setsockopt(client timeout reset): %s", strerror(errno));
-            SSL_shutdown(tls);
-            SSL_free(tls);
-            close(clientSocket);
-            continue;
-        }
-
-        /* The session owns the socket and TLS from here, even on failure. */
+        /* The session owns the socket and TLS from here, even on failure; its I/O thread runs the handshake. */
         RSessionOpenTcp(clientSocket, tls, &clientAddress);
     }
 
@@ -350,7 +291,13 @@ void CloseServer(TCPServer *server)
         close(server->socket);
         server->socket = -1;
     }
+    /* Sessions first: their pending jobs still need the pool. */
     RSessionCloseAll();
+    if(server->threadPoolStarted)
+    {
+        RThreadPoolStop(&server->threadPool);
+        server->threadPoolStarted = 0;
+    }
     SSL_CTX_free(server->tlsContext);
     server->tlsContext = NULL;
     if(server->signalHandlersInstalled)
@@ -489,15 +436,6 @@ int ParseServerPort(const char *port)
     }
 
     return (int)parsedPort;
-}
-
-static int SetSocketTimeout(int socketFd, int timeoutSeconds)
-{
-    struct timeval timeout;
-
-    timeout.tv_sec = timeoutSeconds;
-    timeout.tv_usec = 0;
-    return setsockopt(socketFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == 0 && setsockopt(socketFd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == 0 ? 0 : -1;
 }
 
 static char *TrimTlsConfigText(char *text)
@@ -696,320 +634,4 @@ static SSL_CTX *CreateTlsServerContext(void)
     SSL_CTX_set_options(tlsContext, SSL_OP_NO_COMPRESSION | SSL_OP_NO_RENEGOTIATION);
     SSL_CTX_set_mode(tlsContext, SSL_MODE_AUTO_RETRY);
     return tlsContext;
-}
-
-static const PacketHandler *FindPacketHandler(uint16_t cmd)
-{
-    size_t i;
-
-    for(i = 0; i < sizeof(PACKET_HANDLERS) / sizeof(PACKET_HANDLERS[0]); i++)
-    {
-        if(PACKET_HANDLERS[i].cmd == cmd)
-        {
-            return &PACKET_HANDLERS[i];
-        }
-    }
-
-    return NULL;
-}
-
-/* Device data goes to the Controller with the member that owns this link. */
-static int ProcessControllerData(RSession *session, RCtrlHandler handler, const uint8_t *data, size_t length)
-{
-    char memberId[MEM_ID_SIZE + 1];
-    RCtrlContext context;
-
-    if(RSessionGetMemberId(session, memberId) != 0)
-    {
-        return -1;
-    }
-    context.label = RSessionGetLabel(session);
-    context.memberId = memberId;
-    context.fd = RSessionGetFd(session);
-    return handler(&context, data, length);
-}
-
-static int SendAck(RSession *session, uint16_t reqCmd, int succeeded)
-{
-    uint8_t frame[HEADER_SIZE + RESULT_DATA_SIZE];
-
-    MakeAckPacket(frame, sizeof(frame), reqCmd, succeeded ? RESULT_SUCCESS : RESULT_FAIL);
-    return RSessionSendFrame(session, frame, sizeof(frame));
-}
-
-static int ProcessMemData(RSession *session, const uint8_t *data, size_t length)
-{
-    MemData memData;
-    char memberId[MEM_ID_SIZE + 1];
-    size_t memberIdLength;
-    size_t passwordLength;
-    int verifyResult;
-
-    if(ReadMemData(data, length, &memData) != 0)
-    {
-        return -1;
-    }
-    memberIdLength = strnlen(memData.id, MEM_ID_SIZE);
-    passwordLength = strnlen(memData.pw, MEM_PW_SIZE);
-    verifyResult = VerifyMember(memData.id, memberIdLength, memData.pw, passwordLength);
-    memcpy(memberId, memData.id, memberIdLength);
-    memberId[memberIdLength] = '\0';
-    sodium_memzero(&memData, sizeof(memData));
-
-    if(verifyResult != 1)
-    {
-        RSessionLogout(session);
-        RLOG_WARN("[%s] Member authentication failed", RSessionGetLabel(session));
-        SendAck(session, REQ_LOGIN, 0);
-        return -1;
-    }
-
-    RSessionLogin(session, memberId, memberIdLength);
-    RLOG_INFO("[%s] Member authenticated: id=%s", RSessionGetLabel(session), memberId);
-    return SendAck(session, REQ_LOGIN, 1);
-}
-
-static int ProcessBluetoothRegisterData(RSession *session, const uint8_t *data, size_t length)
-{
-    BluetoothRegisterData registerData;
-    BluetoothDeviceRecord existingDevice;
-    char memberId[MEM_ID_SIZE + 1];
-    char bluetoothMac[BLUETOOTH_MAC_TEXT_SIZE];
-    char pin[BLUETOOTH_PIN_SIZE + 1];
-    size_t macLength;
-    size_t pinLength;
-    int queryResult;
-    int registerResult;
-    int processResult = -1;
-
-    if(RSessionGetMemberId(session, memberId) != 0 || ReadBluetoothRegisterData(data, length, &registerData) != 0)
-    {
-        return -1;
-    }
-    pthread_mutex_lock(&bluetoothPairMutex);
-    macLength = strnlen(registerData.mac, BLUETOOTH_MAC_SIZE);
-    pinLength = strnlen(registerData.pin, BLUETOOTH_PIN_SIZE);
-    if(macLength != BLUETOOTH_MAC_SIZE || pinLength == 0)
-    {
-        RLOG_WARN("[%s] Invalid HC-05 registration data: id=%s", RSessionGetLabel(session), memberId);
-        goto cleanup;
-    }
-
-    memcpy(bluetoothMac, registerData.mac, macLength);
-    bluetoothMac[macLength] = '\0';
-    memcpy(pin, registerData.pin, pinLength);
-    pin[pinLength] = '\0';
-
-    queryResult = GetMemberBluetoothDevice(memberId, strlen(memberId), &existingDevice);
-    if(queryResult != 0)
-    {
-        RLOG_WARN("[%s] HC-05 registration rejected: id=%s, reason=%s", RSessionGetLabel(session), memberId, queryResult > 0 ? "already registered" : "database error");
-        goto cleanup;
-    }
-
-    if(PairBluetoothDevice(bluetoothMac, pin, BLUETOOTH_PAIR_TIMEOUT_SECONDS) != 0)
-    {
-        RLOG_WARN("[%s] HC-05 pairing failed: id=%s, mac=%s: %s", RSessionGetLabel(session), memberId, bluetoothMac, strerror(errno));
-        goto cleanup;
-    }
-
-    registerResult = RegisterMemberBluetoothDevice(memberId, strlen(memberId), bluetoothMac, macLength);
-    if(registerResult != 1)
-    {
-        RLOG_WARN("[%s] HC-05 database registration failed: id=%s, reason=%s", RSessionGetLabel(session), memberId, registerResult == 0 ? "already registered" : "database error");
-        goto cleanup;
-    }
-
-    if(RequestMemberBluetoothConnection(memberId) != 0)
-    {
-        goto cleanup;
-    }
-
-    RLOG_INFO("[%s] HC-05 registered: id=%s, mac=%s", RSessionGetLabel(session), memberId, bluetoothMac);
-    processResult = 0;
-
-cleanup:
-    pthread_mutex_unlock(&bluetoothPairMutex);
-    sodium_memzero(pin, sizeof(pin));
-    sodium_memzero(&registerData, sizeof(registerData));
-    if(SendAck(session, REQ_BT_REGISTER, processResult == 0) != 0)
-    {
-        processResult = -1;
-    }
-    return processResult;
-}
-
-static int ProcessBluetoothConnectData(RSession *session, const uint8_t *data, size_t length)
-{
-    BluetoothConnectData request;
-    int connected = 0;
-    char memberId[MEM_ID_SIZE + 1];
-    char requestedMac[BLUETOOTH_MAC_TEXT_SIZE];
-    size_t memberIdLength;
-    size_t passwordLength;
-    int verifyResult;
-
-    if(RSessionGetType(session) != SESSION_TCP || data == NULL || ReadBluetoothConnectData(data, length, &request) != 0)
-    {
-        return -1;
-    }
-    memberIdLength = strnlen(request.id, sizeof(request.id));
-    passwordLength = strnlen(request.pw, sizeof(request.pw));
-    memcpy(memberId, request.id, memberIdLength);
-    memberId[memberIdLength] = '\0';
-    memcpy(requestedMac, request.mac, sizeof(request.mac));
-    requestedMac[sizeof(request.mac)] = '\0';
-    verifyResult = memberIdLength > 0 && passwordLength > 0 && strnlen(request.mac, sizeof(request.mac)) == sizeof(request.mac) ? VerifyMember(request.id, memberIdLength, request.pw, passwordLength) : 0;
-    sodium_memzero(&request, sizeof(request));
-
-    if(verifyResult == 1 && RequestRegisteredBluetoothConnection(memberId, requestedMac) == 0)
-    {
-        connected = 1;
-    }
-    RLOG_INFO("[%s] Bluetooth request: id=%s, result=%s", RSessionGetLabel(session), verifyResult == 1 ? memberId : "-", connected ? "connected" : "failed");
-    /* BT is server-owned already; losing this result recipient must not close it. */
-    return SendAck(session, REQ_BT_CONNECT, connected);
-}
-
-int RequestMemberBluetoothConnection(const char *memberId)
-{
-    return RequestRegisteredBluetoothConnection(memberId, NULL);
-}
-
-/* Looks up the member's registered HC-05 and hands it to the BT session.
-   requestedMac != NULL: the caller's MAC must match the DB binding. */
-static int RequestRegisteredBluetoothConnection(const char *memberId, const char *requestedMac)
-{
-    BluetoothDeviceRecord deviceRecord;
-    size_t memberIdLength;
-    int queryResult;
-
-    if(memberId == NULL || (memberIdLength = strnlen(memberId, MEM_ID_SIZE + 1)) == 0 || memberIdLength > MEM_ID_SIZE)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-    if(serverStopRequested)
-    {
-        errno = ECANCELED;
-        return -1;
-    }
-
-    queryResult = GetMemberBluetoothDevice(memberId, memberIdLength, &deviceRecord);
-    if(queryResult == 0)
-    {
-        RLOG_INFO("[BT] HC-05 registration required: id=%s", memberId);
-        return 1;
-    }
-    if(queryResult < 0)
-    {
-        RLOG_WARN("[BT] HC-05 database lookup failed: id=%s", memberId);
-        errno = EIO;
-        return -1;
-    }
-    if(requestedMac != NULL && strcasecmp(requestedMac, deviceRecord.mac) != 0)
-    {
-        RLOG_WARN("[BT] ID/MAC binding mismatch: id=%s", memberId);
-        errno = EACCES;
-        return -1;
-    }
-    return RSessionOpenBt(memberId, deviceRecord.mac) >= 0 ? 0 : -1;
-}
-
-static int ProcessChatData(RSession *session, const uint8_t *data, size_t length)
-{
-    RLOG_INFO("[%s] %.*s", RSessionGetLabel(session), (int)length, (const char *)data);
-    return 0;
-}
-
-static int ValidatePacketPermission(RSession *session, uint16_t cmd)
-{
-    if(RSessionGetType(session) == SESSION_BLUETOOTH)
-    {
-        /* This link belongs to an already registered member/MAC binding. */
-        if(cmd == REQ_LOGIN || cmd == REQ_BT_REGISTER || cmd == REQ_BT_CONNECT)
-        {
-            RLOG_WARN("Management command not allowed from %s: cmd=0x%04X", RSessionGetLabel(session), (unsigned int)cmd);
-            return -1;
-        }
-    }
-    else
-    {
-        if(cmd != REQ_LOGIN && cmd != REQ_BT_CONNECT && !RSessionIsAuthenticated(session))
-        {
-            RLOG_WARN("Unauthenticated command from %s: cmd=0x%04X", RSessionGetLabel(session), (unsigned int)cmd);
-            return -1;
-        }
-        /* The server sends no REQ to TCP clients, so no ACK is expected from them. */
-        if(IS_ACK(cmd))
-        {
-            RLOG_WARN("Unexpected ACK from %s: cmd=0x%04X", RSessionGetLabel(session), (unsigned int)cmd);
-            return -1;
-        }
-    }
-    return 0;
-}
-
-/* RSessionReceiver: runs on each TCP/BT session's receive thread until the link fails. */
-static void ReceivePackets(RSession *session)
-{
-    uint8_t headerData[HEADER_SIZE];
-    uint8_t receiveData[MAX_PAYLOAD_SIZE] = {0};
-
-    while(1)
-    {
-        HeaderData header;
-        const PacketHandler *packetHandler;
-        int processResult;
-
-        if(RSessionReceive(session, headerData, sizeof(headerData)) != 0)
-        {
-            break;
-        }
-        DecodePacketHeader(headerData, &header);
-
-        packetHandler = FindPacketHandler(header.cmd);
-        if(packetHandler == NULL)
-        {
-            RLOG_WARN("Unsupported command from %s: cmd=0x%04X", RSessionGetLabel(session), (unsigned int)header.cmd);
-            break;
-        }
-        if(header.length < packetHandler->minDataLength || header.length > packetHandler->maxDataLength)
-        {
-            RLOG_WARN("Invalid data length from %s: cmd=0x%04X, length=%u", RSessionGetLabel(session), (unsigned int)header.cmd, (unsigned int)header.length);
-            break;
-        }
-        if(ValidatePacketPermission(session, header.cmd) != 0)
-        {
-            break;
-        }
-
-        /* The payload follows the header directly; a sender that stalls is dropped. */
-        if(header.length > 0 && RSessionWaitForData(session, DATA_WAIT_TIMEOUT_MS) <= 0)
-        {
-            RLOG_WARN("Payload timeout from %s: cmd=0x%04X", RSessionGetLabel(session), (unsigned int)header.cmd);
-            break;
-        }
-        if(RSessionReceive(session, receiveData, header.length) != 0)
-        {
-            break;
-        }
-        if(CheckPacketCrc(headerData, &header, receiveData) != 0)
-        {
-            RLOG_WARN("CRC mismatch from %s: cmd=0x%04X", RSessionGetLabel(session), (unsigned int)header.cmd);
-            break;
-        }
-
-        processResult = packetHandler->processData != NULL ? packetHandler->processData(session, receiveData, header.length) : ProcessControllerData(session, packetHandler->controllerData, receiveData, header.length);
-        if(header.cmd == REQ_LOGIN || header.cmd == REQ_BT_REGISTER || header.cmd == REQ_BT_CONNECT)
-        {
-            sodium_memzero(receiveData, header.length);
-        }
-        if(processResult != 0)
-        {
-            break;
-        }
-    }
-
-    sodium_memzero(receiveData, sizeof(receiveData));
 }

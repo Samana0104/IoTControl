@@ -1,5 +1,5 @@
 #include "RCmdFan.h"
-#include "RCtrlFan.h"
+#include "RPacketFan.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,7 +29,7 @@ static void FanSet(TCPServer *server, const char *args)
         return;
     }
 
-    result = RCtrlFanSetSpeed((int)fd, (uint8_t)percent);
+    result = RPacketFanSetSpeed((int)fd, (uint8_t)percent);
     printf("Fan control: fd=%ld, speed=%ld%%, result=%s\n", fd, percent, result == 0 ? "sent (see log for ACK)" : result == 1 ? "no connected session" : "failed");
 }
 

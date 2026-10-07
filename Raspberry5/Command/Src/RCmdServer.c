@@ -68,7 +68,7 @@ static void ServerSessions(TCPServer *server, const char *args)
         const RSessionSnapshot *snapshot = &snapshots[index];
         const char *memberId = snapshot->memberId[0] != '\0' ? snapshot->memberId : "-";
 
-        printf("%-3d %-4s %-17s %-8s %-4s %s\n", snapshot->fd, snapshot->type == SESSION_TCP ? "TCP" : "BT", snapshot->address, memberId, snapshot->authenticated ? "yes" : "no", snapshot->connected ? "connected" : "closing");
+        printf("%-3d %-4s %-17s %-8s %-4s %s\n", snapshot->fd, snapshot->type == SESSION_TCP ? "TCP" : "BT", snapshot->address, memberId, snapshot->authenticated ? "yes" : "no", snapshot->connected ? "open" : "pending");
     }
     if(snapshotCount == 0)
     {

@@ -53,7 +53,7 @@ file(GLOB IOT_SERVER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Driver/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Command/Src/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Controller/Src/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Packet/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Session/Src/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/Utils/Src/*.c"
 )
@@ -65,7 +65,7 @@ add_executable(IotServer "${CMAKE_CURRENT_SOURCE_DIR}/Main.c" ${IOT_SERVER_SOURC
 iotcontrol_configure_target(IotServer)
 target_include_directories(IotServer PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Command/Inc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Controller/Inc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Packet/Inc"
     "${CMAKE_CURRENT_SOURCE_DIR}/Session/Inc"
 )
 target_link_libraries(IotServer PRIVATE IoTCommon Threads::Threads OpenSSL::SSL PkgConfig::MARIADB PkgConfig::SODIUM PkgConfig::BLUEZ PkgConfig::SYSTEMD)

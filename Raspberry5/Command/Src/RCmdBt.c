@@ -1,4 +1,5 @@
 #include "RCmdBt.h"
+#include "RPacketBt.h"
 #include "RSession.h"
 
 #include <stdio.h>
@@ -24,7 +25,7 @@ static void BtList(TCPServer *server, const char *args)
         {
             continue;
         }
-        printf("%-3d %-8s %-17s %s\n", snapshot->fd, snapshot->memberId, snapshot->address, snapshot->connected ? "connected" : "closing");
+        printf("%-3d %-8s %-17s %s\n", snapshot->fd, snapshot->memberId, snapshot->address, snapshot->connected ? "open" : "pending");
         ++rowCount;
     }
     if(rowCount == 0)
@@ -50,7 +51,7 @@ static void BtConnect(TCPServer *server, const char *args)
     }
     else
     {
-        int connectResult = RequestMemberBluetoothConnection(memberId);
+        int connectResult = RPacketBtConnectMember(memberId);
 
         if(connectResult == 0)
         {
