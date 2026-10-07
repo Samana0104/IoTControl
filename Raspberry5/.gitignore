@@ -1,4 +1,4 @@
-/build/
+build/
 /.vscode/
 
 # Local TLS certificates and keys
