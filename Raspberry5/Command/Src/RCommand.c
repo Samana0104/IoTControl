@@ -1,6 +1,7 @@
 #include "RCommand.h"
 #include "RCmdBt.h"
 #include "RCmdFan.h"
+#include "RCmdMember.h"
 #include "RCmdServer.h"
 
 #include <ctype.h>
@@ -19,6 +20,7 @@ static const RCommand COMMANDS[] =
     {"server", RCmdServer},
     {"bt", RCmdBt},
     {"fan", RCmdFan},
+    {"member", RCmdMember},
     {"help", CmdHelp},
     {"clear", CmdClear},
     {"quit", CmdQuit},
@@ -45,7 +47,7 @@ void RCommandPrintHelp(void)
 {
     flockfile(stdout);
     PrintCommandList(NULL, COMMANDS, RCOMMAND_COUNT(COMMANDS));
-    puts("Type a group name (server, bt, fan) to list its commands.");
+    puts("Type a group name (server, bt, fan, member) to list its commands.");
     fflush(stdout);
     funlockfile(stdout);
 }

@@ -23,7 +23,7 @@ typedef struct _DatabaseValueContext
 static int CopyFirstValue(const DatabaseRow *row, void *context);
 static int RunQuery(MYSQL_STMT *statement, const char *query, const DatabaseValue *params, unsigned int paramCount, DatabaseRowCallback callback, void *context, uint64_t *rowCount, int *connectionLost);
 static int IsConnectionLost(unsigned int errorCode);
-static int BindQueryParams(MYSQL_STMT *statement, const DatabaseValue *params, unsigned int paramCount);
+static int BindQueryParams(MYSQL_STMT *statement, const DatabaseValue *params, unsigned int paramCount, unsigned long *lengths);
 static int ReadQueryRows(MYSQL_STMT *statement, MYSQL_RES *metadata, DatabaseRowCallback callback, void *context, uint64_t *rowCount);
 static int DeliverQueryRows(MYSQL_STMT *statement, MYSQL_RES *metadata, MYSQL_BIND *results, char **buffers, DatabaseRowCallback callback, void *context, uint64_t *rowCount);
 
@@ -84,6 +84,7 @@ int ExecuteDatabaseQuery(const char *query, const DatabaseValue *params, unsigne
 // 준비·실행 단계에서 연결이 끊겼으면 *connectionLost = 1 (아직 결과를 넘기기 전이라 재시도해도 됨)
 static int RunQuery(MYSQL_STMT *statement, const char *query, const DatabaseValue *params, unsigned int paramCount, DatabaseRowCallback callback, void *context, uint64_t *rowCount, int *connectionLost)
 {
+    unsigned long lengths[DATABASE_QUERY_MAX_PARAMS];
     MYSQL_RES *metadata;
     int result;
 
@@ -100,7 +101,7 @@ static int RunQuery(MYSQL_STMT *statement, const char *query, const DatabaseValu
         errno = EINVAL;
         return -1;
     }
-    if(BindQueryParams(statement, params, paramCount) != 0)
+    if(BindQueryParams(statement, params, paramCount, lengths) != 0)
     {
         RLOG_ERROR("MySQL parameter binding failed: %s [%s]", mysql_stmt_error(statement), query);
         errno = EIO;
@@ -131,10 +132,10 @@ static int RunQuery(MYSQL_STMT *statement, const char *query, const DatabaseValu
     return result;
 }
 
-static int BindQueryParams(MYSQL_STMT *statement, const DatabaseValue *params, unsigned int paramCount)
+// lengths는 mysql_stmt_execute가 끝날 때까지 살아 있어야 함 (실행 시점에 길이를 포인터로 읽음)
+static int BindQueryParams(MYSQL_STMT *statement, const DatabaseValue *params, unsigned int paramCount, unsigned long *lengths)
 {
     MYSQL_BIND binds[DATABASE_QUERY_MAX_PARAMS];
-    unsigned long lengths[DATABASE_QUERY_MAX_PARAMS];
 
     if(paramCount == 0)
     {
@@ -157,7 +158,7 @@ static int BindQueryParams(MYSQL_STMT *statement, const DatabaseValue *params, u
             binds[index].buffer = (void *)&params[index].number;
         }
     }
-    // mysql_stmt_bind_param은 바인딩 정보를 복사하므로 지역 배열이어도 됨
+    // MYSQL_BIND 자체는 복사되지만 buffer/length가 가리키는 값은 실행 때 읽음
     return mysql_stmt_bind_param(statement, binds) == 0 ? 0 : -1;
 }
 

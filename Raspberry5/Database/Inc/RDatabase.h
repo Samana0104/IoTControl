@@ -18,3 +18,6 @@ void ResetDatabaseConnection(void);
 /* 1: password matches, 0: wrong ID or password, -1: DB error.
    An unknown ID takes as long as a wrong password (dummy hash check). */
 int VerifyMember(const char *memberId, size_t memberIdLength, const char *password, size_t passwordLength);
+/* Signs up a member: hashes password with argon2 (libsodium) and inserts it.
+   type: "STM32", "ARDUINO" or "PC". 1: added, 0: ID already exists, -1: invalid argument or DB error. */
+int RegisterMember(const char *memberId, const char *password, const char *type);

@@ -180,6 +180,59 @@ static MYSQL *ConnectDatabase(void)
     return connection;
 }
 
+int RegisterMember(const char *memberId, const char *password, const char *type)
+{
+    static const char *const MEMBER_TYPES[] = {"STM32", "ARDUINO", "PC"};
+    char passwordHash[crypto_pwhash_STRBYTES];
+    char existingId[MEM_ID_SIZE + 1];
+    DatabaseValue params[3];
+    size_t memberIdLength;
+    uint64_t insertedRows = 0;
+    int typeKnown = 0;
+    int found;
+    int result;
+
+    if(memberId == NULL || password == NULL || type == NULL)
+    {
+        RLOG_ERROR("RegisterMember: NULL argument");
+        return -1;
+    }
+    memberIdLength = strlen(memberId);
+    for(size_t index = 0; index < sizeof(MEMBER_TYPES) / sizeof(MEMBER_TYPES[0]); ++index)
+    {
+        typeKnown |= strcmp(type, MEMBER_TYPES[index]) == 0;
+    }
+    if(memberIdLength == 0 || memberIdLength > MEM_ID_SIZE || password[0] == '\0' || strlen(password) > MEM_PW_SIZE || !typeKnown)
+    {
+        RLOG_WARN("Member sign-up rejected: invalid ID, password or type");
+        return -1;
+    }
+
+    params[0] = DATABASE_TEXT(memberId);
+    found = QueryDatabaseValue(QUERY_SELECT_MEMBER, params, 1, existingId, sizeof(existingId));
+    if(found != 0)
+    {
+        return found > 0 ? 0 : -1;
+    }
+
+    // VerifyMember가 같은 libsodium 함수로 검증
+    if(crypto_pwhash_str(passwordHash, password, strlen(password), crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE) != 0)
+    {
+        RLOG_ERROR("Password hashing failed (out of memory)");
+        return -1;
+    }
+    params[1] = DATABASE_TEXT(passwordHash);
+    params[2] = DATABASE_TEXT(type);
+    result = ExecuteDatabaseQuery(QUERY_INSERT_MEMBER, params, 3, NULL, NULL, &insertedRows);
+    sodium_memzero(passwordHash, sizeof(passwordHash));
+    if(result != 0 || insertedRows != 1)
+    {
+        return -1;
+    }
+    RLOG_INFO("Member signed up: id=%s, type=%s", memberId, type);
+    return 1;
+}
+
 static void CreateConnectionKey(void)
 {
     connectionKeyReady = pthread_key_create(&connectionKey, CloseThreadConnection) == 0;

@@ -74,6 +74,7 @@ static int workerCount;
 static uint64_t GetMonotonicMs(void);
 static RNetConnection *ClaimConnection(RSessionType type, int fd);
 static RNetConnection *FindConnection(int fd);
+static int CloseTcpConnectionFrom(const char *ip);
 static uint64_t MakeEventData(const RNetConnection *connection);
 static int RegisterConnection(RNetConnection *connection);
 static void RearmConnection(RNetConnection *connection);
@@ -172,6 +173,7 @@ int RNetOpenTcp(int fd, const struct sockaddr_in *address)
 {
     RNetConnection *connection = NULL;
     char ip[INET_ADDRSTRLEN] = "";
+    int previousFd = -1;
 
     if(fd < 0 || address == NULL)
     {
@@ -186,6 +188,8 @@ int RNetOpenTcp(int fd, const struct sockaddr_in *address)
     if(fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0)
     {
         pthread_mutex_lock(&tableMutex);
+        // 같은 IP의 기존 연결은 닫음 (재접속한 클라이언트의 끊긴 연결이 남아 있는 경우가 대부분)
+        previousFd = CloseTcpConnectionFrom(ip);
         connection = ClaimConnection(SESSION_TCP, fd);
         if(connection != NULL)
         {
@@ -205,6 +209,10 @@ int RNetOpenTcp(int fd, const struct sockaddr_in *address)
         RLOG_WARN("TCP client rejected: ip=%s (connection limit reached or server stopping)", ip);
         close(fd);
         return -1;
+    }
+    if(previousFd >= 0)
+    {
+        RLOG_WARN("Duplicate connection from %s: closing previous fd=%d", ip, previousFd);
     }
     RLOG_INFO("Client connected: ip=%s, fd=%d", ip, fd);
     return RegisterConnection(connection);
@@ -369,6 +377,34 @@ static RNetConnection *FindConnection(int fd)
         }
     }
     return NULL;
+}
+
+// tableMutex를 잡은 상태에서 호출. 같은 IP의 TCP 연결을 닫도록 요청 (맡은 워커가 정리). 닫은 fd, 없으면 -1
+static int CloseTcpConnectionFrom(const char *ip)
+{
+    for(int index = 0; index < NET_MAX_CONNECTIONS; ++index)
+    {
+        RNetConnection *connection = &connections[index];
+        int fd = -1;
+
+        if(!connection->inUse || connection->type != SESSION_TCP)
+        {
+            continue;
+        }
+        pthread_mutex_lock(&connection->lock);
+        if(!connection->closeRequested && strcmp(connection->address, ip) == 0)
+        {
+            connection->closeRequested = 1;
+            shutdown(connection->fd, SHUT_RDWR);
+            fd = connection->fd;
+        }
+        pthread_mutex_unlock(&connection->lock);
+        if(fd >= 0)
+        {
+            return fd;
+        }
+    }
+    return -1;
 }
 
 // epoll 이벤트에 슬롯 번호와 세대를 담음
