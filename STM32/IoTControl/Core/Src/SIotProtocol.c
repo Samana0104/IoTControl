@@ -1,5 +1,6 @@
 #include "SIotProtocol.h"
 #include "IoTPacket.h"
+#include "IoTPacketCodec.h"
 #include "IoTPacketStream.h"
 #include <string.h>
 
@@ -31,18 +32,8 @@ static SIotProtocol protocol;
 
 static bool IsValidPacket(uint16_t cmd, uint16_t length)
 {
-    switch (cmd)
-    {
-        case NFY_DHT: return length == DHT_DATA_SIZE;
-        case NFY_FAN: return length == FAN_DATA_SIZE;
-        case NFY_CON: return length == CON_DATA_SIZE;
-        case REQ_LOGIN: return length == MEM_DATA_SIZE;
-        case NFY_CHAT: return length <= MAX_CHAT_SIZE;
-        case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE;
-        case REQ_FAN: return length == FAN_DATA_SIZE;
-        case ACK_FAN: return length == RESULT_DATA_SIZE;
-        default: return false;
-    }
+    // 수신 버퍼(MAX_PAYLOAD_SIZE)보다 긴 프레임은 공용 규칙상 맞아도 받지 않음
+    return length <= MAX_PAYLOAD_SIZE && CheckPacketLength(cmd, length) == 0;
 }
 
 static void ResetReceive(void)
