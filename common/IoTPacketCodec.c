@@ -4,6 +4,26 @@
 
 /* ---- Make*Packet ---- */
 
+int CheckPacketLength(uint16_t cmd, size_t length)
+{
+    switch(cmd)
+    {
+        case REQ_LOGIN: return length == MEM_DATA_SIZE ? 0 : -1;
+        case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE ? 0 : -1;
+        case REQ_BT_CONNECT: return length == BLUETOOTH_CONNECT_DATA_SIZE ? 0 : -1;
+        case REQ_FAN: return length == FAN_DATA_SIZE ? 0 : -1;
+        case ACK_LOGIN:
+        case ACK_BT_REGISTER:
+        case ACK_BT_CONNECT:
+        case ACK_FAN: return length == RESULT_DATA_SIZE ? 0 : -1;
+        case NFY_CHAT: return length <= MAX_CHAT_SIZE ? 0 : -1;
+        case NFY_DHT: return length == DHT_DATA_SIZE ? 0 : -1;
+        case NFY_FAN: return length == FAN_DATA_SIZE ? 0 : -1;
+        case NFY_CON: return length == CON_DATA_SIZE ? 0 : -1;
+        default: return -1;
+    }
+}
+
 size_t MakeDhtPacket(uint8_t *buffer, size_t size, const DhtData *data)
 {
     IoTPacketWriter writer;

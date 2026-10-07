@@ -13,6 +13,10 @@ extern "C" {
 /* A frame is the HEADER_SIZE header + payload, sent at once.
    Buffers of HEADER_SIZE + <payload size> (or PACKET_FRAME_SIZE) always fit. */
 
+/* Payload length rule of each cmd in IoTProtocol.h.
+   0: known cmd with a valid length, -1: unknown cmd or wrong length. */
+int CheckPacketLength(uint16_t cmd, size_t length);
+
 /* ---- Make*Packet: one complete frame. Returns the frame length, or 0 if size is too small. ---- */
 size_t MakeDhtPacket(uint8_t *buffer, size_t size, const DhtData *data);
 size_t MakeFanPacket(uint8_t *buffer, size_t size, const FanData *data);
