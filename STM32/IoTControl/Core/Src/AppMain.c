@@ -1,4 +1,5 @@
 #include "AppMain.h"
+#include "SDht.h"
 #include "SIntervalMS.h"
 #include "SLog.h"
 #include "SFan.h"
@@ -14,10 +15,10 @@
 #endif
 
 #define INTERVAL_MS_500MS 500
-#define INTERVAL_MS_5SEC 5000
+#define INTERVAL_MS_2SEC 2000
 
 static SIntervalMS interval500MS;
-static SIntervalMS interval5Sec;
+static SIntervalMS interval2Sec;
 
 static void HandleBluetoothPacket(uint8_t cmd, const uint8_t *data, uint8_t length)
 {
@@ -59,6 +60,10 @@ void AppMain(void)
 
 void AppInit(void)
 {
+#ifdef DEBUG_BUILD
+    SCLIInit(&huart2);
+#endif
+
     SLOG_INFO("Boot STM32");
 
     if(SClcdInit(&hi2c1,0x27))
@@ -74,9 +79,6 @@ void AppInit(void)
     }
     
     // UART 연결: USART2 = 시리얼(CLI), USART1 = 블루투스(ZS-040)
-#ifdef DEBUG_BUILD
-    SCLIInit(&huart2);
-#endif
 
     if (!SZS040Init(&huart1, NULL, 0))
     {
@@ -93,9 +95,15 @@ void AppInit(void)
     {
         SLOG_ERROR("fan pwm init failed");
     }
+    
+    // DHT 신호선 1개 = TIM4 CH1 핀 (PB6), 시작 신호와 입력 캡처를 같이 함
+    if (!SDhtInit(&htim4, TIM_CHANNEL_1, GPIOB, GPIO_PIN_6))
+    {
+        SLOG_ERROR("DHT sensor init failed");
+    }
 
     SIntervalMSInit(&interval500MS, INTERVAL_MS_500MS);
-    SIntervalMSInit(&interval5Sec, INTERVAL_MS_5SEC);
+    SIntervalMSInit(&interval2Sec, INTERVAL_MS_2SEC);
 }
 
 void AppUpdate(void)
@@ -116,12 +124,19 @@ void AppUpdate(void)
 
     if (SIntervalMSElapsed(&interval500MS, currentTime))
     {
+        SDhtStartRead();
         SFanUpdate();
-        // readDht();
     }
 
-    if (SIntervalMSElapsed(&interval5Sec, currentTime))
+    if (SIntervalMSElapsed(&interval2Sec, currentTime))
     {
         // sendStatus();
+        //
+        // 지난 주기에 시작한 읽기 결과 (읽기는 약 25ms면 끝남)
+        // 값은 0.1 단위 정수 (235 = 23.5), %f는 newlib-nano 기본 설정에서 출력 안 됨
+        int16_t temperature = SDhtGetTemperature();
+        uint16_t humidity = SDhtGetHumidity();
+        SLOG_INFO("DHT sensor: temperature=%d.%d C, humidity=%u.%u %%", temperature / 10, abs(temperature % 10),
+                  humidity / 10U, humidity % 10U);
     }
 }

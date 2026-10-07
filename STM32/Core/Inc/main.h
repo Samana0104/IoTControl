@@ -71,12 +71,16 @@ void Error_Handler(void);
 #define USART_RX_GPIO_Port GPIOA
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
+#define Fan_PWM_Pin GPIO_PIN_6
+#define Fan_PWM_GPIO_Port GPIOA
 #define TMS_Pin GPIO_PIN_13
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
+#define DHT_Signal_Pin GPIO_PIN_6
+#define DHT_Signal_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
