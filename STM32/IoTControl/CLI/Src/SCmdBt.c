@@ -40,12 +40,12 @@ static void BtSend(const char *args)
         return;
     }
 
-    if (!SIotProtocolSendPacket(CMD_CHAT_DATA, args, (uint16_t)strlen(args)))
+    if (!SIotProtocolSendPacket(NFY_CHAT, args, (uint16_t)strlen(args)))
     {
         SCLIPrintf("send failed (busy, invalid length or UART error)\r\n");
         return;
     }
-    SCLIPrintf("OK header sent; waiting for initial RQ\r\n");
+    SCLIPrintf("OK frame sent\r\n");
 }
 
 // ---------------------------------------------------------------------------

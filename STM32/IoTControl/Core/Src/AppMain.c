@@ -20,28 +20,28 @@
 static SIntervalMS interval500MS;
 static SIntervalMS interval2Sec;
 
-static void HandleBluetoothPacket(uint8_t cmd, const uint8_t *data, uint8_t length)
+static void HandleBluetoothPacket(uint16_t cmd, const uint8_t *data, uint16_t length)
 {
-    if (cmd == CMD_CHAT_DATA)
+    if (cmd == NFY_CHAT)
     {
         SLOG_INFO("bt chat rx (%u bytes): %.*s", (unsigned int)length, (int)length, (const char *)data);
     }
     else
     {
         // 센서/제어 명령의 응용 동작은 해당 cmd의 처리부에서 연결.
-        SLOG_INFO("bt packet rx: cmd=%u, length=%u", (unsigned int)cmd, (unsigned int)length);
+        SLOG_INFO("bt packet rx: cmd=0x%04X, length=%u", (unsigned int)cmd, (unsigned int)length);
     }
 }
 
-static void HandleBluetoothSend(uint8_t cmd, bool success)
+static void HandleBluetoothSend(uint16_t cmd, bool success)
 {
     if (success)
     {
-        SLOG_INFO("bt DATA transmitted: cmd=%u", (unsigned int)cmd);
+        SLOG_INFO("bt frame transmitted: cmd=0x%04X", (unsigned int)cmd);
     }
     else
     {
-        SLOG_ERROR("bt send failed: cmd=%u (RQ timeout/mismatch or UART error)", (unsigned int)cmd);
+        SLOG_ERROR("bt send failed: cmd=0x%04X (invalid length or UART error)", (unsigned int)cmd);
     }
 }
 

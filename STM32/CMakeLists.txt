@@ -44,6 +44,8 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 file(GLOB_RECURSE USER_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/IoTControl/*.c
+    # 4개 환경 공용 패킷 코드
+    ${CMAKE_SOURCE_DIR}/../common/*.c
 )
 file(GLOB USER_INCLUDE_DIRS LIST_DIRECTORIES true
     ${CMAKE_SOURCE_DIR}/IoTControl/*/Inc

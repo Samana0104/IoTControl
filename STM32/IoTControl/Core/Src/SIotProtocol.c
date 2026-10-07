@@ -1,9 +1,12 @@
 #include "SIotProtocol.h"
 #include "IoTPacket.h"
+#include "IoTPacketStream.h"
 #include <string.h>
 
-#define SIOT_REQUEST_RETRY_MS 5000U
-#define SIOT_SEND_TIMEOUT_MS 15000U
+// 프레임 중간에 바이트가 이 시간 이상 끊기면 버리고 다음 헤더부터 다시 받음.
+#define SIOT_RECEIVE_TIMEOUT_MS 500U
+// 깨진 프레임 뒤에는 줄이 이 시간 동안 조용해질 때까지 바이트를 버림 (매직 바이트 대신 재동기화).
+#define SIOT_RESYNC_IDLE_MS 50U
 
 typedef struct _SIotProtocol
 {
@@ -11,140 +14,100 @@ typedef struct _SIotProtocol
     SIotPacketHandler packetHandler;
     SIotSendHandler sendHandler;
     bool initialized;
+
     uint8_t header[HEADER_SIZE];
     uint8_t headerLength;
-    uint32_t headerTick;
-    uint8_t sendData[MAX_MESSAGE_SIZE];
-    uint8_t sendCmd;
-    uint8_t sendLength;
-    uint32_t sendTick;
-    bool sendPending;
-    bool requestReady;
-    uint8_t receiveData[MAX_MESSAGE_SIZE];
-    uint8_t receiveCmd;
-    uint8_t receiveLength;
-    uint8_t receivedLength;
-    uint32_t receiveTick;
-    bool receivePending;
+    HeaderData receiveHeader;
+    uint8_t receiveData[MAX_PAYLOAD_SIZE];
+    uint16_t receivedLength;
+    bool receivingPayload;
+    bool discarding;
+    uint32_t lastByteTick;
+
+    uint8_t sendFrame[PACKET_FRAME_SIZE];
 } SIotProtocol;
 
 static SIotProtocol protocol;
 
-static bool IsValidPacket(uint8_t cmd, uint16_t length)
+static bool IsValidPacket(uint16_t cmd, uint16_t length)
 {
     switch (cmd)
     {
-        case CMD_DHT11_DATA: return length == sizeof(DhtData);
-        case CMD_FAN_DATA: return length == sizeof(FanData);
-        case CMD_CON_DATA: return length == sizeof(ConData);
-        case CMD_MEM_DATA: return length == sizeof(MemData);
-        case CMD_CHAT_DATA: return length <= MAX_MESSAGE_SIZE;
-        case CMD_BLUETOOTH_REGISTER: return length == sizeof(BluetoothRegisterData);
+        case NFY_DHT: return length == DHT_DATA_SIZE;
+        case NFY_FAN: return length == FAN_DATA_SIZE;
+        case NFY_CON: return length == CON_DATA_SIZE;
+        case REQ_LOGIN: return length == MEM_DATA_SIZE;
+        case NFY_CHAT: return length <= MAX_CHAT_SIZE;
+        case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE;
         default: return false;
     }
 }
 
-static bool SendRequest(uint8_t cmd, uint8_t retry)
+static void ResetReceive(void)
 {
-    const uint8_t header[HEADER_SIZE] = {HEADER_REQUEST_0, HEADER_REQUEST_1, cmd, retry};
-    return protocol.io.write(header, sizeof(header));
+    protocol.headerLength = 0;
+    protocol.receivedLength = 0;
+    protocol.receivingPayload = false;
 }
 
-static void FinishSend(bool success)
+// 깨진 프레임: 지금까지 받은 것을 버리고 줄이 조용해질 때까지 대기.
+static void StartResync(void)
 {
-    uint8_t cmd = protocol.sendCmd;
-    protocol.sendPending = false;
-    protocol.requestReady = false;
-    if (protocol.sendHandler != NULL)
-    {
-        protocol.sendHandler(cmd, success);
-    }
+    ResetReceive();
+    protocol.discarding = true;
 }
 
 static void FinishReceive(void)
 {
-    protocol.receivePending = false;
+    bool valid = CheckPacketCrc(protocol.header, &protocol.receiveHeader, protocol.receiveData) == 0;
+
+    ResetReceive();
+    if (!valid)
+    {
+        StartResync();
+        return;
+    }
     if (protocol.packetHandler != NULL)
     {
-        protocol.packetHandler(protocol.receiveCmd, protocol.receiveData, protocol.receiveLength);
+        protocol.packetHandler(protocol.receiveHeader.cmd, protocol.receiveData, protocol.receiveHeader.length);
     }
 }
 
 static void ProcessHeader(void)
 {
-    uint8_t cmd = protocol.header[2];
-    uint8_t length = protocol.header[3];
-
-    if (protocol.header[0] == HEADER_REQUEST_0)
+    DecodePacketHeader(protocol.header, &protocol.receiveHeader);
+    if (!IsValidPacket(protocol.receiveHeader.cmd, protocol.receiveHeader.length))
     {
-        // 이전 DATA에 대한 남은 재전송 RQ는 cmd 검사 전에 버림.
-        if (length == 1 || !protocol.sendPending)
-        {
-            return;
-        }
-        if (length != 0 || cmd != protocol.sendCmd)
-        {
-            FinishSend(false);
-            return;
-        }
-        protocol.requestReady = true;
+        StartResync();
         return;
     }
-
-    if (!IsValidPacket(cmd, length) || !SendRequest(cmd, 0))
-    {
-        return;
-    }
-    protocol.receiveCmd = cmd;
-    protocol.receiveLength = length;
-    protocol.receivedLength = 0;
-    protocol.receiveTick = protocol.io.getTick();
-    protocol.receivePending = true;
-    if (length == 0)
+    if (protocol.receiveHeader.length == 0)
     {
         FinishReceive();
+        return;
     }
+    protocol.receivingPayload = true;
 }
 
 static void ProcessByte(uint8_t byte)
 {
-    if (protocol.receivePending)
+    if (protocol.discarding)
+    {
+        return;
+    }
+    if (protocol.receivingPayload)
     {
         protocol.receiveData[protocol.receivedLength++] = byte;
-        protocol.receiveTick = protocol.io.getTick();
-        if (protocol.receivedLength == protocol.receiveLength)
+        if (protocol.receivedLength == protocol.receiveHeader.length)
         {
             FinishReceive();
         }
         return;
     }
 
-    if (protocol.headerLength == 0)
-    {
-        if (byte != HEADER_OK_0 && byte != HEADER_REQUEST_0)
-        {
-            return;
-        }
-    }
-    else if (protocol.headerLength == 1)
-    {
-        uint8_t expected = protocol.header[0] == HEADER_OK_0 ? HEADER_OK_1 : HEADER_REQUEST_1;
-        if (byte != expected)
-        {
-            protocol.headerLength = 0;
-            // 새 헤더의 첫 바이트라면 보존.
-            if (byte != HEADER_OK_0 && byte != HEADER_REQUEST_0)
-            {
-                return;
-            }
-        }
-    }
-
     protocol.header[protocol.headerLength++] = byte;
-    protocol.headerTick = protocol.io.getTick();
     if (protocol.headerLength == HEADER_SIZE)
     {
-        protocol.headerLength = 0;
         ProcessHeader();
     }
 }
@@ -164,69 +127,62 @@ void SIotProtocolInit(const SIotProtocolIo *io, SIotPacketHandler packetHandler,
 
 bool SIotProtocolIsBusy(void)
 {
-    return protocol.sendPending || protocol.receivePending || protocol.headerLength != 0;
+    return protocol.receivingPayload || protocol.headerLength != 0 || protocol.discarding;
 }
 
-bool SIotProtocolSendPacket(uint8_t cmd, const void *data, uint16_t length)
+bool SIotProtocolSendPacket(uint16_t cmd, const void *data, uint16_t length)
 {
+    IoTPacketWriter writer;
+    size_t frameLength;
+    bool success;
+
     if (!protocol.initialized || SIotProtocolIsBusy() || !IsValidPacket(cmd, length) ||
         (data == NULL && length > 0))
     {
         return false;
     }
+
+    IoTPacketBegin(&writer, protocol.sendFrame, sizeof(protocol.sendFrame), cmd);
     if (length > 0)
     {
-        memcpy(protocol.sendData, data, length);
+        IoTPacketPushBytes(&writer, data, length);
     }
-    protocol.sendCmd = cmd;
-    protocol.sendLength = (uint8_t)length;
-    protocol.sendTick = protocol.io.getTick();
-    protocol.sendPending = true;
-    protocol.requestReady = false;
-
-    const uint8_t header[HEADER_SIZE] = {HEADER_OK_0, HEADER_OK_1, cmd, (uint8_t)length};
-    if (!protocol.io.write(header, sizeof(header)))
+    frameLength = IoTPacketEnd(&writer);
+    success = frameLength > 0 && protocol.io.write(protocol.sendFrame, (uint16_t)frameLength);
+    if (protocol.sendHandler != NULL)
     {
-        protocol.sendPending = false;
-        return false;
+        protocol.sendHandler(cmd, success);
     }
-    return true;
+    return success;
 }
 
 void SIotProtocolUpdate(void)
 {
+    uint8_t byte;
+    uint32_t now;
+
     if (!protocol.initialized)
     {
         return;
     }
-    uint8_t byte;
+    now = protocol.io.getTick();
     while (protocol.io.readByte(&byte))
     {
         ProcessByte(byte);
+        protocol.lastByteTick = now;
     }
 
-    uint32_t now = protocol.io.getTick();
-    if (protocol.sendPending && now - protocol.sendTick >= SIOT_SEND_TIMEOUT_MS)
+    now = protocol.io.getTick();
+    if (protocol.discarding)
     {
-        FinishSend(false);
-    }
-    // 최초 RQ 뒤에 이미 도착한 재전송 RQ를 전부 소비한 후 DATA 전송.
-    else if (protocol.sendPending && protocol.requestReady && protocol.headerLength == 0)
-    {
-        bool success = protocol.io.write(protocol.sendData, protocol.sendLength);
-        FinishSend(success);
-    }
-
-    if (protocol.receivePending && now - protocol.receiveTick >= SIOT_REQUEST_RETRY_MS)
-    {
-        if (!SendRequest(protocol.receiveCmd, 1))
+        if (now - protocol.lastByteTick >= SIOT_RESYNC_IDLE_MS)
         {
-            protocol.receivePending = false;
+            protocol.discarding = false;
         }
-        protocol.receiveTick = protocol.io.getTick();
     }
-    if (protocol.headerLength > 0 && now - protocol.headerTick >= SIOT_REQUEST_RETRY_MS)
+    else if ((protocol.headerLength != 0 || protocol.receivingPayload) &&
+             now - protocol.lastByteTick >= SIOT_RECEIVE_TIMEOUT_MS)
     {
-        protocol.headerLength = 0;
+        ResetReceive();
     }
 }
