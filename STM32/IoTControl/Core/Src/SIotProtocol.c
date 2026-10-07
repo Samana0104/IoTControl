@@ -39,6 +39,8 @@ static bool IsValidPacket(uint16_t cmd, uint16_t length)
         case REQ_LOGIN: return length == MEM_DATA_SIZE;
         case NFY_CHAT: return length <= MAX_CHAT_SIZE;
         case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE;
+        case REQ_FAN: return length == FAN_DATA_SIZE;
+        case ACK_FAN: return length == RESULT_DATA_SIZE;
         default: return false;
     }
 }

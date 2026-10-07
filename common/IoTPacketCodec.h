@@ -16,6 +16,8 @@ extern "C" {
 /* ---- Make*Packet: one complete frame. Returns the frame length, or 0 if size is too small. ---- */
 size_t MakeDhtPacket(uint8_t *buffer, size_t size, const DhtData *data);
 size_t MakeFanPacket(uint8_t *buffer, size_t size, const FanData *data);
+/* REQ_FAN: server -> device, fanSpeed is a 0..100 percent. */
+size_t MakeFanControlPacket(uint8_t *buffer, size_t size, const FanData *data);
 size_t MakeConPacket(uint8_t *buffer, size_t size, const ConData *data);
 size_t MakeLoginPacket(uint8_t *buffer, size_t size, const MemData *data);
 size_t MakeChatPacket(uint8_t *buffer, size_t size, const char *message, size_t length);

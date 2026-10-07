@@ -63,6 +63,10 @@ typedef struct _HeaderData
 #define REQ_BT_CONNECT MSG_BT_CONNECT       /* BluetoothConnectData, no login needed */
 #define ACK_BT_CONNECT REQ_TO_ACK(REQ_BT_CONNECT)
 
+/* Server -> device control (BT) */
+#define REQ_FAN MSG_FAN                     /* FanData, fanSpeed = 0..100 percent */
+#define ACK_FAN REQ_TO_ACK(REQ_FAN)         /* ResultData */
+
 /* Device -> server reports */
 #define NFY_CHAT MAKE_NOTIFY(MSG_CHAT)      /* text, 0..MAX_CHAT_SIZE bytes */
 #define NFY_DHT MAKE_NOTIFY(MSG_DHT)        /* DhtData */

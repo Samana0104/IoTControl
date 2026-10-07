@@ -7,6 +7,7 @@
 #include "tim.h"
 #include "i2c.h"
 #include "SIotProtocol.h"
+#include "IoTPacketCodec.h"
 #include "usart.h"
 #include "SClcd.h"
 
@@ -20,9 +21,32 @@
 static SIntervalMS interval500MS;
 static SIntervalMS interval2Sec;
 
+// 서버 → 장치 REQ_FAN: 팬 속도(0..100%) 적용 후 ACK_FAN으로 결과 응답
+static void HandleFanControl(const uint8_t *data, uint16_t length)
+{
+    FanData fanData;
+    uint8_t result = RESULT_FAIL;
+
+    if (ReadFanData(data, length, &fanData) == 0 && fanData.fanSpeed <= SFAN_MAX_PERCENT)
+    {
+        SFanSetSpeed((uint8_t)fanData.fanSpeed);
+        result = RESULT_SUCCESS;
+        SLOG_INFO("bt fan control: speed=%u%%", (unsigned int)fanData.fanSpeed);
+    }
+    else
+    {
+        SLOG_WARN("bt fan control rejected: length=%u", (unsigned int)length);
+    }
+    SIotProtocolSendPacket(ACK_FAN, &result, RESULT_DATA_SIZE);
+}
+
 static void HandleBluetoothPacket(uint16_t cmd, const uint8_t *data, uint16_t length)
 {
-    if (cmd == NFY_CHAT)
+    if (cmd == REQ_FAN)
+    {
+        HandleFanControl(data, length);
+    }
+    else if (cmd == NFY_CHAT)
     {
         SLOG_INFO("bt chat rx (%u bytes): %.*s", (unsigned int)length, (int)length, (const char *)data);
     }

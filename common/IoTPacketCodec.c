@@ -23,6 +23,15 @@ size_t MakeFanPacket(uint8_t *buffer, size_t size, const FanData *data)
     return IoTPacketEnd(&writer);
 }
 
+size_t MakeFanControlPacket(uint8_t *buffer, size_t size, const FanData *data)
+{
+    IoTPacketWriter writer;
+
+    IoTPacketBegin(&writer, buffer, size, REQ_FAN);
+    IoTPacketPushUint16(&writer, data->fanSpeed);
+    return IoTPacketEnd(&writer);
+}
+
 size_t MakeConPacket(uint8_t *buffer, size_t size, const ConData *data)
 {
     IoTPacketWriter writer;
