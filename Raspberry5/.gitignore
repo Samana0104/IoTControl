@@ -7,8 +7,8 @@ build/
 # Local tests and test artifacts
 /tests/
 
-# Local database scripts
-/database/
+# Local database scripts (table setup, sample rows)
+/Database/Sql/
 
 /Reference/
 
@@ -20,10 +20,15 @@ build/
 /iot_server
 /iot_bt_client
 /iot_password_hash
+/ClientTest/iot_client
 /IotMain
 /RMain
 
-# Local database credentials (plain text; never commit this file)
+# Local config with DB password (chmod 600; git cannot keep that mode)
+/ServerConfig.json
+/ServerConfig.json.tmp
+
+# Old text configs (replaced by Config/*.json)
 /db_config.txt
 
 # Local server TLS paths
