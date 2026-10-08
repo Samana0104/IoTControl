@@ -22,11 +22,8 @@ uint32_t SZS040GetUartBaud(void);
 bool SZS040IsConnected(void);
 
 // 받은 바이트 하나 꺼냄, 없으면 false
+// 수신 버퍼는 하나라서 꺼내는 쪽도 하나여야 함: 평소엔 SIotProtocolUpdate, AT 응답은 SZS040SendAT
 bool SZS040ReadByte(uint8_t *byte);
-
-// 받은 바이트를 줄 단위로 모아 한 줄이 완성되면 반환 ("\r", "\n" 제외), 아직이면 NULL
-// 반환된 문자열은 다음 ReadLine 호출 전까지만 유효
-const char *SZS040ReadLine(void);
 
 // UART 전송 완료 시 true. Bluetooth 상대의 수신 확인은 아님.
 bool SZS040Write(const uint8_t *data, uint16_t length);

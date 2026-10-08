@@ -10,11 +10,6 @@ typedef struct _SZS040
     // STATE 핀 (연결 시 HIGH), statePort가 NULL이면 미사용
     GPIO_TypeDef *statePort;
     uint16_t statePin;
-
-    // ReadLine 줄 조립용
-    char line[SZS040_LINE_SIZE];
-    uint8_t lineLength;
-    bool lineOverflow;
 } SZS040;
 
 static SZS040 bt;
@@ -30,8 +25,6 @@ bool SZS040Init(UART_HandleTypeDef *huart, GPIO_TypeDef *statePort, uint16_t sta
     bt.huart = huart;
     bt.statePort = statePort;
     bt.statePin = statePin;
-    bt.lineLength = 0;
-    bt.lineOverflow = false;
 
     return SUsartBegin(huart);
 }
@@ -44,8 +37,6 @@ bool SZS040SetUartBaud(uint32_t baud)
         return false;
     }
 
-    bt.lineLength = 0;
-    bt.lineOverflow = false;
     return SUsartSetBaud(bt.huart, baud);
 }
 
@@ -72,46 +63,6 @@ bool SZS040ReadByte(uint8_t *byte)
     }
 
     return SUsartReadByte(bt.huart, byte);
-}
-
-const char *SZS040ReadLine(void)
-{
-    uint8_t c;
-    while (SZS040ReadByte(&c))
-    {
-        if (c == '\r' || c == '\n')
-        {
-            // "\r\n"의 두 번째 문자나 빈 줄은 무시
-            if (bt.lineLength == 0 && !bt.lineOverflow)
-            {
-                continue;
-            }
-
-            bool overflow = bt.lineOverflow;
-            bt.line[bt.lineLength] = '\0';
-            bt.lineLength = 0;
-            bt.lineOverflow = false;
-
-            // 너무 긴 줄은 통째로 버림
-            if (overflow)
-            {
-                continue;
-            }
-            return bt.line;
-        }
-
-        // '\0' 자리 1바이트 남겨둠
-        if (bt.lineLength < SZS040_LINE_SIZE - 1)
-        {
-            bt.line[bt.lineLength++] = (char)c;
-        }
-        else
-        {
-            bt.lineOverflow = true;
-        }
-    }
-
-    return NULL;
 }
 
 bool SZS040Write(const uint8_t *data, uint16_t length)
@@ -154,8 +105,6 @@ bool SZS040SendAT(const char *command, char *response, uint16_t responseSize)
 
     // 이전에 받다 만 데이터가 응답으로 섞이지 않게 비움
     SUsartFlush(bt.huart);
-    bt.lineLength = 0;
-    bt.lineOverflow = false;
 
     SZS040Write((const uint8_t *)command, (uint16_t)strlen(command));
 

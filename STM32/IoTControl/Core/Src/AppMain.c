@@ -73,6 +73,8 @@ static void HandleDhtRequest(void)
 
 static void HandleBluetoothPacket(uint16_t cmd, const uint8_t *data, uint16_t length)
 {
+    SLOG_INFO("bt packet rx: cmd=0x%04X, length=%u", (unsigned int)cmd, (unsigned int)length);
+
     if (cmd == REQ_FAN)
     {
         HandleFanControl(data, length);
@@ -88,7 +90,7 @@ static void HandleBluetoothPacket(uint16_t cmd, const uint8_t *data, uint16_t le
     else
     {
         // 센서/제어 명령의 응용 동작은 해당 cmd의 처리부에서 연결.
-        SLOG_INFO("bt packet rx: cmd=0x%04X, length=%u", (unsigned int)cmd, (unsigned int)length);
+        SLOG_WARN("bt packet unhandled: cmd=0x%04X", (unsigned int)cmd);
     }
 }
 
@@ -147,8 +149,7 @@ void AppInit(void)
     }
     else
     {
-        const SIotProtocolIo io = {SZS040ReadByte, SZS040Write, HAL_GetTick};
-        SIotProtocolInit(&io, HandleBluetoothPacket, HandleBluetoothSend);
+        SIotProtocolInit(HandleBluetoothPacket, HandleBluetoothSend);
     }
 
     // TIM3 CH1 PWM (25kHz) = 팬
@@ -176,12 +177,6 @@ void AppUpdate(void)
 #ifdef DEBUG_BUILD
     SCLIUpdate();
 #endif
-
-    const char *btLine = SZS040ReadLine();
-    if (btLine != NULL)
-    {
-        SLOG_INFO("bt rx: %s", btLine);
-    }
 
     if (SIntervalMSElapsed(&interval500MS, currentTime))
     {

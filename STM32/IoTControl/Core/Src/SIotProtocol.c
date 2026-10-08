@@ -2,6 +2,7 @@
 #include "IoTPacket.h"
 #include "IoTPacketCodec.h"
 #include "IoTPacketStream.h"
+#include "SZS040.h"
 #include <string.h>
 
 // 프레임 중간에 바이트가 이 시간 이상 끊기면 버리고 다음 헤더부터 다시 받음.
@@ -11,7 +12,6 @@
 
 typedef struct _SIotProtocol
 {
-    SIotProtocolIo io;
     SIotPacketHandler packetHandler;
     SIotSendHandler sendHandler;
     bool initialized;
@@ -105,14 +105,9 @@ static void ProcessByte(uint8_t byte)
     }
 }
 
-void SIotProtocolInit(const SIotProtocolIo *io, SIotPacketHandler packetHandler, SIotSendHandler sendHandler)
+void SIotProtocolInit(SIotPacketHandler packetHandler, SIotSendHandler sendHandler)
 {
     memset(&protocol, 0, sizeof(protocol));
-    if (io == NULL || io->readByte == NULL || io->write == NULL || io->getTick == NULL)
-    {
-        return;
-    }
-    protocol.io = *io;
     protocol.packetHandler = packetHandler;
     protocol.sendHandler = sendHandler;
     protocol.initialized = true;
@@ -141,7 +136,7 @@ bool SIotProtocolSendPacket(uint16_t cmd, const void *data, uint16_t length)
         IoTPacketPushBytes(&writer, data, length);
     }
     frameLength = IoTPacketEnd(&writer);
-    success = frameLength > 0 && protocol.io.write(protocol.sendFrame, (uint16_t)frameLength);
+    success = frameLength > 0 && SZS040Write(protocol.sendFrame, (uint16_t)frameLength);
     if (protocol.sendHandler != NULL)
     {
         protocol.sendHandler(cmd, success);
@@ -158,14 +153,14 @@ void SIotProtocolUpdate(void)
     {
         return;
     }
-    now = protocol.io.getTick();
-    while (protocol.io.readByte(&byte))
+    now = HAL_GetTick();
+    while (SZS040ReadByte(&byte))
     {
         ProcessByte(byte);
         protocol.lastByteTick = now;
     }
 
-    now = protocol.io.getTick();
+    now = HAL_GetTick();
     if (protocol.discarding)
     {
         if (now - protocol.lastByteTick >= SIOT_RESYNC_IDLE_MS)
