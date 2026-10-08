@@ -1,0 +1,1608 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DashboardWidget</class>
+ <widget class="QWidget" name="DashboardWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1280</width>
+    <height>850</height>
+   </rect>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+QWidget { font-family: "Segoe UI", "Malgun Gothic", sans-serif; font-size: 12px; color: #e3e6ee; }
+QWidget#DashboardWidget, QScrollArea#contentScroll, QWidget#dashboardContent { background: #0d0f13; border: none; }
+QFrame#sidebar { background: #191a1f; border: none; border-right: 1px solid #2c2e37; }
+QLabel#sidebarLogo { color: #ff3e5b; font-size: 20px; font-weight: 700; }
+QLabel#sidebarName { color: #f4f4f6; font-family: "Bahnschrift", "Segoe UI"; font-size: 18px; font-weight: 600; }
+QLabel#sidebarEdition, QLabel#sidebarSection { color: #949ba9; font-size: 9px; }
+QPushButton[role="nav"] { background: transparent; color: #b9bdc7; border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 0; text-align: left; padding: 12px 8px; }
+QPushButton[role="nav"]:hover { background: #24262e; color: #f2f3f7; }
+QPushButton[role="nav"][active="true"] { background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 #41212b, stop: 1 #211c24); border-left: 3px solid #ff334f; color: #fff0f4; font-weight: 600; }
+QPushButton#sidebarBluetoothButton { background: #242029; border: 1px solid #65303f; color: #ff96a8; border-radius: 3px; padding: 10px 5px; }
+QPushButton#sidebarBluetoothButton:hover { background: #39232e; border-color: #d74460; }
+QFrame#sidebarPreview { background: #14161c; border: 1px solid #343743; border-radius: 3px; }
+QLabel#sidebarPreviewTitle { color: #c6cbd6; font-weight: 600; }
+QLabel#sidebarPreviewNote { color: #959dab; font-size: 10px; }
+QPushButton#returnToLoginButton { background: transparent; color: #a2aab9; border: 1px solid transparent; text-align: left; padding: 10px 0; }
+QPushButton#returnToLoginButton:hover { color: #ff8599; }
+QLabel#dashboardTitle { color: #f5f5f7; font-family: "Bahnschrift", "Segoe UI"; font-size: 29px; font-weight: 700; }
+QLabel#dashboardSubtitle { color: #a0a8b6; font-size: 12px; }
+QLabel#previewBadge { background: #28231b; color: #edc780; border: 1px solid #594933; border-radius: 3px; padding: 6px 10px; font-size: 11px; }
+QFrame[kind="panel"], QFrame[kind="metric"] { background: #171a21; border: 1px solid #323640; border-radius: 4px; }
+QFrame#chartPanel { background: #13161c; border-top: 2px solid #ff334f; }
+QFrame#fanControlPanel { background: #181a22; border-top: 2px solid #59c7f8; }
+QFrame#fanCard { border-bottom: 2px solid #ff334f; }
+QLabel[role="title"] { font-size: 14px; font-weight: 600; color: #e1e5ee; }
+QLabel[role="muted"] { color: #a2abba; font-size: 11px; }
+QLabel[role="metricValue"] { color: #f0f2f8; font-family: "Bahnschrift", "Segoe UI"; font-size: 32px; font-weight: 600; }
+QLabel#fanValue { color: #ff637d; }
+QLabel[role="metricUnit"] { color: #a6aebc; font-size: 12px; padding-top: 14px; }
+QLabel[role="metricTag"] { color: #929dac; font-size: 10px; }
+QLabel[role="metricIcon"] { font-size: 15px; color: #ff7088; background: #39232e; border-radius: 3px; }
+QLabel#temperatureIcon { color: #f4bf80; background: #342921; }
+QLabel#humidityIcon { color: #6ed1fa; background: #1d2f40; }
+QLabel#clientIcon { color: #bca4f6; background: #2b243b; }
+QLineEdit, QSpinBox, QComboBox { background: #0f1218; color: #e6e9f1; border: 1px solid #3c414e; border-radius: 3px; padding: 7px 9px; selection-background-color: #a6233b; selection-color: #ffffff; }
+QLineEdit:hover, QSpinBox:hover, QComboBox:hover { border-color: #656d7f; }
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid #ff526b; background: #171a22; }
+QComboBox::drop-down { border: none; width: 20px; }
+QPushButton[role="primary"] { background: #d92946; color: #ffffff; border: 1px solid #ff536e; border-radius: 3px; padding: 10px 15px; font-weight: 600; }
+QPushButton[role="primary"]:hover { background: #f13755; border-color: #ff8a9e; }
+QPushButton[role="primary"]:pressed { background: #a91e35; }
+QPushButton[role="secondary"] { background: #30212b; color: #ff97ab; border: 1px solid #703344; border-radius: 3px; padding: 8px 11px; }
+QPushButton[role="secondary"]:hover { background: #442632; border-color: #cf4965; }
+QPushButton[role="rowAction"] { background: #30212b; color: #ff9caf; border: 1px solid #703344; border-radius: 2px; padding: 2px 8px; font-size: 11px; }
+QPushButton[role="rowAction"]:hover { background: #442632; border-color: #cf4965; }
+QPushButton[role="subtle"] { background: #232833; color: #bac7d9; border: 1px solid #414b5d; border-radius: 3px; padding: 8px 11px; }
+QPushButton[role="subtle"]:hover { background: #30394a; color: #e7f2ff; }
+QPushButton[role="preset"] { background: #11151d; color: #aeb7c8; border: 1px solid #394354; border-radius: 3px; padding: 6px; }
+QPushButton[role="preset"]:hover { background: #263244; border-color: #59c7f8; color: #96deff; }
+QPushButton:focus { border-color: #ff7c94; }
+QLabel#actualLegend { color: #ff6a83; font-size: 10px; }
+QLabel#targetLegend { color: #75d1f8; font-size: 10px; }
+QLabel#targetValue { color: #7ad4fa; font-family: "Bahnschrift", "Segoe UI"; font-size: 26px; font-weight: 600; }
+QLabel#fanDeviceLabel { background: #0f1218; color: #bdc8d8; border: 1px solid #3c414e; border-radius: 3px; padding: 7px 9px; }
+QSlider::groove:horizontal { height: 5px; background: #333b49; border-radius: 0; }
+QSlider::sub-page:horizontal { background: #49bcea; border-radius: 0; }
+QSlider::handle:horizontal { width: 12px; margin: -6px 0; border: 1px solid #a1e6ff; background: #59c7f8; border-radius: 1px; }
+QSlider::handle:horizontal:hover { background: #b9ecff; }
+QTableWidget { background: #15181e; alternate-background-color: #1b1f27; color: #d4dae6; border: 1px solid #303540; gridline-color: #303540; selection-background-color: #482432; selection-color: #fff0f4; outline: 0; }
+QHeaderView::section { background: #232832; color: #adb9cb; border: none; border-bottom: 1px solid #424958; padding: 7px 9px; font-size: 10px; text-align: left; }
+QTableWidget::item { padding: 8px; border: none; }
+QLabel#dashboardFeedback { color: #a7b3c6; font-size: 11px; padding: 2px; }
+QScrollBar:vertical { border: none; background: #15181e; width: 7px; margin: 0; }
+QScrollBar::handle:vertical { background: #485264; border-radius: 1px; min-height: 28px; }
+QScrollBar::handle:vertical:hover { background: #bc3c57; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QToolTip { background: #23262e; color: #f0f1f5; border: 1px solid #4a4f5c; padding: 5px; }
+
+QLabel#serverEndpoint { color: #9acde5; font-size: 11px; }
+</string>
+  </property>
+  <layout class="QHBoxLayout" name="dashboardLayout">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="sidebar">
+     <property name="minimumSize">
+      <size>
+       <width>180</width>
+       <height>0</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>180</width>
+       <height>16777215</height>
+      </size>
+     </property>
+     <layout class="QVBoxLayout" name="sidebarLayout">
+      <property name="spacing">
+       <number>8</number>
+      </property>
+      <property name="leftMargin">
+       <number>18</number>
+      </property>
+      <property name="topMargin">
+       <number>28</number>
+      </property>
+      <property name="rightMargin">
+       <number>18</number>
+      </property>
+      <property name="bottomMargin">
+       <number>18</number>
+      </property>
+      <item>
+       <layout class="QHBoxLayout" name="sidebarBrandLayout">
+        <property name="spacing">
+         <number>8</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="sidebarLogo">
+          <property name="text">
+           <string>▦</string>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>24</width>
+            <height>32</height>
+           </size>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="sidebarName">
+          <property name="text">
+           <string>IoT Control</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="sidebarEdition">
+        <property name="text">
+         <string>DEVICE COMMAND CENTER</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="sidebarHeaderSpace">
+        <property name="sizeType">
+         <enum>QSizePolicy::Fixed</enum>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint">
+         <size>
+          <width>24</width>
+          <height>24</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="sidebarSection">
+        <property name="text">
+         <string>WORKSPACE</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="overviewNav">
+        <property name="text">
+         <string>◈   대시보드</string>
+        </property>
+        <property name="role" stdset="0">
+         <string notr="true">nav</string>
+        </property>
+        <property name="cursor">
+         <cursorShape>PointingHandCursor</cursorShape>
+        </property>
+        <property name="autoDefault">
+         <bool>false</bool>
+        </property>
+        <property name="active" stdset="0">
+         <string notr="true">true</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="fanNav">
+        <property name="text">
+         <string>◌   팬 제어</string>
+        </property>
+        <property name="role" stdset="0">
+         <string notr="true">nav</string>
+        </property>
+        <property name="cursor">
+         <cursorShape>PointingHandCursor</cursorShape>
+        </property>
+        <property name="autoDefault">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="clientsNav">
+        <property name="text">
+         <string>▤   현장 클라이언트</string>
+        </property>
+        <property name="role" stdset="0">
+         <string notr="true">nav</string>
+        </property>
+        <property name="cursor">
+         <cursorShape>PointingHandCursor</cursorShape>
+        </property>
+        <property name="autoDefault">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="sidebarBtSpace">
+        <property name="sizeType">
+         <enum>QSizePolicy::Fixed</enum>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint">
+         <size>
+          <width>12</width>
+          <height>12</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="sidebarBluetoothButton">
+        <property name="text">
+         <string>＋  블루투스 연결</string>
+        </property>
+        <property name="cursor">
+         <cursorShape>PointingHandCursor</cursorShape>
+        </property>
+        <property name="autoDefault">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="sidebarFlexibleSpace">
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeHint">
+         <size>
+          <width>40</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QFrame" name="sidebarPreview">
+        <layout class="QVBoxLayout" name="sidebarPreviewLayout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <property name="leftMargin">
+          <number>12</number>
+         </property>
+         <property name="topMargin">
+          <number>12</number>
+         </property>
+         <property name="rightMargin">
+          <number>12</number>
+         </property>
+         <property name="bottomMargin">
+          <number>12</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="sidebarPreviewTitle">
+           <property name="text">
+            <string>SERVER / PREVIEW</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="serverEndpoint">
+           <property name="text">
+            <string>서버 설정 대기</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="sidebarPreviewNote">
+           <property name="text">
+            <string>샘플 데이터와 연결 설정을
+미리 확인하는 화면입니다.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="dashboardChangeServerButton">
+        <property name="text">
+         <string>서버 변경</string>
+        </property>
+        <property name="cursor">
+         <cursorShape>PointingHandCursor</cursorShape>
+        </property>
+        <property name="autoDefault">
+         <bool>false</bool>
+        </property>
+        <property name="role" stdset="0">
+         <string notr="true">subtle</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="returnToLoginButton">
+        <property name="text">
+         <string>←  로그인 화면</string>
+        </property>
+        <property name="cursor">
+         <cursorShape>PointingHandCursor</cursorShape>
+        </property>
+        <property name="autoDefault">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QScrollArea" name="contentScroll">
+     <property name="frameShape">
+      <enum>QFrame::NoFrame</enum>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="dashboardContent">
+      <layout class="QVBoxLayout" name="dashboardContentLayout">
+       <property name="spacing">
+        <number>11</number>
+       </property>
+       <property name="leftMargin">
+        <number>24</number>
+       </property>
+       <property name="topMargin">
+        <number>24</number>
+       </property>
+       <property name="rightMargin">
+        <number>24</number>
+       </property>
+       <property name="bottomMargin">
+        <number>22</number>
+       </property>
+       <item>
+        <layout class="QHBoxLayout" name="dashboardHeaderLayout">
+         <property name="spacing">
+          <number>10</number>
+         </property>
+         <item>
+          <layout class="QVBoxLayout" name="dashboardHeadingLayout">
+           <property name="spacing">
+            <number>4</number>
+           </property>
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="dashboardTitle">
+             <property name="text">
+              <string>CONTROL CENTER</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="dashboardSubtitle">
+             <property name="text">
+              <string>센서 모니터링 · 팬 제어 · 현장 연결</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <spacer name="headerFlexibleSpace">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint">
+            <size>
+             <width>20</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QLabel" name="previewBadge">
+           <property name="maximumSize">
+            <size>
+             <width>16777215</width>
+             <height>30</height>
+            </size>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>30</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>UI 미리보기 · 샘플 데이터</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="metricsLayout" stretch="1,1,1,1">
+         <property name="spacing">
+          <number>12</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="temperatureCard">
+           <property name="kind" stdset="0">
+            <string notr="true">metric</string>
+           </property>
+           <layout class="QVBoxLayout" name="temperatureLayout">
+            <property name="spacing">
+             <number>3</number>
+            </property>
+            <property name="leftMargin">
+             <number>14</number>
+            </property>
+            <property name="topMargin">
+             <number>14</number>
+            </property>
+            <property name="rightMargin">
+             <number>14</number>
+            </property>
+            <property name="bottomMargin">
+             <number>14</number>
+            </property>
+            <item>
+             <layout class="QHBoxLayout" name="temperatureHeaderLayout">
+              <property name="spacing">
+               <number>6</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="temperatureTitle">
+                <property name="text">
+                 <string>현재 온도</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">muted</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="temperatureTitleSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="temperatureIcon">
+                <property name="text">
+                 <string>T</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricIcon</string>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>26</width>
+                  <height>26</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>26</width>
+                  <height>26</height>
+                 </size>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="temperatureValueLayout">
+              <property name="spacing">
+               <number>5</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="temperatureValue">
+                <property name="text">
+                 <string>26.4</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricValue</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="temperatureUnit">
+                <property name="text">
+                 <string>°C</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricUnit</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="temperatureValueSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLabel" name="temperatureTag">
+              <property name="text">
+               <string>STM32-01 · 샘플</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">metricTag</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="humidityCard">
+           <property name="kind" stdset="0">
+            <string notr="true">metric</string>
+           </property>
+           <layout class="QVBoxLayout" name="humidityLayout">
+            <property name="spacing">
+             <number>3</number>
+            </property>
+            <property name="leftMargin">
+             <number>14</number>
+            </property>
+            <property name="topMargin">
+             <number>14</number>
+            </property>
+            <property name="rightMargin">
+             <number>14</number>
+            </property>
+            <property name="bottomMargin">
+             <number>14</number>
+            </property>
+            <item>
+             <layout class="QHBoxLayout" name="humidityHeaderLayout">
+              <property name="spacing">
+               <number>6</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="humidityTitle">
+                <property name="text">
+                 <string>현재 습도</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">muted</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="humidityTitleSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="humidityIcon">
+                <property name="text">
+                 <string>H</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricIcon</string>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>26</width>
+                  <height>26</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>26</width>
+                  <height>26</height>
+                 </size>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="humidityValueLayout">
+              <property name="spacing">
+               <number>5</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="humidityValue">
+                <property name="text">
+                 <string>58.2</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricValue</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="humidityUnit">
+                <property name="text">
+                 <string>%</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricUnit</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="humidityValueSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLabel" name="humidityTag">
+              <property name="text">
+               <string>STM32-01 · 샘플</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">metricTag</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="fanCard">
+           <property name="kind" stdset="0">
+            <string notr="true">metric</string>
+           </property>
+           <layout class="QVBoxLayout" name="fanLayout">
+            <property name="spacing">
+             <number>3</number>
+            </property>
+            <property name="leftMargin">
+             <number>14</number>
+            </property>
+            <property name="topMargin">
+             <number>14</number>
+            </property>
+            <property name="rightMargin">
+             <number>14</number>
+            </property>
+            <property name="bottomMargin">
+             <number>14</number>
+            </property>
+            <item>
+             <layout class="QHBoxLayout" name="fanHeaderLayout">
+              <property name="spacing">
+               <number>6</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="fanTitle">
+                <property name="text">
+                 <string>현재 팬 속도</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">muted</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="fanTitleSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="fanIcon">
+                <property name="text">
+                 <string>↻</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricIcon</string>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>26</width>
+                  <height>26</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>26</width>
+                  <height>26</height>
+                 </size>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="fanValueLayout">
+              <property name="spacing">
+               <number>5</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="fanValue">
+                <property name="text">
+                 <string>65</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricValue</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="fanUnit">
+                <property name="text">
+                 <string>% PWM</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricUnit</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="fanValueSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLabel" name="fanTag">
+              <property name="text">
+               <string>단일 팬 · DB 측정값 샘플</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">metricTag</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="clientCard">
+           <property name="kind" stdset="0">
+            <string notr="true">metric</string>
+           </property>
+           <layout class="QVBoxLayout" name="clientLayout">
+            <property name="spacing">
+             <number>3</number>
+            </property>
+            <property name="leftMargin">
+             <number>14</number>
+            </property>
+            <property name="topMargin">
+             <number>14</number>
+            </property>
+            <property name="rightMargin">
+             <number>14</number>
+            </property>
+            <property name="bottomMargin">
+             <number>14</number>
+            </property>
+            <item>
+             <layout class="QHBoxLayout" name="clientHeaderLayout">
+              <property name="spacing">
+               <number>6</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="clientTitle">
+                <property name="text">
+                 <string>현장 클라이언트</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">muted</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="clientTitleSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="clientIcon">
+                <property name="text">
+                 <string>▦</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricIcon</string>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>26</width>
+                  <height>26</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>26</width>
+                  <height>26</height>
+                 </size>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="clientValueLayout">
+              <property name="spacing">
+               <number>5</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="clientValue">
+                <property name="text">
+                 <string>02</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricValue</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="clientUnit">
+                <property name="text">
+                 <string>보드</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">metricUnit</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="clientValueSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLabel" name="clientTag">
+              <property name="text">
+               <string>STM32 / Arduino · 샘플</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">metricTag</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="chartAndControlLayout" stretch="7,4">
+         <property name="spacing">
+          <number>12</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="chartPanel">
+           <property name="kind" stdset="0">
+            <string notr="true">panel</string>
+           </property>
+           <layout class="QVBoxLayout" name="chartPanelLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <property name="leftMargin">
+             <number>16</number>
+            </property>
+            <property name="topMargin">
+             <number>16</number>
+            </property>
+            <property name="rightMargin">
+             <number>16</number>
+            </property>
+            <property name="bottomMargin">
+             <number>16</number>
+            </property>
+            <item>
+             <layout class="QHBoxLayout" name="chartHeaderLayout">
+              <property name="spacing">
+               <number>8</number>
+              </property>
+              <item>
+               <layout class="QVBoxLayout" name="chartTitleLayout">
+                <property name="spacing">
+                 <number>4</number>
+                </property>
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="chartTitle">
+                  <property name="text">
+                   <string>팬 속도 추이</string>
+                  </property>
+                  <property name="role" stdset="0">
+                   <string notr="true">title</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="chartSubtitle">
+                  <property name="text">
+                   <string>단일 팬 · 최근 10분의 샘플 데이터</string>
+                  </property>
+                  <property name="role" stdset="0">
+                   <string notr="true">muted</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <spacer name="chartTitleSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="actualLegend">
+                <property name="text">
+                 <string>●  측정값</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="targetLegend">
+                <property name="text">
+                 <string>┄  목표값</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QWidget" name="fanChartHost">
+              <property name="minimumSize">
+               <size>
+                <width>340</width>
+                <height>168</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>180</height>
+               </size>
+              </property>
+              <layout class="QVBoxLayout" name="fanChartLayout">
+               <property name="spacing">
+                <number>0</number>
+               </property>
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="chartHint">
+              <property name="text">
+               <string>그래프를 클릭하거나 목표선을 드래그해 속도를 조절하세요.</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">muted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="fanControlPanel">
+           <property name="kind" stdset="0">
+            <string notr="true">panel</string>
+           </property>
+           <layout class="QVBoxLayout" name="fanControlPanelLayout">
+            <property name="spacing">
+             <number>7</number>
+            </property>
+            <property name="leftMargin">
+             <number>16</number>
+            </property>
+            <property name="topMargin">
+             <number>16</number>
+            </property>
+            <property name="rightMargin">
+             <number>16</number>
+            </property>
+            <property name="bottomMargin">
+             <number>16</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="fanControlTitle">
+              <property name="text">
+               <string>팬 속도 제어</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">title</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="fanDeviceLabel">
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>34</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>단일 팬  /  STM32-01</string>
+              </property>
+              <property name="accessibleName">
+               <string>제어 대상: STM32-01의 팬 1개</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="targetValueLayout">
+              <property name="spacing">
+               <number>6</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="targetCaption">
+                <property name="text">
+                 <string>목표 팬 속도</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">muted</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="targetSpace">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="targetValue">
+                <property name="minimumSize">
+                 <size>
+                  <width>80</width>
+                  <height>32</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>80</width>
+                  <height>32</height>
+                 </size>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignRight|Qt::AlignVCenter</set>
+                </property>
+                <property name="text">
+                 <string>65%</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QSlider" name="fanSpeedSlider">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="maximum">
+               <number>100</number>
+              </property>
+              <property name="singleStep">
+               <number>5</number>
+              </property>
+              <property name="pageStep">
+               <number>25</number>
+              </property>
+              <property name="value">
+               <number>65</number>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>26</height>
+               </size>
+              </property>
+              <property name="accessibleName">
+               <string>목표 팬 속도, 0에서 100 퍼센트</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="fanPresetLayout" stretch="1,1,1,1">
+              <property name="spacing">
+               <number>6</number>
+              </property>
+              <item>
+               <widget class="QPushButton" name="stopFanButton">
+                <property name="text">
+                 <string>정지</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">preset</string>
+                </property>
+                <property name="cursor">
+                 <cursorShape>PointingHandCursor</cursorShape>
+                </property>
+                <property name="autoDefault">
+                 <bool>false</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="fan25Button">
+                <property name="text">
+                 <string>25%</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">preset</string>
+                </property>
+                <property name="cursor">
+                 <cursorShape>PointingHandCursor</cursorShape>
+                </property>
+                <property name="autoDefault">
+                 <bool>false</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="fan50Button">
+                <property name="text">
+                 <string>50%</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">preset</string>
+                </property>
+                <property name="cursor">
+                 <cursorShape>PointingHandCursor</cursorShape>
+                </property>
+                <property name="autoDefault">
+                 <bool>false</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="fan100Button">
+                <property name="text">
+                 <string>100%</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">preset</string>
+                </property>
+                <property name="cursor">
+                 <cursorShape>PointingHandCursor</cursorShape>
+                </property>
+                <property name="autoDefault">
+                 <bool>false</bool>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLabel" name="fanRangeNote">
+              <property name="text">
+               <string>0% 정지 · 25% 미만은 정지 구간</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">muted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="applyFanButton">
+              <property name="text">
+               <string>목표 속도 적용</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">primary</string>
+              </property>
+              <property name="cursor">
+               <cursorShape>PointingHandCursor</cursorShape>
+              </property>
+              <property name="autoDefault">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="fanPreviewNote">
+              <property name="text">
+               <string>미리보기에서만 적용됩니다.</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">muted</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QFrame" name="clientsPanel">
+         <property name="kind" stdset="0">
+          <string notr="true">panel</string>
+         </property>
+         <layout class="QVBoxLayout" name="clientsPanelLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
+          <property name="leftMargin">
+           <number>16</number>
+          </property>
+          <property name="topMargin">
+           <number>16</number>
+          </property>
+          <property name="rightMargin">
+           <number>16</number>
+          </property>
+          <property name="bottomMargin">
+           <number>16</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="clientsHeaderLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <layout class="QVBoxLayout" name="clientsTitleLayout">
+              <property name="spacing">
+               <number>3</number>
+              </property>
+              <property name="leftMargin">
+               <number>0</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <property name="rightMargin">
+               <number>0</number>
+              </property>
+              <property name="bottomMargin">
+               <number>0</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="clientsTitle">
+                <property name="text">
+                 <string>현장 클라이언트</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">title</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="clientsSubtitle">
+                <property name="text">
+                 <string>DB 조회 결과 · 샘플 데이터</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string notr="true">muted</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <spacer name="clientsHeaderSpace">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint">
+               <size>
+                <width>20</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="reloadDbButton">
+              <property name="text">
+               <string>DB 새로고침</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">subtle</string>
+              </property>
+              <property name="cursor">
+               <cursorShape>PointingHandCursor</cursorShape>
+              </property>
+              <property name="autoDefault">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="requestAllButton">
+              <property name="text">
+               <string>전체 업데이트 요청</string>
+              </property>
+              <property name="role" stdset="0">
+               <string notr="true">secondary</string>
+              </property>
+              <property name="cursor">
+               <cursorShape>PointingHandCursor</cursorShape>
+              </property>
+              <property name="autoDefault">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="clientsTable">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>115</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>16777215</width>
+              <height>125</height>
+             </size>
+            </property>
+            <property name="editTriggers">
+             <set>QAbstractItemView::NoEditTriggers</set>
+            </property>
+            <property name="alternatingRowColors">
+             <bool>true</bool>
+            </property>
+            <property name="selectionMode">
+             <enum>QAbstractItemView::SingleSelection</enum>
+            </property>
+            <property name="selectionBehavior">
+             <enum>QAbstractItemView::SelectRows</enum>
+            </property>
+            <property name="showGrid">
+             <bool>false</bool>
+            </property>
+            <property name="rowCount">
+             <number>2</number>
+            </property>
+            <property name="columnCount">
+             <number>6</number>
+            </property>
+            <column>
+             <property name="text">
+              <string>장치 ID</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>보드</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>온도</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>습도</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>측정 시각</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>업데이트</string>
+             </property>
+            </column>
+            <row>
+             <property name="text">
+              <string>1</string>
+             </property>
+            </row>
+            <row>
+             <property name="text">
+              <string>2</string>
+             </property>
+            </row>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="dashboardFeedback">
+         <property name="text">
+          <string>샘플 데이터를 표시합니다. 모든 조작은 UI 미리보기로 동작합니다.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="contentBottomSpace">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources />
+ <connections />
+</ui>

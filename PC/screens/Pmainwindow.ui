@@ -1,0 +1,1335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1100</width>
+    <height>740</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>1000</width>
+    <height>700</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>IoT Control — 서버 연결</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+QWidget { font-family: "Segoe UI", "Malgun Gothic", sans-serif; font-size: 13px; color: #e6e8ee; }
+QMainWindow, QWidget#centralwidget, QStackedWidget#pageStack { background: #0b0d11; }
+QFrame#loginCard { background: #16181e; border: 1px solid #30333c; border-radius: 5px; }
+QFrame#brandPanel {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #1b171e, stop: 0.55 #12151a, stop: 1 #101319);
+    border: none; border-right: 1px solid #30333c; border-radius: 3px;
+}
+QLabel#brandMark { background: #ff334f; border-radius: 3px; color: #ffffff; font-size: 18px; font-weight: 700; }
+QLabel#brandName { color: #f7f7f9; font-family: "Bahnschrift", "Segoe UI"; font-size: 20px; font-weight: 600; }
+QLabel#brandEdition { color: #9b9ea8; font-size: 9px; }
+QLabel#heroTitle { color: #f5f5f7; font-size: 32px; font-weight: 700; }
+QLabel#heroDescription { color: #b5b9c4; font-size: 14px; }
+QPushButton#featureMonitor, QPushButton#featureControl, QPushButton#featureConnect {
+    background: #1d2028; border: 1px solid #363a46; border-radius: 3px;
+    color: #bfc4d0; font-size: 11px; padding: 5px 10px;
+}
+QPushButton#featureMonitor:hover, QPushButton#featureControl:hover, QPushButton#featureConnect:hover {
+    background: #30212a; border-color: #a03b4e; color: #fff0f3;
+}
+QPushButton#featureMonitor:checked, QPushButton#featureControl:checked, QPushButton#featureConnect:checked {
+    background: #40202b; border-color: #ff334f; color: #ff98aa;
+}
+QPushButton#featureMonitor:focus, QPushButton#featureControl:focus, QPushButton#featureConnect:focus {
+    border-color: #ff526b;
+}
+QLabel#brandFooter { color: #8d93a0; font-size: 10px; }
+QWidget#formPanel { background: transparent; }
+QLabel#accessLabel, QLabel#serverAccessLabel { color: #ff637b; font-family: "Bahnschrift", "Segoe UI"; font-size: 11px; font-weight: 600; }
+QLabel#loginTitle, QLabel#serverTitle { font-size: 27px; font-weight: 700; color: #f4f4f7; }
+QLabel#loginSubtitle, QLabel#serverSubtitle { color: #a0a6b3; font-size: 13px; }
+QLabel#usernameLabel, QLabel#passwordLabel, QLabel#serverHostLabel, QLabel#serverPortLabel { color: #cbd0da; font-weight: 600; }
+QLineEdit#usernameInput, QLineEdit#serverHostInput, QLineEdit#serverPortInput {
+    background: #101217; border: 1px solid #363a45; border-radius: 3px;
+    padding: 0 14px; color: #f0f1f5; selection-background-color: #a6233b; selection-color: #ffffff;
+}
+QLineEdit#usernameInput:hover, QLineEdit#serverHostInput:hover, QLineEdit#serverPortInput:hover { border-color: #636978; }
+QLineEdit#usernameInput:focus, QLineEdit#serverHostInput:focus, QLineEdit#serverPortInput:focus { border: 2px solid #ff334f; padding: 0 13px; background: #14161d; }
+QLineEdit#usernameInput[invalid="true"], QLineEdit#serverHostInput[invalid="true"], QLineEdit#serverPortInput[invalid="true"] { border: 2px solid #ff7b89; padding: 0 13px; }
+QFrame#passwordField { background: #101217; border: 1px solid #363a45; border-radius: 3px; }
+QFrame#passwordField:hover { border-color: #636978; }
+QFrame#passwordField[focused="true"] { border: 2px solid #ff334f; background: #14161d; }
+QFrame#passwordField[invalid="true"] { border: 2px solid #ff7b89; }
+QLineEdit#passwordInput {
+    background: transparent; border: none; padding: 0 2px; color: #f0f1f5;
+    selection-background-color: #a6233b; selection-color: #ffffff;
+}
+QToolButton#passwordToggleButton {
+    background: transparent; border: none; border-radius: 3px; color: #a0a6b3; font-size: 12px; padding: 5px;
+}
+QToolButton#passwordToggleButton:hover { background: #33212b; color: #ff8296; }
+QToolButton#passwordToggleButton:focus { border: 1px solid #ff526b; }
+QCheckBox#rememberUsername { color: #a7adba; font-size: 12px; spacing: 8px; }
+QCheckBox#rememberUsername::indicator { width: 14px; height: 14px; background: #101217; border: 1px solid #596171; border-radius: 2px; }
+QCheckBox#rememberUsername::indicator:hover { border-color: #ff8296; }
+QCheckBox#rememberUsername::indicator:checked { background: #ff334f; border-color: #ff8fa3; }
+QCheckBox#rememberUsername:focus { color: #ff8296; }
+QLabel#feedbackLabel { color: #ff8296; font-size: 12px; }
+QLabel#feedbackLabel[messageType="info"] { color: #b2b8c5; }
+QPushButton#loginButton, QPushButton#connectServerButton {
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 #d82441, stop: 1 #f03551);
+    border: 1px solid #ff526b; border-radius: 3px; color: #ffffff;
+    font-size: 15px; font-weight: 700; padding: 12px;
+}
+QPushButton#loginButton:hover, QPushButton#connectServerButton:hover { background: #ff3f5c; border-color: #ff8da0; }
+QPushButton#loginButton:pressed, QPushButton#connectServerButton:pressed { background: #b71f39; border-color: #d93852; }
+QPushButton#loginButton:focus, QPushButton#connectServerButton:focus { border: 2px solid #ff9bac; }
+QPushButton#previewDashboardButton {
+    background: transparent; color: #a2adbd; border: 1px solid transparent; border-radius: 3px;
+    font-size: 12px; padding: 8px;
+}
+QPushButton#previewDashboardButton:hover { color: #f3f4f7; background: #242831; }
+QPushButton#previewDashboardButton:focus { border-color: #59c7f8; }
+QFrame#helpDivider { background: #2b2f39; border: none; }
+QLabel#helpTitle { color: #b1b7c3; font-size: 12px; }
+QLabel#helpDescription { color: #8e95a3; font-size: 12px; }
+QLabel#formFooter { color: #828a99; font-size: 10px; }
+QToolTip { background: #23262e; color: #f0f1f5; border: 1px solid #4a4f5c; padding: 5px; }
+
+QWidget#serverPage, QWidget#loginPage, QStackedWidget#accessStack { background: transparent; border: none; }
+QLabel#serverSteps { color: #9eabba; font-family: "Bahnschrift", "Segoe UI"; font-size: 10px; padding: 10px 8px; background: #10141c; border: 1px solid #333a48; border-left: 2px solid #ff334f; }
+QLabel#serverFeedback { color: #ff8296; font-size: 12px; }
+QLabel#serverPreviewNote { color: #d1b077; font-size: 11px; }
+QLabel#serverFooter { color: #828a99; font-size: 10px; }
+QLabel#loginServerSummary { color: #9acde5; font-size: 11px; }
+QPushButton#changeServerButton { background: transparent; color: #9eabba; border: 1px solid #384353; border-radius: 3px; padding: 6px 8px; font-size: 11px; }
+QPushButton#changeServerButton:hover { color: #ff96a8; border-color: #ff526b; }
+QPushButton#changeServerButton:focus { border-color: #59c7f8; }
+QPushButton#loginButton:disabled, QPushButton#previewDashboardButton:disabled { color: #777c88; background: #262932; border-color: #363a45; }
+</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="windowLayout">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>28</number>
+    </property>
+    <property name="topMargin">
+     <number>28</number>
+    </property>
+    <property name="rightMargin">
+     <number>28</number>
+    </property>
+    <property name="bottomMargin">
+     <number>28</number>
+    </property>
+    <item>
+     <widget class="QFrame" name="loginCard">
+      <layout class="QHBoxLayout" name="cardLayout" stretch="10,11">
+       <property name="spacing">
+        <number>0</number>
+       </property>
+       <property name="leftMargin">
+        <number>1</number>
+       </property>
+       <property name="topMargin">
+        <number>1</number>
+       </property>
+       <property name="rightMargin">
+        <number>1</number>
+       </property>
+       <property name="bottomMargin">
+        <number>1</number>
+       </property>
+       <item>
+        <widget class="QFrame" name="brandPanel">
+         <layout class="QVBoxLayout" name="brandLayout">
+          <property name="spacing">
+           <number>0</number>
+          </property>
+          <property name="leftMargin">
+           <number>38</number>
+          </property>
+          <property name="topMargin">
+           <number>38</number>
+          </property>
+          <property name="rightMargin">
+           <number>38</number>
+          </property>
+          <property name="bottomMargin">
+           <number>30</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="brandHeaderLayout">
+            <property name="spacing">
+             <number>10</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="brandMark">
+              <property name="text">
+               <string>⌘</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>36</width>
+                <height>36</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>36</width>
+                <height>36</height>
+               </size>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QVBoxLayout" name="brandWordmarkLayout">
+              <property name="spacing">
+               <number>0</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="brandName">
+                <property name="text">
+                 <string>IoT Control</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="brandEdition">
+                <property name="text">
+                 <string>DEVICE COMMAND CENTER</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <spacer name="brandHeaderSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint">
+               <size>
+                <width>20</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <spacer name="heroTopSpacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>20</width>
+              <height>38</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="heroTitle">
+            <property name="text">
+             <string>모든 연결을,
+하나의 공간에서.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="heroTextSpacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>20</width>
+              <height>14</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="heroDescription">
+            <property name="text">
+             <string>센서부터 컨트롤러까지.
+흩어진 디바이스를 한눈에 관리하세요.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="visualTopSpacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>20</width>
+              <height>22</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QWidget" name="networkVisual">
+            <property name="minimumSize">
+             <size>
+              <width>320</width>
+              <height>228</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>16777215</width>
+              <height>250</height>
+             </size>
+            </property>
+            <property name="accessibleName">
+             <string>센서와 컨트롤러를 연결하는 IoT 허브 일러스트</string>
+            </property>
+            <layout class="QVBoxLayout" name="networkVisualLayout">
+             <property name="spacing">
+              <number>0</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <spacer name="brandFlexibleSpacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>20</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="featureLayout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="featureMonitor">
+              <property name="text">
+               <string>센서 모니터링</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>28</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="featureControl">
+              <property name="text">
+               <string>장치 제어</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>28</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="featureConnect">
+              <property name="text">
+               <string>실시간 연결</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>28</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <spacer name="brandFooterSpacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>20</width>
+              <height>24</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="brandFooter">
+            <property name="text">
+             <string>MONITOR / CONNECT / CONTROL</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QWidget" name="formPanel">
+         <layout class="QVBoxLayout" name="formPanelLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>0</number>
+          </property>
+          <item>
+           <widget class="QStackedWidget" name="accessStack">
+            <property name="currentIndex">
+             <number>0</number>
+            </property>
+            <widget class="QWidget" name="serverPage">
+             <layout class="QVBoxLayout" name="serverPageLayout">
+              <property name="spacing">
+               <number>0</number>
+              </property>
+              <property name="leftMargin">
+               <number>56</number>
+              </property>
+              <property name="topMargin">
+               <number>30</number>
+              </property>
+              <property name="rightMargin">
+               <number>56</number>
+              </property>
+              <property name="bottomMargin">
+               <number>24</number>
+              </property>
+              <item>
+               <spacer name="serverTopSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>28</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverAccessLabel">
+                <property name="text">
+                 <string>01 / SERVER CONNECTION</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverTitleSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>16</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverTitle">
+                <property name="text">
+                 <string>서버부터 연결하세요</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverSubtitleSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>10</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverSubtitle">
+                <property name="text">
+                 <string>우분투 서버의 주소와 포트를 입력하세요.
+서버 연결 후 계정 로그인으로 이어집니다.</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>34</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>16777215</width>
+                  <height>34</height>
+                 </size>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignLeft|Qt::AlignTop</set>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverStepsSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>24</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverSteps">
+                <property name="text">
+                 <string>01  SERVER   /   02  LOGIN   /   03  CONTROL</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverFieldsSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>26</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverHostLabel">
+                <property name="text">
+                 <string>서버 주소</string>
+                </property>
+                <property name="buddy">
+                 <cstring>serverHostInput</cstring>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverHostLabelSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>8</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLineEdit" name="serverHostInput">
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>16777215</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="clearButtonEnabled">
+                 <bool>true</bool>
+                </property>
+                <property name="placeholderText">
+                 <string>192.168.0.10 또는 서버 호스트명</string>
+                </property>
+                <property name="text">
+                 <string />
+                </property>
+                <property name="accessibleName">
+                 <string>우분투 서버 주소</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverPortSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverPortLabel">
+                <property name="text">
+                 <string>포트</string>
+                </property>
+                <property name="buddy">
+                 <cstring>serverPortInput</cstring>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverPortLabelSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>8</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLineEdit" name="serverPortInput">
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>16777215</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="clearButtonEnabled">
+                 <bool>true</bool>
+                </property>
+                <property name="placeholderText">
+                 <string>1–65535</string>
+                </property>
+                <property name="text">
+                 <string>5000</string>
+                </property>
+                <property name="accessibleName">
+                 <string>우분투 서버 포트</string>
+                </property>
+                <property name="toolTip">
+                 <string>서버 포트 (1–65535)</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverFeedback">
+                <property name="text">
+                 <string />
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>40</height>
+                 </size>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="connectServerButton">
+                <property name="text">
+                 <string>서버 연결 미리보기  →</string>
+                </property>
+                <property name="cursor">
+                 <cursorShape>PointingHandCursor</cursorShape>
+                </property>
+                <property name="autoDefault">
+                 <bool>false</bool>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>52</height>
+                 </size>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverPreviewSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>16</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverPreviewNote">
+                <property name="text">
+                 <string>UI 목업 · 실제 소켓 연결은 하지 않습니다.
+지금은 설정을 확인한 뒤 로그인 화면으로 이동합니다.</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="serverBottomSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Expanding</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>28</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="serverFooter">
+                <property name="text">
+                 <string>IoT CONTROL  /  CONNECT FIRST</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+            <widget class="QWidget" name="loginPage">
+             <layout class="QVBoxLayout" name="loginFormLayout">
+              <property name="spacing">
+               <number>0</number>
+              </property>
+              <property name="leftMargin">
+               <number>56</number>
+              </property>
+              <property name="topMargin">
+               <number>30</number>
+              </property>
+              <property name="rightMargin">
+               <number>56</number>
+              </property>
+              <property name="bottomMargin">
+               <number>24</number>
+              </property>
+              <item>
+               <spacer name="formTopSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>28</height>
+                 </size>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="accessLabel">
+                <property name="text">
+                 <string>02 / ACCOUNT LOGIN</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="titleSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>16</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="loginTitle">
+                <property name="text">
+                 <string>계정 로그인</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="subtitleSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>10</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="loginSubtitle">
+                <property name="text">
+                 <string>서버 연결 후 계정에 로그인하세요.</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>34</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>16777215</width>
+                  <height>34</height>
+                 </size>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignLeft|Qt::AlignTop</set>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="fieldsTopSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>32</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="usernameLabel">
+                <property name="text">
+                 <string>아이디</string>
+                </property>
+                <property name="buddy">
+                 <cstring>usernameInput</cstring>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="usernameLabelSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>8</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLineEdit" name="usernameInput">
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>16777215</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="accessibleName">
+                 <string>아이디</string>
+                </property>
+                <property name="placeholderText">
+                 <string>아이디를 입력하세요</string>
+                </property>
+                <property name="clearButtonEnabled">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="passwordTopSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>20</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="passwordLabel">
+                <property name="text">
+                 <string>비밀번호</string>
+                </property>
+                <property name="buddy">
+                 <cstring>passwordInput</cstring>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="passwordLabelSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>8</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QFrame" name="passwordField">
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>16777215</width>
+                  <height>50</height>
+                 </size>
+                </property>
+                <layout class="QHBoxLayout" name="passwordLayout">
+                 <property name="spacing">
+                  <number>4</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>12</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>3</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>8</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>3</number>
+                 </property>
+                 <item>
+                  <widget class="QLineEdit" name="passwordInput">
+                   <property name="accessibleName">
+                    <string>비밀번호</string>
+                   </property>
+                   <property name="echoMode">
+                    <enum>QLineEdit::Password</enum>
+                   </property>
+                   <property name="placeholderText">
+                    <string>비밀번호를 입력하세요</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QToolButton" name="passwordToggleButton">
+                   <property name="minimumSize">
+                    <size>
+                     <width>42</width>
+                     <height>32</height>
+                    </size>
+                   </property>
+                   <property name="text">
+                    <string>표시</string>
+                   </property>
+                   <property name="checkable">
+                    <bool>true</bool>
+                   </property>
+                   <property name="toolTip">
+                    <string>비밀번호 표시</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>비밀번호 표시</string>
+                   </property>
+                   <property name="focusPolicy">
+                    <enum>Qt::StrongFocus</enum>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <spacer name="rememberTopSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>16</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QCheckBox" name="rememberUsername">
+                <property name="text">
+                 <string>이 기기에서 아이디 기억하기</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="feedbackLabel">
+                <property name="text">
+                 <string />
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>38</height>
+                 </size>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="loginButton">
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>52</height>
+                 </size>
+                </property>
+                <property name="text">
+                 <string>로그인  →</string>
+                </property>
+                <property name="cursor">
+                 <cursorShape>PointingHandCursor</cursorShape>
+                </property>
+                <property name="autoDefault">
+                 <bool>true</bool>
+                </property>
+                <property name="default">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="previewDashboardButton">
+                <property name="text">
+                 <string>대시보드 UI 미리보기  →</string>
+                </property>
+                <property name="cursor">
+                 <cursorShape>PointingHandCursor</cursorShape>
+                </property>
+                <property name="autoDefault">
+                 <bool>false</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="helpTopSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>12</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QFrame" name="helpDivider">
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>1</height>
+                 </size>
+                </property>
+                <property name="maximumSize">
+                 <size>
+                  <width>16777215</width>
+                  <height>1</height>
+                 </size>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="helpTextSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>18</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <layout class="QHBoxLayout" name="loginServerLayout" stretch="1,0">
+                <item>
+                 <widget class="QLabel" name="loginServerSummary">
+                  <property name="text">
+                   <string>SERVER / 연결 설정 대기</string>
+                  </property>
+                  <property name="wordWrap">
+                   <bool>true</bool>
+                  </property>
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="changeServerButton">
+                  <property name="text">
+                   <string>서버 변경</string>
+                  </property>
+                  <property name="cursor">
+                   <cursorShape>PointingHandCursor</cursorShape>
+                  </property>
+                  <property name="autoDefault">
+                   <bool>false</bool>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
+               <spacer name="helpDescriptionSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Fixed</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>6</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="helpDescription">
+                <property name="text">
+                 <string>연결 설정 미리보기 · 실제 소켓 연결은 하지 않습니다.</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="formBottomSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>20</width>
+                  <height>28</height>
+                 </size>
+                </property>
+                <property name="sizeType">
+                 <enum>QSizePolicy::Expanding</enum>
+                </property>
+               </spacer>
+              </item>
+              <item>
+               <widget class="QLabel" name="formFooter">
+                <property name="text">
+                 <string>IoT CONTROL  /  DESKTOP WORKSPACE</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignCenter</set>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <tabstops>
+  <tabstop>serverHostInput</tabstop>
+  <tabstop>serverPortInput</tabstop>
+  <tabstop>connectServerButton</tabstop>
+  <tabstop>usernameInput</tabstop>
+  <tabstop>passwordInput</tabstop>
+  <tabstop>passwordToggleButton</tabstop>
+  <tabstop>rememberUsername</tabstop>
+  <tabstop>loginButton</tabstop>
+  <tabstop>previewDashboardButton</tabstop>
+  <tabstop>featureMonitor</tabstop>
+  <tabstop>featureControl</tabstop>
+  <tabstop>featureConnect</tabstop>
+  <tabstop>changeServerButton</tabstop>
+ </tabstops>
+ <resources />
+ <connections />
+</ui>
