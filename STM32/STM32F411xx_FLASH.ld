@@ -56,7 +56,8 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 512K
+/* 마지막 섹터 7 (0x08060000, 128K)은 SData 저장용이라 코드 영역에서 뺌 */
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 384K
 }
 
 /* Highest address of the user mode stack */
