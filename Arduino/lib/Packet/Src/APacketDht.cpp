@@ -15,16 +15,16 @@ void APacketDhtRequestReceive(const uint8_t *payload, uint16_t length)
     (void)payload;
     (void)length;
 
-    float humidity = packetDht->GetHumidity();
-    float temperature = packetDht->GetTemperature();
-    bool valid = !isnan(humidity) && !isnan(temperature) && temperature >= 0;
+    uint8_t temperature = 0;
+    uint8_t humidity = 0;
+    bool valid = packetDht->Read(temperature, humidity);
 
     DhtAckData ack = {};
     ack.result = valid ? RESULT_SUCCESS : RESULT_FAIL;
     if (valid)
     {
-        ack.dht.temp = (uint16_t)temperature;
-        ack.dht.humi = (uint16_t)humidity;
+        ack.dht.temp = temperature;
+        ack.dht.humi = humidity;
     }
 
     if (!APacketSendDhtAck(ack))
