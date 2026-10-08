@@ -63,6 +63,7 @@ typedef struct _HeaderData
 #define MSG_FAN_UPDATE 0x000E
 #define MSG_SESSION_ALL 0x000F
 #define MSG_FAN_APPLY 0x0010
+#define MSG_DHT_REFRESH 0x0011
 
 /* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
@@ -118,3 +119,7 @@ typedef struct _HeaderData
    Existing device REQ_FAN/ACK_FAN remain unchanged. */
 #define REQ_FAN_APPLY MSG_FAN_APPLY /* FanApplyData: ID + expected DB percent */
 #define ACK_FAN_APPLY REQ_TO_ACK(REQ_FAN_APPLY) /* FanApplyAckData, sent after device ACK or failure */
+
+/* PC -> server: one field ID, completion only after ACK_DHT and DB INSERT. */
+#define REQ_DHT_REFRESH MSG_DHT_REFRESH /* DhtRefreshData */
+#define ACK_DHT_REFRESH REQ_TO_ACK(REQ_DHT_REFRESH) /* DhtRefreshAckData */

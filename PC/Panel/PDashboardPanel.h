@@ -33,6 +33,7 @@ class DashboardPanel final : public QObject
     void DisplayDhtClients(const QList<QStringList> &rows);
     void DisplaySessionSummary(int onlineCount, int dbCount, const QString &error);
     void DisplayCurrentDht(const QString &temperature, const QString &humidity, const QString &source);
+    void SetClientRefreshing(const QString &clientId);
     void SetDhtLoading(bool loading, bool collecting = false);
     void ResetDhtLabels();
     void DisplayFanSpeed(int percent, bool sample = false);
@@ -60,6 +61,7 @@ class DashboardPanel final : public QObject
     bool eventFilter(QObject *watched, QEvent *event) override;
 
   private:
+    void RefreshClientButtons();
     void SelectSection(QPushButton *navigation);
     void PlayEntrance();
     void FinishEntrance();
@@ -78,4 +80,6 @@ class DashboardPanel final : public QObject
     bool fanUpdateMode = false;
     bool fanUpdateBusy = false;
     QString fanBusyLabel;
+    QString refreshingClientId;
+    bool dhtLoading = false;
 };

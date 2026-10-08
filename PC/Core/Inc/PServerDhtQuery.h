@@ -20,6 +20,8 @@ class ServerDhtQuery final : public QObject
     explicit ServerDhtQuery(ServerConnection *connection, QObject *parent = nullptr);
     void LoadAllDht(int timeoutMs = 10000);
     void RequestDhtCollect(int timeoutMs = 10000);
+    void RequestClientRefresh(const QString &clientId, int timeoutMs = 10000);
+    bool IsRefreshing() const;
     void CancelQuery();
     void PauseQuery();
     bool IsLoading() const;
@@ -30,6 +32,8 @@ class ServerDhtQuery final : public QObject
     void DhtLoaded(const DhtRecords &records);
     void QueryFailed(const QString &message);
     void CollectFinished(bool requested);
+    void RefreshFinished(const QString &clientId);
+    void RefreshFailed(const QString &clientId, const QString &message);
 
   private:
     void ReceiveData(const QByteArray &data);
@@ -45,4 +49,6 @@ class ServerDhtQuery final : public QObject
     qsizetype discardRemaining = 0;
     bool loading = false;
     bool collecting = false;
+    bool refreshing = false;
+    QString refreshClientId;
 };

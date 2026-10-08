@@ -44,6 +44,10 @@ size_t MakeBluetoothConnectPacket(uint8_t *buffer, size_t size, const BluetoothC
 size_t MakeDhtRequestPacket(uint8_t *buffer, size_t size);
 /* REQ_DHT_COLLECT: PC -> server, no payload. */
 size_t MakeDhtCollectPacket(uint8_t *buffer, size_t size);
+size_t MakeDhtRefreshPacket(uint8_t *buffer, size_t size, const DhtRefreshData *data);
+size_t MakeDhtRefreshAckPacket(uint8_t *buffer, size_t size, const DhtRefreshAckData *data);
+int ReadDhtRefreshData(const uint8_t *payload, size_t length, DhtRefreshData *data);
+int ReadDhtRefreshAckData(const uint8_t *payload, size_t length, DhtRefreshAckData *data);
 /* ACK_DHT: device -> server, reply to REQ_DHT. */
 size_t MakeDhtAckPacket(uint8_t *buffer, size_t size, const DhtAckData *data);
 /* REQ_FW_*: server -> STM32. REQ_FW_END has no payload. */

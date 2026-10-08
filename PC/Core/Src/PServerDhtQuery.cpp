@@ -3,6 +3,7 @@
 #include "IoTPacketCodec.h"
 #include "PServerConnection.h"
 
+#include <QStringList>
 #include <QTimer>
 #include <algorithm>
 #include <cmath>
@@ -68,13 +69,15 @@ void ServerDhtQuery::PauseQuery()
     // 같은 TCP 연결에서 로그인 화면으로 돌아가도 수신 프레임 경계는 유지합니다.
     loading = false;
     collecting = false;
+    refreshing = false;
+    refreshClientId.clear();
     queryTimer->stop();
     pendingRecords.clear();
 }
 
 bool ServerDhtQuery::IsLoading() const { return loading; }
 bool ServerDhtQuery::IsCollecting() const { return collecting; }
-bool ServerDhtQuery::IsBusy() const { return loading || collecting; }
+bool ServerDhtQuery::IsBusy() const { return loading || collecting || refreshing; }
 
 void ServerDhtQuery::ReceiveData(const QByteArray &data)
 {
@@ -98,7 +101,7 @@ void ServerDhtQuery::ReceiveData(const QByteArray &data)
         }
         HeaderData header{};
         DecodePacketHeader(reinterpret_cast<const uint8_t *>(receiveBuffer.constData()), &header);
-        if (IsBusy() && (header.cmd == NFY_DHT_ROW || header.cmd == ACK_DHT_ALL || header.cmd == ACK_DHT_COLLECT) && CheckPacketLength(header.cmd, header.length) != 0)
+        if (IsBusy() && (header.cmd == NFY_DHT_ROW || header.cmd == ACK_DHT_ALL || header.cmd == ACK_DHT_COLLECT || header.cmd == ACK_DHT_REFRESH) && CheckPacketLength(header.cmd, header.length) != 0)
         {
             FailQuery(tr("dht 조회 응답 길이가 올바르지 않습니다."), true);
             return;
@@ -158,6 +161,28 @@ void ServerDhtQuery::ReceiveData(const QByteArray &data)
             // SUCCESS는 요청을 한 기기 이상에 보냈다는 뜻입니다. 측정 완료 ACK가 아닙니다.
             emit CollectFinished(result.result == RESULT_SUCCESS);
         }
+        if (refreshing && header.cmd == ACK_DHT_REFRESH)
+        {
+            DhtRefreshAckData ack{};
+            if (ReadDhtRefreshAckData(frame + HEADER_SIZE, header.length, &ack) != 0 || ack.reason > DHT_REFRESH_NOT_ALLOWED || (ack.result != RESULT_SUCCESS && ack.result != RESULT_FAIL) || ((ack.result == RESULT_SUCCESS) != (ack.reason == DHT_REFRESH_OK)))
+            {
+                FailQuery(tr("개별 갱신 응답 형식이 올바르지 않습니다."), true);
+                return;
+            }
+            if (ack.result == RESULT_FAIL)
+            {
+                const QStringList REASONS{tr("완료"), tr("잘못된 대상 ID"), tr("기기 미접속"), tr("기기가 다른 갱신 요청 처리 중"), tr("기기 요청 전송 실패"), tr("기기 측정 실패"), tr("서버 DB 저장 실패"), tr("기기 응답 시간 초과"), tr("기기 연결 종료"), tr("PC 권한 필요")};
+                FailQuery(REASONS.at(ack.reason), false);
+            }
+            else
+            {
+                const QString ID = refreshClientId;
+                refreshing = false;
+                refreshClientId.clear();
+                queryTimer->stop();
+                emit RefreshFinished(ID);
+            }
+        }
         receiveBuffer.clear();
     }
 }
@@ -210,14 +235,22 @@ void ServerDhtQuery::HandleConnectionClosed()
     CancelQuery();
 }
 
-void ServerDhtQuery::HandleTimeout() { FailQuery(collecting ? tr("현장 갱신 요청 응답 시간이 초과되었습니다. 다시 접속해 주세요.") : tr("dht 전체 조회 응답 시간이 초과되었습니다. 다시 접속해 주세요."), true); }
+void ServerDhtQuery::HandleTimeout()
+{
+    const QString QUERY_MESSAGE = collecting ? tr("현장 갱신 요청 응답 시간이 초과되었습니다. 다시 접속해 주세요.") : tr("dht 전체 조회 응답 시간이 초과되었습니다. 다시 접속해 주세요.");
+    FailQuery(refreshing ? tr("개별 갱신 서버 응답 시간이 초과되었습니다. 다시 접속해 주세요.") : QUERY_MESSAGE, true);
+}
 
 void ServerDhtQuery::FailQuery(const QString &message, bool closeConnection)
 {
     if (!IsBusy())
         return;
+    const bool WAS_REFRESHING = refreshing;
+    const QString ID = refreshClientId;
     loading = false;
     collecting = false;
+    refreshing = false;
+    refreshClientId.clear();
     queryTimer->stop();
     pendingRecords.clear();
     if (closeConnection)
@@ -225,5 +258,31 @@ void ServerDhtQuery::FailQuery(const QString &message, bool closeConnection)
         CancelQuery();
         connection->DisconnectFromServer();
     }
-    emit QueryFailed(message);
+    if (WAS_REFRESHING)
+        emit RefreshFailed(ID, message);
+    else
+        emit QueryFailed(message);
+}
+
+bool ServerDhtQuery::IsRefreshing() const { return refreshing; }
+
+void ServerDhtQuery::RequestClientRefresh(const QString &clientId, int timeoutMs)
+{
+    if (IsBusy())
+        return;
+    const QByteArray ID = clientId.toUtf8();
+    if (!connection->IsConnected() || ID.isEmpty() || ID.size() > MEM_ID_SIZE || ID.contains('\0'))
+    {
+        emit RefreshFailed(clientId, tr("서버 연결 또는 대상 ID를 확인해 주세요."));
+        return;
+    }
+    DhtRefreshData data{};
+    std::memcpy(data.id, ID.constData(), static_cast<size_t>(ID.size()));
+    uint8_t frame[HEADER_SIZE + DHT_REFRESH_DATA_SIZE]{};
+    const size_t LENGTH = MakeDhtRefreshPacket(frame, sizeof(frame), &data);
+    refreshing = true;
+    refreshClientId = clientId;
+    queryTimer->start(std::max(1, timeoutMs));
+    if (LENGTH == 0 || !connection->SendPacket(QByteArray(reinterpret_cast<const char *>(frame), static_cast<qsizetype>(LENGTH))))
+        FailQuery(tr("개별 갱신 요청 전송 실패"), false);
 }

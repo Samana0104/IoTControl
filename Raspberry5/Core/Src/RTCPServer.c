@@ -4,6 +4,7 @@
 #include "RCommand.h"
 #include "RPacket.h"
 #include "RPacketFanControl.h"
+#include "RPacketDhtRefresh.h"
 #include "RNetwork.h"
 #include "RLog.h"
 
@@ -54,7 +55,8 @@ int InitServer(TCPServer *server, const char *ip, int port)
         return -1;
     }
     RPacketFanResetControl();
-    if(RNetSetMaintenanceHandler(RPacketFanControlTick) != 0)
+    RPacketDhtRefreshReset();
+    if(RNetSetMaintenanceHandler(RPacketMaintenance) != 0)
         return -1;
     if(RNetStart(RPacketProcess, RConfigGet()->server.workerCount) != 0)
     {
@@ -244,6 +246,7 @@ void CloseServer(TCPServer *server)
     }
     RNetStop();
     RPacketFanResetControl();
+    RPacketDhtRefreshReset();
     // 워커 스레드의 DB 연결은 스레드가 끝날 때 닫히고, 메인 스레드(콘솔) 연결은 여기서 닫음
     ResetDatabaseConnection();
     if(server->signalHandlersInstalled)

@@ -23,17 +23,30 @@ void MainWindow::InitializeDhtControls()
     connect(dashboard, &DashboardWidget::FieldDataUpdateRequested, this, &MainWindow::RequestFieldDataUpdate);
     connect(serverDhtQuery, &ServerDhtQuery::DhtLoaded, this, &MainWindow::HandleDhtLoaded);
     connect(serverDhtQuery, &ServerDhtQuery::QueryFailed, this, &MainWindow::HandleDhtQueryFailed);
+    connect(serverDhtQuery, &ServerDhtQuery::RefreshFinished, this,
+            [this](const QString &clientId)
+            {
+                dashboard->SetClientRefreshing(QString());
+                dashboard->SetDhtLoading(false);
+                dashboard->SetDataFeedback(tr("%1 측정·DB 저장 완료. 최신 데이터를 조회합니다.").arg(clientId));
+                QTimer::singleShot(0, this, [this]
+                                   { LoadAllDht(true); });
+            });
+    connect(serverDhtQuery, &ServerDhtQuery::RefreshFailed, this,
+            [this](const QString &clientId, const QString &message)
+            {
+                dashboard->SetClientRefreshing(QString());
+                dashboard->SetDhtLoading(false);
+                if (serverConnection->IsConnected())
+                    dashboard->SetDataFeedback(tr("%1 갱신 실패: %2").arg(clientId, message));
+                else
+                    ShowServerFailure(message);
+            });
     connect(serverDhtQuery, &ServerDhtQuery::CollectFinished, this, &MainWindow::HandleFieldDataUpdateResult);
 }
 
 void MainWindow::RequestFieldDataUpdate(const QString &clientId)
 {
-    if (!clientId.isEmpty())
-    {
-        // TODO: 현재 REQ_DHT_COLLECT에는 대상 ID가 없습니다. 개별 갱신은 별도 규격 필요.
-        dashboard->SetDataFeedback(tr("%1 개별 갱신은 준비 중입니다. 현재 서버는 전체 기기 갱신 요청을 지원합니다.").arg(clientId));
-        return;
-    }
     if (!authenticated || !serverConnection->IsConnected())
     {
         dashboard->SetDataFeedback(tr("현장 갱신 요청은 서버에 로그인한 후 사용할 수 있습니다."));
@@ -41,6 +54,14 @@ void MainWindow::RequestFieldDataUpdate(const QString &clientId)
     }
     if (serverDhtQuery->IsBusy())
         return;
+    if (!clientId.isEmpty())
+    {
+        dashboard->SetClientRefreshing(clientId);
+        dashboard->SetDhtLoading(true, true);
+        dashboard->SetDataFeedback(tr("%1 새 측정 및 DB 저장 응답을 기다립니다…").arg(clientId));
+        serverDhtQuery->RequestClientRefresh(clientId);
+        return;
+    }
     dashboard->SetDhtLoading(true, true);
     dashboard->SetDataFeedback(tr("서버에 전체 기기 DHT 갱신을 요청하고 있습니다…"));
     serverDhtQuery->RequestDhtCollect();

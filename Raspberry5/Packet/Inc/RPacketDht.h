@@ -9,6 +9,6 @@ int RPacketDhtReceiveAck(RSession *session, const uint8_t *payload, size_t lengt
 // PC → 서버 REQ_DHT_COLLECT: 모든 장치에 REQ_DHT를 보내고 ACK_DHT_COLLECT로 응답
 int RPacketDhtCollectReceive(RSession *session, const uint8_t *payload, size_t length);
 
-// 인증된 장치 세션(BT 전부 + 회원 type이 PC가 아닌 TCP)에 REQ_DHT 전송. excludeFd는 건너뜀 (-1이면 없음)
-// 보낸 장치 수, 프레임을 못 만들면 -1. 측정값은 각 장치의 ACK_DHT로 도착
+// 인증된 STM32/Arduino에 ID별로 REQ_DHT 전송. 이미 갱신 중인 ID와 excludeFd는 건너뜀 (-1이면 없음)
+// 보낸 장치 수 반환. 측정값은 각 장치의 ACK_DHT로 도착
 int RPacketDhtRequestAll(int excludeFd);

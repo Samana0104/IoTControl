@@ -21,6 +21,7 @@ class DashboardWidget final : public QWidget
     void SetSessionError(const QString &message);
     void ResetSessionStatus();
     void SetDataFeedback(const QString &message);
+    void SetClientRefreshing(const QString &clientId);
     void SetDhtLoading(bool loading, bool collecting = false);
     void DisplayFanSpeed(int percent);
     void DisplayFanSaved(int percent);

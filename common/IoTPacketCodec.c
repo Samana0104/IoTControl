@@ -11,6 +11,8 @@ int CheckPacketLength(uint16_t cmd, size_t length)
     {
         case REQ_FAN_APPLY: return length == FAN_APPLY_DATA_SIZE ? 0 : -1;
         case ACK_FAN_APPLY: return length == FAN_APPLY_ACK_DATA_SIZE ? 0 : -1;
+        case REQ_DHT_REFRESH: return length == DHT_REFRESH_DATA_SIZE ? 0 : -1;
+        case ACK_DHT_REFRESH: return length == DHT_REFRESH_ACK_DATA_SIZE ? 0 : -1;
         case REQ_LOGIN: return length == MEM_DATA_SIZE ? 0 : -1;
         case REQ_SESSION_ALL:
         case REQ_DHT_ALL:
@@ -501,5 +503,40 @@ int ReadFanApplyAckData(const uint8_t *payload, size_t length, FanApplyAckData *
     data->result = IoTPacketPopUint8(&reader);
     data->reason = IoTPacketPopUint8(&reader);
     data->fan.fanSpeed = IoTPacketPopUint16(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+size_t MakeDhtRefreshPacket(uint8_t *buffer, size_t size, const DhtRefreshData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL) return 0;
+    IoTPacketBegin(&writer, buffer, size, REQ_DHT_REFRESH);
+    IoTPacketPushBytes(&writer, data->id, MEM_ID_SIZE);
+    return IoTPacketEnd(&writer);
+}
+size_t MakeDhtRefreshAckPacket(uint8_t *buffer, size_t size, const DhtRefreshAckData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL) return 0;
+    IoTPacketBegin(&writer, buffer, size, ACK_DHT_REFRESH);
+    IoTPacketPushUint8(&writer, data->result);
+    IoTPacketPushUint8(&writer, data->reason);
+    return IoTPacketEnd(&writer);
+}
+int ReadDhtRefreshData(const uint8_t *payload, size_t length, DhtRefreshData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != DHT_REFRESH_DATA_SIZE) return -1;
+    IoTPacketOpen(&reader, payload, length);
+    IoTPacketPopBytes(&reader, data->id, MEM_ID_SIZE);
+    return IoTPacketCheckRead(&reader);
+}
+int ReadDhtRefreshAckData(const uint8_t *payload, size_t length, DhtRefreshAckData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != DHT_REFRESH_ACK_DATA_SIZE) return -1;
+    IoTPacketOpen(&reader, payload, length);
+    data->result = IoTPacketPopUint8(&reader);
+    data->reason = IoTPacketPopUint8(&reader);
     return IoTPacketCheckRead(&reader);
 }

@@ -153,6 +153,7 @@ void DashboardPanel::SetClients(const QList<QStringList> &rows)
         connect(requestButton, &QPushButton::clicked, this, [this, CLIENT_ID]
                 { emit ClientUpdateRequested(CLIENT_ID); });
     }
+    RefreshClientButtons();
 }
 
 void DashboardPanel::SetMetricValue(QLabel *label, const QString &text)
@@ -194,6 +195,8 @@ void DashboardPanel::DisplaySessionSummary(int onlineCount, int dbCount, const Q
 
 void DashboardPanel::SetDhtLoading(bool loading, bool collecting)
 {
+    dhtLoading = loading;
+    RefreshClientButtons();
     ui->reloadDbButton->setEnabled(!loading);
     ui->reloadDbButton->setText(loading && !collecting ? tr("DB 조회 중…") : tr("DB 새로고침"));
     ui->requestAllButton->setEnabled(!loading);
@@ -268,7 +271,7 @@ void DashboardPanel::SetFanUpdateBusy(bool busy, const QString &stage)
     else if (!stage.isEmpty())
         fanBusyLabel = stage;
     ui->applyFanButton->setEnabled(!busy);
-    ui->returnToLoginButton->setEnabled(!busy || fanBusyLabel.isEmpty());
+    ui->returnToLoginButton->setEnabled((!busy || fanBusyLabel.isEmpty()) && refreshingClientId.isEmpty());
     ui->fanTargetInput->setEnabled(fanUpdateMode && !busy && ui->fanTargetInput->count() > 1);
     const QString SERVER_LABEL = ReadFanClientId().isEmpty() ? tr("팬 속도 DB 저장") : tr("DB 저장 후 팬 적용");
     const QString LABEL = fanUpdateMode ? SERVER_LABEL : tr("목표 속도 적용");
@@ -406,3 +409,30 @@ void DashboardPanel::DisplayTarget(int percent, int rotorSpeed)
 }
 
 void DashboardPanel::SetFeedback(const QString &message) { ui->dashboardFeedback->setText(message); }
+
+void DashboardPanel::SetClientRefreshing(const QString &clientId)
+{
+    refreshingClientId = clientId;
+    RefreshClientButtons();
+    SetFanUpdateBusy(fanUpdateBusy);
+}
+
+void DashboardPanel::RefreshClientButtons()
+{
+    for (int row = 0; row < ui->clientsTable->rowCount(); ++row)
+    {
+        auto *button = qobject_cast<QPushButton *>(ui->clientsTable->cellWidget(row, CLIENT_UPDATE_COLUMN));
+        if (!button || !ui->clientsTable->item(row, 1) || !ui->clientsTable->item(row, CLIENT_STATUS_COLUMN))
+            continue;
+        const QString ID = ui->clientsTable->item(row, 0)->text();
+        const QString TYPE = ui->clientsTable->item(row, 1)->text();
+        const bool FIELD = TYPE == QStringLiteral("STM32") || TYPE == QStringLiteral("ARDUINO");
+        const bool ONLINE = ui->clientsTable->item(row, CLIENT_STATUS_COLUMN)->text().startsWith(tr("접속 ·"));
+        const bool PENDING = ID == refreshingClientId;
+        const QString IDLE_LABEL = FIELD ? ONLINE ? tr("현장 갱신") : tr("미접속") : tr("대상 아님");
+        button->setText(PENDING ? tr("갱신 중…") : IDLE_LABEL);
+        button->setEnabled(FIELD && ONLINE && !dhtLoading && refreshingClientId.isEmpty());
+        button->setToolTip(tr("%1의 새 온습도 측정을 요청하고 DB 저장 후 다시 조회합니다.").arg(ID));
+        button->setAccessibleName(tr("%1 현장 갱신 요청").arg(ID));
+    }
+}

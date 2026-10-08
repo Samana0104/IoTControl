@@ -71,6 +71,34 @@ typedef struct _SessionRowData
     uint8_t memberType;
     uint8_t links;
 } SessionRowData;
+#define DHT_REFRESH_DATA_SIZE MEM_ID_SIZE
+#define DHT_REFRESH_ACK_DATA_SIZE 2
+
+typedef enum
+{
+    DHT_REFRESH_OK = 0,
+    DHT_REFRESH_INVALID_TARGET,
+    DHT_REFRESH_NOT_CONNECTED,
+    DHT_REFRESH_BUSY,
+    DHT_REFRESH_SEND_FAILED,
+    DHT_REFRESH_REJECTED,
+    DHT_REFRESH_DB_ERROR,
+    DHT_REFRESH_TIMEOUT,
+    DHT_REFRESH_DISCONNECTED,
+    DHT_REFRESH_NOT_ALLOWED
+} DhtRefreshReason;
+
+typedef struct _DhtRefreshData
+{
+    char id[MEM_ID_SIZE];
+} DhtRefreshData;
+
+typedef struct _DhtRefreshAckData
+{
+    uint8_t result;
+    uint8_t reason;
+} DhtRefreshAckData;
+
 typedef struct _FanData
 {
     uint16_t fanSpeed;

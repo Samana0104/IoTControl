@@ -123,6 +123,8 @@ void DashboardWidget::DisplayClientRecords()
 
 void DashboardWidget::SetDataFeedback(const QString &message) { panel->SetFeedback(message); }
 
+void DashboardWidget::SetClientRefreshing(const QString &clientId) { panel->SetClientRefreshing(clientId); }
+
 void DashboardWidget::SetDhtLoading(bool loading, bool collecting) { panel->SetDhtLoading(loading, collecting); }
 
 void DashboardWidget::DisplayFanSpeed(int percent) { panel->DisplayFanSpeed(percent); }
@@ -149,6 +151,7 @@ void DashboardWidget::SetFanUpdateBusy(bool busy, const QString &stage) { panel-
 
 void DashboardWidget::ResetDhtView()
 {
+    panel->SetClientRefreshing(QString());
     dhtRecords.clear();
     sessionRecords.clear();
     sessionStatusKnown = false;

@@ -6,6 +6,7 @@
 #include "RPacketBt.h"
 #include "RPacketCon.h"
 #include "RPacketDht.h"
+#include "RPacketDhtRefresh.h"
 #include "RPacketDhtQuery.h"
 #include "RPacketFan.h"
 #include "RPacketFanControl.h"
@@ -42,6 +43,7 @@ static const RPacketEntry PACKET_TABLE[] =
     {REQ_BT_REGISTER, PACKET_FLAG_TCP, RPacketBtRegisterReceive},
     {REQ_SESSION_ALL, PACKET_FLAG_TCP, RPacketSessionAllReceive},
     {REQ_DHT_ALL, PACKET_FLAG_TCP, RPacketDhtAllReceive},
+    {REQ_DHT_REFRESH, PACKET_FLAG_TCP, RPacketDhtRefreshReceive},
     {REQ_DHT_COLLECT, PACKET_FLAG_TCP, RPacketDhtCollectReceive},
     {REQ_FAN_QUERY, PACKET_FLAG_TCP, RPacketFanQueryReceive},
     {REQ_FAN_APPLY, PACKET_FLAG_TCP, RPacketFanApplyReceive},
@@ -74,6 +76,9 @@ int RPacketValidateProtocol(void)
         RLOG_ERROR("Fan apply protocol mismatch: rebuild Raspberry5 and ../common together (REQ_FAN_APPLY=0x%04X, ACK_FAN_APPLY=0x%04X)", (unsigned int)REQ_FAN_APPLY, (unsigned int)ACK_FAN_APPLY);
         return -1;
     }
+    if(CheckPacketLength(REQ_DHT_REFRESH, DHT_REFRESH_DATA_SIZE) != 0 || CheckPacketLength(ACK_DHT_REFRESH, DHT_REFRESH_ACK_DATA_SIZE) != 0)
+        return -1;
+    RLOG_INFO("DHT refresh protocol ready: req=0x%04X, ack=0x%04X", (unsigned int)REQ_DHT_REFRESH, (unsigned int)ACK_DHT_REFRESH);
     RLOG_INFO("Fan apply protocol ready: REQ_FAN_APPLY=0x%04X (%u bytes), ACK_FAN_APPLY=0x%04X (%u bytes)", (unsigned int)REQ_FAN_APPLY, (unsigned int)FAN_APPLY_DATA_SIZE, (unsigned int)ACK_FAN_APPLY, (unsigned int)FAN_APPLY_ACK_DATA_SIZE);
     RLOG_INFO("Session protocol ready: REQ_SESSION_ALL=0x%04X (0 bytes), NFY_SESSION_ROW=0x%04X (%u bytes), ACK_SESSION_ALL=0x%04X (%u bytes); packet build=%s %s", (unsigned int)REQ_SESSION_ALL, (unsigned int)NFY_SESSION_ROW, (unsigned int)SESSION_ROW_DATA_SIZE, (unsigned int)ACK_SESSION_ALL, (unsigned int)RESULT_DATA_SIZE, __DATE__, __TIME__);
     return 0;
@@ -198,4 +203,10 @@ static int ValidatePacketPermission(const RSession *session, const RPacketEntry 
         return -1;
     }
     return 0;
+}
+
+void RPacketMaintenance(uint64_t nowMs)
+{
+    RPacketFanControlTick(nowMs);
+    RPacketDhtRefreshTick(nowMs);
 }
