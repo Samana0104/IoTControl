@@ -1,5 +1,5 @@
 #include "AppMain.h"
-#include "SDht.h"
+#include "SDHT.h"
 #include "SIntervalMS.h"
 #include "SLog.h"
 #include "SFan.h"
@@ -8,6 +8,7 @@
 #include "SIotProtocol.h"
 #include "usart.h"
 #include "SData.h"
+#include "SPacketFirmware.h"
 
 #ifdef DEBUG_BUILD
 #include "SCLI.h"
@@ -38,7 +39,7 @@ void AppInit(void)
     SCLIInit(&huart2);
 #endif
 
-    SLOG_INFO("Boot STM32");
+    SLOG_INFO("Boot STM32: firmware version=%lu", (unsigned long)firmwareInfo.version);
 
     SDataInit();
 
@@ -74,6 +75,7 @@ void AppUpdate(void)
     uint32_t currentTime = HAL_GetTick();
 
     SIotProtocolUpdate();
+    SPacketFirmwareUpdate();
 
 #ifdef DEBUG_BUILD
     SCLIUpdate();

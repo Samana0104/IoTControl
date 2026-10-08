@@ -1,5 +1,5 @@
 #include "SPacketDht.h"
-#include "SDht.h"
+#include "SDHT.h"
 #include "SIotProtocol.h"
 #include "SLog.h"
 #include "IoTPacketCodec.h"

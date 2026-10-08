@@ -5,6 +5,7 @@
 #include "SLog.h"
 #include "SPacketDht.h"
 #include "SPacketFan.h"
+#include "SPacketFirmware.h"
 #include "SZS040.h"
 #include <string.h>
 
@@ -28,6 +29,9 @@ static void ReceiveChat(const uint8_t *payload, uint16_t length);
 static const SPacketEntry PACKET_TABLE[] = {
     {REQ_FAN, SPacketFanRequestReceive},
     {REQ_DHT, SPacketDhtRequestReceive},
+    {REQ_FW_BEGIN, SPacketFirmwareBeginReceive},
+    {REQ_FW_CHUNK, SPacketFirmwareChunkReceive},
+    {REQ_FW_END, SPacketFirmwareEndReceive},
     {NFY_CHAT, ReceiveChat},
 };
 

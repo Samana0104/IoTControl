@@ -56,9 +56,8 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
-/* 섹터 0 = 부트로더(Bootloader/), 섹터 1~4 (0x08004000, 112K) = 앱.
-   섹터 5 = 펌웨어 업데이트 대기 영역, 섹터 7 = SData. 배치는 common/IoTFirmware.h 참고 */
-FLASH (rx)      : ORIGIN = 0x8004000, LENGTH = 112K
+/* 부트로더는 섹터 0 (0x08000000, 16K)만 씀. 나머지 배치는 common/IoTFirmware.h 참고 */
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 16K
 }
 
 /* Highest address of the user mode stack */
@@ -76,9 +75,6 @@ SECTIONS
   {
     . = ALIGN(4);
     KEEP(*(.isr_vector)) /* Startup code */
-    /* FirmwareInfo(버전)를 벡터 테이블 바로 뒤 고정 위치(FIRMWARE_INFO_OFFSET)에 둠 */
-    . = 0x200;
-    KEEP(*(.firmware_info))
     . = ALIGN(4);
   } >FLASH
 
