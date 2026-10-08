@@ -11,7 +11,7 @@ void SPacketFirmwareChunkReceive(const uint8_t *payload, uint16_t length);
 // REQ_FW_END: 이미지 CRC32·형식 확인 후 대기 헤더를 쓰고, ACK를 보낸 뒤 재부팅 예약
 void SPacketFirmwareEndReceive(const uint8_t *payload, uint16_t length);
 
-// 메인 루프에서 호출. REQ_FW_END 성공 뒤 ACK가 블루투스로 나갈 시간을 두고 재부팅 (부트로더가 설치)
+// 메인 루프에서 주기적으로 호출 (AppMain은 2초마다). REQ_FW_END 성공 뒤 ACK가 블루투스로 나갈 시간을 두고 재부팅 (부트로더가 설치)
 void SPacketFirmwareUpdate(void);
 
 // 지금 실행 중인 앱의 버전 정보 (version = CMake FIRMWARE_VERSION), 링커가 앱 시작 + 0x200에 둠

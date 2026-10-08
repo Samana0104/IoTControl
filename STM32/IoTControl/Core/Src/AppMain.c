@@ -75,7 +75,6 @@ void AppUpdate(void)
     uint32_t currentTime = HAL_GetTick();
 
     SIotProtocolUpdate();
-    SPacketFirmwareUpdate();
 
 #ifdef DEBUG_BUILD
     SCLIUpdate();
@@ -89,9 +88,6 @@ void AppUpdate(void)
 
     if (SIntervalMSElapsed(&interval2Sec, currentTime))
     {
-        // sendStatus();
-        //
-        // 지난 주기에 시작한 읽기 결과 (읽기는 약 25ms면 끝남)
-        // 값은 0.1 단위 정수 (235 = 23.5), %f는 newlib-nano 기본 설정에서 출력 안 됨
+        SPacketFirmwareUpdate();
     }
 }

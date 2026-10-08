@@ -84,6 +84,13 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     VECT_TAB_OFFSET=0x00004000U
 )
 
+# SystemInit(system_stm32f4xx.c)은 STM32_Drivers 라이브러리에서 따로 컴파일되므로 여기에도 넣어야 VTOR이 옮겨짐
+# (없으면 디버거로 앱을 바로 실행할 때 SysTick이 0x08000000 벡터로 가서 멈춤, cmake/stm32cubemx는 CubeMX가 덮어씀)
+target_compile_definitions(STM32_Drivers PRIVATE
+    USER_VECT_TAB_ADDRESS
+    VECT_TAB_OFFSET=0x00004000U
+)
+
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
