@@ -194,7 +194,7 @@ int RNetOpenTcp(int fd, const struct sockaddr_in *address)
         if(connection != NULL)
         {
             snprintf(connection->address, sizeof(connection->address), "%s", ip);
-            connection->session = RSessionAdd(SESSION_TCP, fd, ip, NULL);
+            connection->session = RSessionAdd(SESSION_TCP, fd, ip, NULL, MEMBER_TYPE_UNKNOWN);
             if(connection->session == NULL)
             {
                 connection->inUse = 0;
@@ -218,7 +218,7 @@ int RNetOpenTcp(int fd, const struct sockaddr_in *address)
     return RegisterConnection(connection);
 }
 
-int RNetOpenBt(int fd, const char *memberId, const char *mac)
+int RNetOpenBt(int fd, const char *memberId, const char *mac, RMemberType memberType)
 {
     RNetConnection *connection = NULL;
     int openError = EINVAL;
@@ -231,7 +231,7 @@ int RNetOpenBt(int fd, const char *memberId, const char *mac)
         if(connection != NULL)
         {
             snprintf(connection->address, sizeof(connection->address), "%s", mac);
-            connection->session = RSessionAdd(SESSION_BLUETOOTH, fd, mac, memberId);
+            connection->session = RSessionAdd(SESSION_BLUETOOTH, fd, mac, memberId, memberType);
             if(connection->session == NULL)
             {
                 connection->inUse = 0;
