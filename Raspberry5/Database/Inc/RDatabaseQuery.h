@@ -69,7 +69,7 @@
 #define QUERY_UPDATE_CON "UPDATE con SET temp = ? WHERE singleton_id = 1"
 
 // 사용자 제공 최신값 테이블 dht(id PK, temp, humi, updated_at) 전체 조회.
-#define QUERY_SELECT_DHT_ALL "SELECT d.id, d.temp, d.humi, d.updated_at, m.type FROM dht AS d LEFT JOIN member AS m ON m.id = d.id ORDER BY d.id"
+#define QUERY_SELECT_DHT_ALL "SELECT d.id, d.temp, d.humi, d.created_at, m.type FROM dht AS d LEFT JOIN member AS m ON m.id = d.id ORDER BY d.id"
 
 
 /* ============================================================================
