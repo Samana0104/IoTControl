@@ -78,6 +78,14 @@ int ReadFirmwareChunkData(const uint8_t *payload, size_t length, FirmwareChunkDa
 int ReadFirmwareChunkAckData(const uint8_t *payload, size_t length, FirmwareChunkAckData *data);
 int ReadResultData(const uint8_t *payload, size_t length, ResultData *data);
 
+size_t MakeBtConnectRowPacket(uint8_t *buffer, size_t size, const BtConnectRowData *data);
+int ReadBtConnectRowData(const uint8_t *payload, size_t length, BtConnectRowData *data);
+size_t MakeBtScanRowPacket(uint8_t *buffer, size_t size, const BtScanRowData *data);
+int ReadBtScanRowData(const uint8_t *payload, size_t length, BtScanRowData *data);
+size_t MakeBtOperationPacket(uint8_t *buffer, size_t size, uint16_t cmd);
+size_t MakeBtOperationAckPacket(uint8_t *buffer, size_t size, uint16_t reqCmd, const BtOperationAckData *data);
+int ReadBtOperationAckData(const uint8_t *payload, size_t length, BtOperationAckData *data);
+
 #ifdef __cplusplus
 }
 #endif

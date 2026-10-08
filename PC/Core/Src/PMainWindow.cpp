@@ -2,6 +2,7 @@
 
 #include "PAccessPanel.h"
 #include "PDashboardWidget.h"
+#include "PServerBluetooth.h"
 #include "PServerConnection.h"
 #include "PServerDhtQuery.h"
 #include "PServerFanQuery.h"
@@ -11,7 +12,7 @@
 #include <QStackedWidget>
 #include <QTimer>
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new AccessPanel(this)), serverConnection(new ServerConnection(this)), serverLogin(new ServerLogin(serverConnection, this)), serverDhtQuery(new ServerDhtQuery(serverConnection, this)), serverFanQuery(new ServerFanQuery(serverConnection, this)), serverSessionQuery(new ServerSessionQuery(serverConnection, this)), dhtPollTimer(new QTimer(this)), sessionPollTimer(new QTimer(this))
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new AccessPanel(this)), serverConnection(new ServerConnection(this)), serverLogin(new ServerLogin(serverConnection, this)), serverDhtQuery(new ServerDhtQuery(serverConnection, this)), serverBluetooth(new ServerBluetooth(serverConnection, this)), serverFanQuery(new ServerFanQuery(serverConnection, this)), serverSessionQuery(new ServerSessionQuery(serverConnection, this)), dhtPollTimer(new QTimer(this)), sessionPollTimer(new QTimer(this))
 {
     pages = new QStackedWidget(this);
     pages->setObjectName(QStringLiteral("pageStack"));
@@ -26,6 +27,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new A
     InitializeDhtControls();
     InitializeFanControls();
     InitializeSessionControls();
+    InitializeBluetoothControls();
     loginWindowSize = size();
     ShowServerConnection();
 }
@@ -92,7 +94,7 @@ void MainWindow::ShowServerConnection()
 
 void MainWindow::ShowLogin()
 {
-    if (serverFanQuery->IsApplying() || serverDhtQuery->IsRefreshing())
+    if (serverFanQuery->IsApplying() || serverDhtQuery->IsRefreshing() || serverBluetooth->IsBusy())
     {
         dashboard->SetDataFeedback(tr("장치 응답을 기다리고 있습니다. 완료 후 로그인 화면으로 이동할 수 있습니다."));
         return;

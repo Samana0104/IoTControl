@@ -19,6 +19,7 @@ class QTimer;
 class ServerConnection;
 class ServerLogin;
 class ServerDhtQuery;
+class ServerBluetooth;
 class ServerFanQuery;
 class ServerSessionQuery;
 
@@ -66,6 +67,8 @@ class MainWindow : public QMainWindow
     void HandleFanUpdateFailed(const QString &message);
     void HandleFanApplied(const QString &clientId, int percent);
     void HandleFanApplyFailed(const QString &clientId, const QString &message);
+    void InitializeBluetoothControls();
+    void ShowBluetoothManager();
     void InitializeSessionControls();
     void LoadSessionStatus();
     void HandleSessionsLoaded(const SessionRecords &records);
@@ -78,6 +81,7 @@ class MainWindow : public QMainWindow
     ServerConnection *serverConnection;
     ServerLogin *serverLogin;
     ServerDhtQuery *serverDhtQuery;
+    ServerBluetooth *serverBluetooth;
     ServerFanQuery *serverFanQuery;
     ServerSessionQuery *serverSessionQuery;
     QTimer *dhtPollTimer;

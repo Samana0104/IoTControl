@@ -209,3 +209,47 @@ typedef struct _FirmwareChunkAckData
 #ifdef __cplusplus
 }
 #endif
+
+#define BT_SCAN_NAME_SIZE 64
+#define BT_CONNECT_ROW_SIZE (MEM_ID_SIZE + 1)
+#define BT_SCAN_ROW_SIZE (BLUETOOTH_MAC_SIZE + BT_SCAN_NAME_SIZE + 3)
+#define BT_OPERATION_ACK_SIZE 2
+#define BT_SCAN_MAX_ROWS 32
+#define BT_CONNECT_ALL_MAX_ROWS 64
+
+typedef enum
+{
+    BT_OPERATION_OK = 0,
+    BT_OPERATION_BUSY,
+    BT_OPERATION_NOT_ALLOWED,
+    BT_OPERATION_FAILED,
+    BT_OPERATION_LIMIT
+} BtOperationReason;
+
+typedef enum
+{
+    BT_CONNECT_CONNECTED = 0,
+    BT_CONNECT_ALREADY_CONNECTED,
+    BT_CONNECT_NOT_REGISTERED,
+    BT_CONNECT_FAILED
+} BtConnectStatus;
+
+typedef struct _BtConnectRowData
+{
+    char id[MEM_ID_SIZE];
+    uint8_t status;
+} BtConnectRowData;
+
+typedef struct _BtScanRowData
+{
+    char mac[BLUETOOTH_MAC_SIZE];
+    char name[BT_SCAN_NAME_SIZE];
+    int16_t rssi;
+    uint8_t paired;
+} BtScanRowData;
+
+typedef struct _BtOperationAckData
+{
+    uint8_t result;
+    uint8_t reason;
+} BtOperationAckData;

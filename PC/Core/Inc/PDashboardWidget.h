@@ -35,6 +35,7 @@ class DashboardWidget final : public QWidget
     void ResetDhtView();
 
   signals:
+    void BluetoothManageRequested();
     void ReturnToLogin();
     void ServerChangeRequested();
     void ServerDisconnectRequested();

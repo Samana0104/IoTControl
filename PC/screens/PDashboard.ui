@@ -262,7 +262,7 @@ QLabel#serverEndpoint { color: #9acde5; font-size: 11px; }
       <item>
        <widget class="QPushButton" name="sidebarBluetoothButton">
         <property name="text">
-         <string>＋  블루투스 연결</string>
+         <string>＋  블루투스 관리</string>
         </property>
         <property name="cursor">
          <cursorShape>PointingHandCursor</cursorShape>

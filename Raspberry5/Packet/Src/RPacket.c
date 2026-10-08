@@ -4,6 +4,7 @@
 #include "RLog.h"
 #include "RNetwork.h"
 #include "RPacketBt.h"
+#include "RPacketBtOperations.h"
 #include "RPacketCon.h"
 #include "RPacketDht.h"
 #include "RPacketDhtRefresh.h"
@@ -40,6 +41,8 @@ static const RPacketEntry PACKET_TABLE[] =
 {
     {REQ_LOGIN, PACKET_FLAG_TCP | PACKET_FLAG_NO_LOGIN, RPacketLoginReceive},
     {REQ_BT_CONNECT, PACKET_FLAG_TCP | PACKET_FLAG_NO_LOGIN, RPacketBtConnectReceive},
+    {REQ_BT_SCAN, PACKET_FLAG_TCP, RPacketBtScanReceive},
+    {REQ_BT_CONNECT_ALL, PACKET_FLAG_TCP, RPacketBtConnectAllReceive},
     {REQ_BT_REGISTER, PACKET_FLAG_TCP, RPacketBtRegisterReceive},
     {REQ_SESSION_ALL, PACKET_FLAG_TCP, RPacketSessionAllReceive},
     {REQ_DHT_ALL, PACKET_FLAG_TCP, RPacketDhtAllReceive},
@@ -78,6 +81,12 @@ int RPacketValidateProtocol(void)
     }
     if(CheckPacketLength(REQ_DHT_REFRESH, DHT_REFRESH_DATA_SIZE) != 0 || CheckPacketLength(ACK_DHT_REFRESH, DHT_REFRESH_ACK_DATA_SIZE) != 0)
         return -1;
+    if(CheckPacketLength(REQ_BT_CONNECT_ALL, 0) != 0 || CheckPacketLength(REQ_BT_SCAN, 0) != 0 || CheckPacketLength(NFY_BT_CONNECT_ROW, BT_CONNECT_ROW_SIZE) != 0 || CheckPacketLength(NFY_BT_SCAN_ROW, BT_SCAN_ROW_SIZE) != 0 || CheckPacketLength(ACK_BT_CONNECT_ALL, BT_OPERATION_ACK_SIZE) != 0 || CheckPacketLength(ACK_BT_SCAN, BT_OPERATION_ACK_SIZE) != 0)
+    {
+        RLOG_ERROR("Bluetooth management protocol mismatch: rebuild Raspberry5 and common together");
+        return -1;
+    }
+    RLOG_INFO("Bluetooth management protocol ready: connect_all=0x%04X, scan=0x%04X", (unsigned int)REQ_BT_CONNECT_ALL, (unsigned int)REQ_BT_SCAN);
     RLOG_INFO("DHT refresh protocol ready: req=0x%04X, ack=0x%04X", (unsigned int)REQ_DHT_REFRESH, (unsigned int)ACK_DHT_REFRESH);
     RLOG_INFO("Fan apply protocol ready: REQ_FAN_APPLY=0x%04X (%u bytes), ACK_FAN_APPLY=0x%04X (%u bytes)", (unsigned int)REQ_FAN_APPLY, (unsigned int)FAN_APPLY_DATA_SIZE, (unsigned int)ACK_FAN_APPLY, (unsigned int)FAN_APPLY_ACK_DATA_SIZE);
     RLOG_INFO("Session protocol ready: REQ_SESSION_ALL=0x%04X (0 bytes), NFY_SESSION_ROW=0x%04X (%u bytes), ACK_SESSION_ALL=0x%04X (%u bytes); packet build=%s %s", (unsigned int)REQ_SESSION_ALL, (unsigned int)NFY_SESSION_ROW, (unsigned int)SESSION_ROW_DATA_SIZE, (unsigned int)ACK_SESSION_ALL, (unsigned int)RESULT_DATA_SIZE, __DATE__, __TIME__);

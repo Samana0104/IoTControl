@@ -10,6 +10,14 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
 set(PC_UI_SOURCES
+    Core/Src/PMainWindowBluetooth.cpp
+    Core/Src/PServerBluetooth.cpp
+    Core/Inc/PServerBluetooth.h
+    Core/Src/PBluetoothManagerDialog.cpp
+    Core/Inc/PBluetoothManagerDialog.h
+    Panel/PBluetoothManagerPanel.cpp
+    Panel/PBluetoothManagerPanel.h
+    screens/PBluetoothManagerDialog.ui
     Core/Src/PMainWindow.cpp
     Core/Src/PMainWindowServer.cpp
     Core/Src/PMainWindowLogin.cpp
@@ -112,8 +120,14 @@ if(IOT_BUILD_TESTS)
     )
     add_test(NAME server_login_tests COMMAND server_login_tests -o -,txt)
 
+    qt_add_executable(bluetooth_operations_tests tests/PBluetoothOperationsTest.cpp ${PC_UI_SOURCES})
+    target_include_directories(bluetooth_operations_tests PRIVATE Core/Inc Panel widget ../common)
+    target_link_libraries(bluetooth_operations_tests PRIVATE Qt6::Widgets Qt6::Network Qt6::Test)
+    set_target_properties(bluetooth_operations_tests PROPERTIES AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/screens")
+    add_test(NAME bluetooth_operations_tests COMMAND bluetooth_operations_tests -o -,txt)
+
     find_package(Qt6 REQUIRED COMPONENTS Sql)
-    qt_add_executable(dht_query_tests tests/PDhtQueryTest.cpp ${PC_UI_SOURCES} ../Raspberry5/Packet/Src/RPacket.c ../Raspberry5/Packet/Src/RPacketSession.c ../Raspberry5/Packet/Src/RPacketFan.c ../Raspberry5/Packet/Src/RPacketFanControl.c ../Raspberry5/Packet/Src/RPacketDhtQuery.c ../Raspberry5/Packet/Src/RPacketDht.c)
+    qt_add_executable(dht_query_tests tests/PDhtQueryTest.cpp ${PC_UI_SOURCES} ../Raspberry5/Packet/Src/RPacket.c ../Raspberry5/Packet/Src/RPacketSession.c ../Raspberry5/Packet/Src/RPacketFan.c ../Raspberry5/Packet/Src/RPacketFanControl.c ../Raspberry5/Packet/Src/RPacketDhtQuery.c ../Raspberry5/Packet/Src/RPacketDht.c ../Raspberry5/Packet/Src/RPacketDhtRefresh.c)
     target_include_directories(dht_query_tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/serverstub"
         "${CMAKE_CURRENT_SOURCE_DIR}/examples"

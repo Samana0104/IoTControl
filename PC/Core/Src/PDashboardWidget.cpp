@@ -1,7 +1,6 @@
 #include "PDashboardWidget.h"
 
 #include "IoTPacket.h"
-#include "PBluetoothDialog.h"
 #include "PDashboardPanel.h"
 
 #include <QList>
@@ -184,15 +183,4 @@ void DashboardWidget::RequestAllUpdate() { emit FieldDataUpdateRequested(QString
 
 void DashboardWidget::RequestClientUpdate(const QString &clientId) { emit FieldDataUpdateRequested(clientId); }
 
-void DashboardWidget::ShowBluetoothDialog()
-{
-    BluetoothDialog dialog(this);
-    connect(&dialog, &BluetoothDialog::PreviewRequested, this,
-            [this](const QString &id, const QString & /*password*/)
-            {
-                panel->SetFeedback(tr("미리보기: %1 계정으로 블루투스 연결 요청 입력을 "
-                                      "확인했습니다. 실제 요청은 전송되지 않았습니다.")
-                                       .arg(id));
-            });
-    dialog.exec();
-}
+void DashboardWidget::ShowBluetoothDialog() { emit BluetoothManageRequested(); }

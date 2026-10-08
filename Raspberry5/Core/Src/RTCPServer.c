@@ -3,6 +3,7 @@
 #include "RDatabase.h"
 #include "RCommand.h"
 #include "RPacket.h"
+#include "RPacketBtOperations.h"
 #include "RPacketFanControl.h"
 #include "RPacketDhtRefresh.h"
 #include "RNetwork.h"
@@ -58,6 +59,7 @@ int InitServer(TCPServer *server, const char *ip, int port)
     RPacketDhtRefreshReset();
     if(RNetSetMaintenanceHandler(RPacketMaintenance) != 0)
         return -1;
+    RPacketBtOperationsStart();
     if(RNetStart(RPacketProcess, RConfigGet()->server.workerCount) != 0)
     {
         RLOG_ERROR("Network start failed: %s", strerror(errno));
@@ -244,6 +246,7 @@ void CloseServer(TCPServer *server)
         close(server->socket);
         server->socket = -1;
     }
+    RPacketBtOperationsStop();
     RNetStop();
     RPacketFanResetControl();
     RPacketDhtRefreshReset();

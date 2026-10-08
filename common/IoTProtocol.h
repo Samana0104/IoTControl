@@ -64,6 +64,8 @@ typedef struct _HeaderData
 #define MSG_SESSION_ALL 0x000F
 #define MSG_FAN_APPLY 0x0010
 #define MSG_DHT_REFRESH 0x0011
+#define MSG_BT_CONNECT_ALL 0x0012
+#define MSG_BT_SCAN 0x0013
 
 /* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
@@ -123,3 +125,10 @@ typedef struct _HeaderData
 /* PC -> server: one field ID, completion only after ACK_DHT and DB INSERT. */
 #define REQ_DHT_REFRESH MSG_DHT_REFRESH /* DhtRefreshData */
 #define ACK_DHT_REFRESH REQ_TO_ACK(REQ_DHT_REFRESH) /* DhtRefreshAckData */
+
+#define REQ_BT_CONNECT_ALL MSG_BT_CONNECT_ALL
+#define NFY_BT_CONNECT_ROW MAKE_NOTIFY(MSG_BT_CONNECT_ALL)
+#define ACK_BT_CONNECT_ALL REQ_TO_ACK(REQ_BT_CONNECT_ALL)
+#define REQ_BT_SCAN MSG_BT_SCAN
+#define NFY_BT_SCAN_ROW MAKE_NOTIFY(MSG_BT_SCAN)
+#define ACK_BT_SCAN REQ_TO_ACK(REQ_BT_SCAN)

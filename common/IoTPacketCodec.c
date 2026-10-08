@@ -9,6 +9,12 @@ int CheckPacketLength(uint16_t cmd, size_t length)
 {
     switch(cmd)
     {
+        case REQ_BT_CONNECT_ALL:
+        case REQ_BT_SCAN: return length == 0 ? 0 : -1;
+        case NFY_BT_CONNECT_ROW: return length == BT_CONNECT_ROW_SIZE ? 0 : -1;
+        case NFY_BT_SCAN_ROW: return length == BT_SCAN_ROW_SIZE ? 0 : -1;
+        case ACK_BT_CONNECT_ALL:
+        case ACK_BT_SCAN: return length == BT_OPERATION_ACK_SIZE ? 0 : -1;
         case REQ_FAN_APPLY: return length == FAN_APPLY_DATA_SIZE ? 0 : -1;
         case ACK_FAN_APPLY: return length == FAN_APPLY_ACK_DATA_SIZE ? 0 : -1;
         case REQ_DHT_REFRESH: return length == DHT_REFRESH_DATA_SIZE ? 0 : -1;
@@ -535,6 +541,74 @@ int ReadDhtRefreshAckData(const uint8_t *payload, size_t length, DhtRefreshAckDa
 {
     IoTPacketReader reader;
     if(payload == NULL || data == NULL || length != DHT_REFRESH_ACK_DATA_SIZE) return -1;
+    IoTPacketOpen(&reader, payload, length);
+    data->result = IoTPacketPopUint8(&reader);
+    data->reason = IoTPacketPopUint8(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+size_t MakeBtConnectRowPacket(uint8_t *buffer, size_t size, const BtConnectRowData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL) return 0;
+    IoTPacketBegin(&writer, buffer, size, NFY_BT_CONNECT_ROW);
+    IoTPacketPushBytes(&writer, data->id, MEM_ID_SIZE);
+    IoTPacketPushUint8(&writer, data->status);
+    return IoTPacketEnd(&writer);
+}
+int ReadBtConnectRowData(const uint8_t *payload, size_t length, BtConnectRowData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != BT_CONNECT_ROW_SIZE) return -1;
+    IoTPacketOpen(&reader, payload, length);
+    IoTPacketPopBytes(&reader, data->id, MEM_ID_SIZE);
+    data->status = IoTPacketPopUint8(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+size_t MakeBtScanRowPacket(uint8_t *buffer, size_t size, const BtScanRowData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL) return 0;
+    IoTPacketBegin(&writer, buffer, size, NFY_BT_SCAN_ROW);
+    IoTPacketPushBytes(&writer, data->mac, BLUETOOTH_MAC_SIZE);
+    IoTPacketPushBytes(&writer, data->name, BT_SCAN_NAME_SIZE);
+    IoTPacketPushUint16(&writer, data->rssi);
+    IoTPacketPushUint8(&writer, data->paired);
+    return IoTPacketEnd(&writer);
+}
+int ReadBtScanRowData(const uint8_t *payload, size_t length, BtScanRowData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != BT_SCAN_ROW_SIZE) return -1;
+    IoTPacketOpen(&reader, payload, length);
+    IoTPacketPopBytes(&reader, data->mac, BLUETOOTH_MAC_SIZE);
+    IoTPacketPopBytes(&reader, data->name, BT_SCAN_NAME_SIZE);
+    data->rssi = (int16_t)IoTPacketPopUint16(&reader);
+    data->paired = IoTPacketPopUint8(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+size_t MakeBtOperationPacket(uint8_t *buffer, size_t size, uint16_t cmd)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || (cmd != REQ_BT_SCAN && cmd != REQ_BT_CONNECT_ALL)) return 0;
+    IoTPacketBegin(&writer, buffer, size, cmd);
+    return IoTPacketEnd(&writer);
+}
+size_t MakeBtOperationAckPacket(uint8_t *buffer, size_t size, uint16_t reqCmd, const BtOperationAckData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL || (reqCmd != REQ_BT_SCAN && reqCmd != REQ_BT_CONNECT_ALL)) return 0;
+    IoTPacketBegin(&writer, buffer, size, REQ_TO_ACK(reqCmd));
+    IoTPacketPushUint8(&writer, data->result);
+    IoTPacketPushUint8(&writer, data->reason);
+    return IoTPacketEnd(&writer);
+}
+int ReadBtOperationAckData(const uint8_t *payload, size_t length, BtOperationAckData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != BT_OPERATION_ACK_SIZE) return -1;
     IoTPacketOpen(&reader, payload, length);
     data->result = IoTPacketPopUint8(&reader);
     data->reason = IoTPacketPopUint8(&reader);
