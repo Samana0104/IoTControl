@@ -3,16 +3,19 @@
 #include "SCmdBt.h"
 #include "SCmdFan.h"
 #include "SCmdGpio.h"
+#include "SCmdMember.h"
 #include "SCmdSys.h"
 #include "SLog.h"
 #include "SUsart.h"
 
-#define SCLI_LINE_SIZE 64
+// "member set <id 8> <pw 64>" 가 들어가는 길이
+#define SCLI_LINE_SIZE 96
 
 static const SCommand commands[] = {
     {"bt", SCmdBt},
     {"fan", SCmdFan},
     {"gpio", SCmdGpio},
+    {"member", SCmdMember},
     {"sys", SCmdSys},
 };
 

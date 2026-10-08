@@ -10,6 +10,7 @@
 #include "IoTPacketCodec.h"
 #include "usart.h"
 #include "SClcd.h"
+#include "SData.h"
 
 #ifdef DEBUG_BUILD
 #include "SCLI.h"
@@ -90,6 +91,8 @@ void AppInit(void)
 
     SLOG_INFO("Boot STM32");
 
+    SDataInit();
+
     if(SClcdInit(&hi2c1,0x27))
     {
         SClcdSetCursor(0, 0);
@@ -158,9 +161,5 @@ void AppUpdate(void)
         //
         // 지난 주기에 시작한 읽기 결과 (읽기는 약 25ms면 끝남)
         // 값은 0.1 단위 정수 (235 = 23.5), %f는 newlib-nano 기본 설정에서 출력 안 됨
-        int16_t temperature = SDhtGetTemperature();
-        uint16_t humidity = SDhtGetHumidity();
-        SLOG_INFO("DHT sensor: temperature=%d.%d C, humidity=%u.%u %%", temperature / 10, abs(temperature % 10),
-                  humidity / 10U, humidity % 10U);
     }
 }
