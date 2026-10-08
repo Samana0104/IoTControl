@@ -10,6 +10,7 @@
 #include "RPacketFan.h"
 #include "RPacketFirmware.h"
 #include "RPacketMember.h"
+#include "RPacketSession.h"
 
 #include <string.h>
 
@@ -38,6 +39,7 @@ static const RPacketEntry PACKET_TABLE[] =
     {REQ_LOGIN, PACKET_FLAG_TCP | PACKET_FLAG_NO_LOGIN, RPacketLoginReceive},
     {REQ_BT_CONNECT, PACKET_FLAG_TCP | PACKET_FLAG_NO_LOGIN, RPacketBtConnectReceive},
     {REQ_BT_REGISTER, PACKET_FLAG_TCP, RPacketBtRegisterReceive},
+    {REQ_SESSION_ALL, PACKET_FLAG_TCP, RPacketSessionAllReceive},
     {REQ_DHT_ALL, PACKET_FLAG_TCP, RPacketDhtAllReceive},
     {REQ_DHT_COLLECT, PACKET_FLAG_TCP, RPacketDhtCollectReceive},
     {REQ_FAN_QUERY, PACKET_FLAG_TCP, RPacketFanQueryReceive},

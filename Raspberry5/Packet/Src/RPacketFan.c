@@ -129,23 +129,55 @@ int RPacketFanUpdateReceive(RSession *session, const uint8_t *payload, size_t le
     DatabaseValue speedParam;
     char *end;
     long storedSpeed;
+    int queryResult;
+    int succeeded;
 
-    if (session == NULL || payload == NULL || session->type != SESSION_TCP || !session->authenticated || ReadFanData(payload, length, &data) != 0 || data.fanSpeed > FAN_MAX_PERCENT)
+    if(session == NULL || payload == NULL)
+    {
+        RLOG_ERROR("RPacketFanUpdateReceive: NULL argument");
         return -1;
+    }
+    RLOG_INFO("[%s] FAN UPDATE request: cmd=0x%04X, length=%zu, authenticated=%d", session->label, (unsigned int)REQ_FAN_UPDATE, length, session->authenticated);
+    if(session->type != SESSION_TCP || !session->authenticated || ReadFanData(payload, length, &data) != 0)
+    {
+        RLOG_WARN("[%s] FAN UPDATE rejected: invalid session or payload", session->label);
+        return -1;
+    }
+    // 유효한 프레임의 범위/권한/DB 실패는 실패 ACK로 알리고 연결은 유지합니다.
+    if(data.fanSpeed > FAN_MAX_PERCENT)
+    {
+        RLOG_WARN("[%s] FAN UPDATE rejected: speed=%u exceeds 100", session->label, (unsigned int)data.fanSpeed);
+        return RPacketSendAck(session, REQ_FAN_UPDATE, 0);
+    }
     memcpy(memberId, session->memberId, MEM_ID_SIZE);
     memberId[MEM_ID_SIZE] = '\0';
     memberParam = DATABASE_TEXT(memberId);
-    if (QueryDatabaseValue(QUERY_SELECT_MEMBER_TYPE, &memberParam, 1, memberType, sizeof(memberType)) != 1 || strcmp(memberType, "PC") != 0)
+    queryResult = QueryDatabaseValue(QUERY_SELECT_MEMBER_TYPE, &memberParam, 1, memberType, sizeof(memberType));
+    if(queryResult != 1 || strcmp(memberType, "PC") != 0)
+    {
+        RLOG_WARN("[%s] FAN UPDATE rejected: PC member required, lookup=%d", session->label, queryResult);
         return RPacketSendAck(session, REQ_FAN_UPDATE, 0);
+    }
 
     speedParam = DATABASE_NUMBER(data.fanSpeed);
-    if (ExecuteDatabaseQuery(QUERY_UPDATE_FAN, &speedParam, 1, NULL, NULL, NULL) != 0 || QueryDatabaseValue(QUERY_SELECT_FAN, NULL, 0, speedText, sizeof(speedText)) != 1)
+    if(ExecuteDatabaseQuery(QUERY_UPDATE_FAN, &speedParam, 1, NULL, NULL, NULL) != 0)
+    {
+        RLOG_WARN("[%s] FAN UPDATE failed: database UPDATE, speed=%u", session->label, (unsigned int)data.fanSpeed);
         return RPacketSendAck(session, REQ_FAN_UPDATE, 0);
+    }
+    queryResult = QueryDatabaseValue(QUERY_SELECT_FAN, NULL, 0, speedText, sizeof(speedText));
+    if(queryResult != 1)
+    {
+        RLOG_WARN("[%s] FAN UPDATE verification failed: singleton_id=1, lookup=%d", session->label, queryResult);
+        return RPacketSendAck(session, REQ_FAN_UPDATE, 0);
+    }
 
     // 같은 값 UPDATE는 변경 행 수가 0일 수 있습니다. SELECT로 행 존재와 저장값을 확인합니다.
     errno = 0;
     storedSpeed = strtol(speedText, &end, 10);
-    return RPacketSendAck(session, REQ_FAN_UPDATE, errno == 0 && end != speedText && *end == '\0' && storedSpeed == data.fanSpeed);
+    succeeded = errno == 0 && end != speedText && *end == '\0' && storedSpeed == data.fanSpeed;
+    RLOG_INFO("[%s] FAN UPDATE result: requested=%u, stored=%s, result=%s, ack=0x%04X", session->label, (unsigned int)data.fanSpeed, speedText, succeeded ? "success" : "fail", (unsigned int)ACK_FAN_UPDATE);
+    return RPacketSendAck(session, REQ_FAN_UPDATE, succeeded);
 }
 
 int RPacketFanSetSpeed(int fd, uint8_t percent)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PDhtRecord.h"
+#include "PSessionRecord.h"
 
 #include <QString>
 #include <QWidget>
@@ -16,6 +17,9 @@ class DashboardWidget final : public QWidget
     ~DashboardWidget() override;
     void SetServerEndpoint(const QString &host, int port);
     void DisplayDhtRecords(const DhtRecords &records, bool showFeedback = true);
+    void DisplaySessionRecords(const SessionRecords &records);
+    void SetSessionError(const QString &message);
+    void ResetSessionStatus();
     void SetDataFeedback(const QString &message);
     void SetDhtLoading(bool loading, bool collecting = false);
     void DisplayFanSpeed(int percent);
@@ -42,7 +46,12 @@ class DashboardWidget final : public QWidget
     void RequestDhtReload();
     void RequestAllUpdate();
     void RequestClientUpdate(const QString &clientId);
+    void DisplayClientRecords();
 
     DashboardPanel *panel;
     bool fanUpdateMode = false;
+    DhtRecords dhtRecords;
+    SessionRecords sessionRecords;
+    bool sessionStatusKnown = false;
+    QString sessionError;
 };

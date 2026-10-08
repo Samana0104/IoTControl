@@ -50,8 +50,7 @@ void MainWindow::HandleFanUpdateFailed(const QString &message)
     dashboard->SetFanUpdateBusy(false);
     if (!serverConnection->IsConnected())
     {
-        ShowServerConnection();
-        accessPanel->SetServerFeedback(message);
+        ShowServerFailure(message);
     }
     else
         dashboard->SetDataFeedback(message);
@@ -62,8 +61,7 @@ void MainWindow::HandleFanQueryFailed(const QString &message)
     dashboard->SetFanUpdateBusy(false);
     if (!serverConnection->IsConnected())
     {
-        ShowServerConnection();
-        accessPanel->SetServerFeedback(message);
+        ShowServerFailure(message);
     }
     else
         dashboard->SetFanError(message);

@@ -89,8 +89,7 @@ void MainWindow::HandleDhtQueryFailed(const QString &message)
     backgroundDhtQuery = false;
     if (!serverConnection->IsConnected())
     {
-        ShowServerConnection();
-        accessPanel->SetServerFeedback(message);
+        ShowServerFailure(message);
     }
     else
         dashboard->SetDataFeedback(message);

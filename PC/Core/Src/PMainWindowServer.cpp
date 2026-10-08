@@ -26,6 +26,7 @@ void MainWindow::ConnectToServer()
     bool validPort = false;
     const int PORT = accessPanel->ReadServerPort().toInt(&validPort);
     accessPanel->ClearServerFeedback();
+    serverFailureMessage.clear();
     if (HOST.isEmpty())
     {
         accessPanel->ShowServerError(tr("우분투 서버 주소를 입력해 주세요."), true);
@@ -62,14 +63,15 @@ void MainWindow::HandleServerConnected()
     ShowLogin();
 }
 
-void MainWindow::HandleServerDisconnected()
-{
-    ShowServerConnection();
-    accessPanel->SetServerFeedback(tr("서버와의 연결이 종료되었습니다. 다시 접속해 주세요."));
-}
+void MainWindow::HandleServerDisconnected() { ShowServerFailure(serverFailureMessage.isEmpty() ? tr("서버가 연결을 종료했습니다. 서버 로그에서 거절된 명령과 종료 원인을 확인해 주세요.") : serverFailureMessage); }
 
-void MainWindow::HandleServerConnectionFailed(const QString &message)
+void MainWindow::HandleServerConnectionFailed(const QString &message) { ShowServerFailure(serverFailureMessage.isEmpty() ? tr("서버 접속 실패: %1").arg(message) : tr("%1 (소켓 오류: %2)").arg(serverFailureMessage, message)); }
+
+void MainWindow::ShowServerFailure(const QString &message)
 {
+    // 쿼리 실패 안내 뒤 Disconnected가 와도 구체적인 원인을 유지합니다.
+    const QString FAILURE = message;
     ShowServerConnection();
-    accessPanel->SetServerFeedback(tr("서버 접속 실패: %1").arg(message));
+    serverFailureMessage = FAILURE;
+    accessPanel->SetServerFeedback(FAILURE);
 }

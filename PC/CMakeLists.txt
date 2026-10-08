@@ -22,9 +22,13 @@ set(PC_UI_SOURCES
     Core/Src/PServerDhtQuery.cpp
     Core/Inc/PServerDhtQuery.h
     Core/Src/PServerFanQuery.cpp
+    Core/Src/PServerSessionQuery.cpp
+    Core/Inc/PServerSessionQuery.h
+    Core/Inc/PSessionRecord.h
     Core/Inc/PServerFanQuery.h
     Core/Src/PMainWindowFan.cpp
     Core/Src/PMainWindowData.cpp
+    Core/Src/PMainWindowSession.cpp
     Panel/PAccessPanelTransition.cpp
     Panel/PAccessPanel.cpp
     Panel/PAccessPanel.h
@@ -109,7 +113,7 @@ if(IOT_BUILD_TESTS)
     add_test(NAME server_login_tests COMMAND server_login_tests -o -,txt)
 
     find_package(Qt6 REQUIRED COMPONENTS Sql)
-    qt_add_executable(dht_query_tests tests/PDhtQueryTest.cpp ${PC_UI_SOURCES} examples/PFanUpdateServerExample.c ../Raspberry5/Packet/Src/RPacketDhtQuery.c ../Raspberry5/Packet/Src/RPacketDht.c)
+    qt_add_executable(dht_query_tests tests/PDhtQueryTest.cpp ${PC_UI_SOURCES} ../Raspberry5/Packet/Src/RPacket.c ../Raspberry5/Packet/Src/RPacketSession.c ../Raspberry5/Packet/Src/RPacketFan.c ../Raspberry5/Packet/Src/RPacketDhtQuery.c ../Raspberry5/Packet/Src/RPacketDht.c)
     target_include_directories(dht_query_tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/serverstub"
         "${CMAKE_CURRENT_SOURCE_DIR}/examples"

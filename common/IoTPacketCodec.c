@@ -10,9 +10,11 @@ int CheckPacketLength(uint16_t cmd, size_t length)
     switch(cmd)
     {
         case REQ_LOGIN: return length == MEM_DATA_SIZE ? 0 : -1;
+        case REQ_SESSION_ALL:
         case REQ_DHT_ALL:
         case REQ_FAN_QUERY: return length == 0 ? 0 : -1;
         case ACK_FAN_QUERY: return length == FAN_QUERY_ACK_DATA_SIZE ? 0 : -1;
+        case NFY_SESSION_ROW: return length == SESSION_ROW_DATA_SIZE ? 0 : -1;
         case NFY_DHT_ROW: return length == DHT_ROW_DATA_SIZE ? 0 : -1;
         case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE ? 0 : -1;
         case REQ_BT_CONNECT: return length == BLUETOOTH_CONNECT_DATA_SIZE ? 0 : -1;
@@ -26,6 +28,7 @@ int CheckPacketLength(uint16_t cmd, size_t length)
         case REQ_DHT_COLLECT: return length == 0 ? 0 : -1;
         case ACK_DHT: return length == DHT_ACK_DATA_SIZE ? 0 : -1;
         case ACK_LOGIN:
+        case ACK_SESSION_ALL:
         case ACK_DHT_ALL:
         case ACK_BT_REGISTER:
         case ACK_BT_CONNECT:
@@ -419,5 +422,36 @@ int ReadDhtRowData(const uint8_t *payload, size_t length, DhtRowData *data)
     data->humi = PopFloat32(&reader);
     IoTPacketPopBytes(&reader, data->updatedAt, DHT_TIMESTAMP_SIZE);
     data->memberType = IoTPacketPopUint8(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+size_t MakeSessionAllPacket(uint8_t *buffer, size_t size)
+{
+    IoTPacketWriter writer;
+    IoTPacketBegin(&writer, buffer, size, REQ_SESSION_ALL);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeSessionRowPacket(uint8_t *buffer, size_t size, const SessionRowData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL)
+        return 0;
+    IoTPacketBegin(&writer, buffer, size, NFY_SESSION_ROW);
+    IoTPacketPushBytes(&writer, data->id, MEM_ID_SIZE);
+    IoTPacketPushUint8(&writer, data->memberType);
+    IoTPacketPushUint8(&writer, data->links);
+    return IoTPacketEnd(&writer);
+}
+
+int ReadSessionRowData(const uint8_t *payload, size_t length, SessionRowData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != SESSION_ROW_DATA_SIZE)
+        return -1;
+    IoTPacketOpen(&reader, payload, length);
+    IoTPacketPopBytes(&reader, data->id, MEM_ID_SIZE);
+    data->memberType = IoTPacketPopUint8(&reader);
+    data->links = IoTPacketPopUint8(&reader);
     return IoTPacketCheckRead(&reader);
 }

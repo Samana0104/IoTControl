@@ -6,11 +6,12 @@
 #include "PServerDhtQuery.h"
 #include "PServerFanQuery.h"
 #include "PServerLogin.h"
+#include "PServerSessionQuery.h"
 
 #include <QStackedWidget>
 #include <QTimer>
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new AccessPanel(this)), serverConnection(new ServerConnection(this)), serverLogin(new ServerLogin(serverConnection, this)), serverDhtQuery(new ServerDhtQuery(serverConnection, this)), serverFanQuery(new ServerFanQuery(serverConnection, this)), dhtPollTimer(new QTimer(this))
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new AccessPanel(this)), serverConnection(new ServerConnection(this)), serverLogin(new ServerLogin(serverConnection, this)), serverDhtQuery(new ServerDhtQuery(serverConnection, this)), serverFanQuery(new ServerFanQuery(serverConnection, this)), serverSessionQuery(new ServerSessionQuery(serverConnection, this)), dhtPollTimer(new QTimer(this)), sessionPollTimer(new QTimer(this))
 {
     pages = new QStackedWidget(this);
     pages->setObjectName(QStringLiteral("pageStack"));
@@ -24,6 +25,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new A
     InitializeLoginControls();
     InitializeDhtControls();
     InitializeFanControls();
+    InitializeSessionControls();
     loginWindowSize = size();
     ShowServerConnection();
 }
@@ -31,9 +33,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new A
 MainWindow::~MainWindow()
 {
     dhtPollTimer->stop();
+    sessionPollTimer->stop();
     serverLogin->CancelLogin();
     serverDhtQuery->CancelQuery();
     serverFanQuery->CancelQuery();
+    serverSessionQuery->CancelQuery();
     serverConnection->DisconnectFromServer();
     delete accessPanel;
 }
@@ -59,13 +63,16 @@ void MainWindow::ShowDashboard()
 
 void MainWindow::ShowServerConnection()
 {
+    serverFailureMessage.clear();
     const bool FROM_DASHBOARD = pages->currentWidget() == dashboard;
     const bool ANIMATE = !FROM_DASHBOARD && accessPanel->IsAccessVisible() && !isMinimized();
     authenticated = false;
     backgroundDhtQuery = false;
     dhtPollTimer->stop();
+    sessionPollTimer->stop();
     serverDhtQuery->CancelQuery();
     serverFanQuery->CancelQuery();
+    serverSessionQuery->CancelQuery();
     dashboard->SetDhtLoading(false);
     dashboard->ResetDhtView();
     serverLogin->CancelLogin();
@@ -93,8 +100,10 @@ void MainWindow::ShowLogin()
     authenticated = false;
     backgroundDhtQuery = false;
     dhtPollTimer->stop();
+    sessionPollTimer->stop();
     serverDhtQuery->PauseQuery();
     serverFanQuery->PauseQuery();
+    serverSessionQuery->PauseQuery();
     dashboard->SetFanUpdateMode(false);
     dashboard->SetDhtLoading(false);
     const bool FROM_DASHBOARD = pages->currentWidget() == dashboard;

@@ -1,9 +1,11 @@
 #include "PDashboardWidget.h"
 
+#include "IoTPacket.h"
 #include "PBluetoothDialog.h"
 #include "PDashboardPanel.h"
 
 #include <QList>
+#include <QMap>
 #include <QStringList>
 
 namespace
@@ -31,20 +33,15 @@ void DashboardWidget::SetServerEndpoint(const QString &host, int port) { panel->
 
 void DashboardWidget::PopulateSampleClients()
 {
-    const QList<QStringList> ROWS = {{QStringLiteral("STM32-01"), QStringLiteral("STM32"), QStringLiteral("26.4 °C"), QStringLiteral("58.2 %"), QStringLiteral("09:10 · 샘플")}, {QStringLiteral("ARDUINO-01"), QStringLiteral("Arduino"), QStringLiteral("25.8 °C"), QStringLiteral("61.0 %"), QStringLiteral("09:10 · 샘플")}};
+    const QList<QStringList> ROWS = {{QStringLiteral("STM32-01"), QStringLiteral("STM32"), QStringLiteral("26.4 °C"), QStringLiteral("58.2 %"), QStringLiteral("09:10 · 샘플"), tr("접속 · BT · 샘플")}, {QStringLiteral("ARDUINO-01"), QStringLiteral("Arduino"), QStringLiteral("25.8 °C"), QStringLiteral("61.0 %"), QStringLiteral("09:10 · 샘플"), tr("접속 · TCP · 샘플")}};
     panel->SetClients(ROWS);
     panel->DisplayCurrentDht(QStringLiteral("26.4"), QStringLiteral("58.2"), tr("STM32-01 · 샘플"));
 }
 
 void DashboardWidget::DisplayDhtRecords(const DhtRecords &records, bool showFeedback)
 {
-    QList<QStringList> rows;
-    rows.reserve(records.size());
-    for (const DhtRecord &RECORD : records)
-    {
-        rows.append({RECORD.id, RECORD.memberType.isEmpty() ? QStringLiteral("—") : RECORD.memberType, tr("%1 °C").arg(RECORD.temp, 0, 'f', 1), tr("%1 %").arg(RECORD.humi, 0, 'f', 1), RECORD.updatedAt.isValid() ? RECORD.updatedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")) : QStringLiteral("—")});
-    }
-    panel->DisplayDhtClients(rows);
+    dhtRecords = records;
+    DisplayClientRecords();
     if (records.isEmpty())
         panel->DisplayCurrentDht(QStringLiteral("—"), QStringLiteral("—"), tr("DHT 데이터 없음"));
     else
@@ -55,6 +52,67 @@ void DashboardWidget::DisplayDhtRecords(const DhtRecords &records, bool showFeed
     }
     if (showFeedback)
         panel->SetFeedback(tr("dht 전체 조회 완료: %1건").arg(records.size()));
+}
+
+void DashboardWidget::DisplaySessionRecords(const SessionRecords &records)
+{
+    sessionRecords = records;
+    sessionStatusKnown = true;
+    sessionError.clear();
+    DisplayClientRecords();
+}
+
+void DashboardWidget::SetSessionError(const QString &message)
+{
+    sessionStatusKnown = false;
+    sessionError = message;
+    DisplayClientRecords();
+}
+
+void DashboardWidget::ResetSessionStatus()
+{
+    sessionRecords.clear();
+    sessionStatusKnown = false;
+    sessionError.clear();
+}
+
+void DashboardWidget::DisplayClientRecords()
+{
+    QMap<QString, QStringList> clients;
+    QStringList clientOrder;
+    const QString UNKNOWN_STATUS = sessionError.isEmpty() ? tr("확인 중") : tr("확인 실패");
+    for (const DhtRecord &RECORD : dhtRecords)
+    {
+        if (!clients.contains(RECORD.id))
+            clientOrder.append(RECORD.id);
+        const QString STATUS = RECORD.memberType == QStringLiteral("PC") ? QStringLiteral("—") : sessionStatusKnown ? tr("미접속")
+                                                                                                                    : UNKNOWN_STATUS;
+        clients.insert(RECORD.id, {RECORD.id, RECORD.memberType.isEmpty() ? QStringLiteral("—") : RECORD.memberType, tr("%1 °C").arg(RECORD.temp, 0, 'f', 1), tr("%1 %").arg(RECORD.humi, 0, 'f', 1), RECORD.updatedAt.isValid() ? RECORD.updatedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")) : QStringLiteral("—"), STATUS});
+    }
+    for (const SessionRecord &RECORD : sessionRecords)
+    {
+        if (!clients.contains(RECORD.id))
+        {
+            clientOrder.append(RECORD.id);
+            clients.insert(RECORD.id, {RECORD.id, RECORD.memberType, QStringLiteral("—"), QStringLiteral("—"), QStringLiteral("—"), UNKNOWN_STATUS});
+        }
+        QStringList &row = clients[RECORD.id];
+        row[1] = RECORD.memberType;
+        if (sessionStatusKnown)
+        {
+            const QString LINK = RECORD.links == (SESSION_LINK_TCP | SESSION_LINK_BT) ? QStringLiteral("TCP/BT") : (RECORD.links & SESSION_LINK_BT) != 0 ? QStringLiteral("BT")
+                                                                                                                                                         : QStringLiteral("TCP");
+            row[5] = tr("접속 · %1").arg(LINK);
+        }
+        else
+            row[5] = UNKNOWN_STATUS;
+    }
+    QList<QStringList> rows;
+    for (const QString &ID : clientOrder)
+        rows.append(clients.value(ID));
+    // 측정값이 있는 기존 1번 클라이언트를 유지하고, 기록 없는 접속 기기는 뒤에 추가합니다.
+    panel->DisplayDhtClients(rows);
+    panel->DisplaySessionSummary(sessionStatusKnown ? sessionRecords.size() : -1, dhtRecords.size(), sessionError);
 }
 
 void DashboardWidget::SetDataFeedback(const QString &message) { panel->SetFeedback(message); }
@@ -79,6 +137,10 @@ void DashboardWidget::SetFanUpdateBusy(bool busy) { panel->SetFanUpdateBusy(busy
 
 void DashboardWidget::ResetDhtView()
 {
+    dhtRecords.clear();
+    sessionRecords.clear();
+    sessionStatusKnown = false;
+    sessionError.clear();
     SetFanUpdateMode(false);
     PopulateSampleClients();
     panel->ResetDhtLabels();

@@ -31,6 +31,7 @@ class ServerFanQuery final : public QObject
     void ReceiveData(const QByteArray &data);
     void HandleConnectionClosed();
     void FailQuery(const QString &message, bool closeConnection);
+    void WriteDiagnostic(const QString &message) const;
 
     ServerConnection *connection;
     QTimer *queryTimer;

@@ -642,6 +642,7 @@ static int ProcessBufferedFrame(RNetConnection *connection)
     connection->frameStartMs = connection->rxLength > 0 ? GetMonotonicMs() : 0;
     if(result != 0)
     {
+        RLOG_WARN("[%s] Packet handler rejected frame: cmd=0x%04X, length=%u, result=%d; closing connection", label, (unsigned int)header.cmd, (unsigned int)header.length, result);
         connection->state = NET_STATE_CLOSING;
         connection->deadlineMs = GetMonotonicMs() + CLOSE_FLUSH_TIMEOUT_MS;
     }

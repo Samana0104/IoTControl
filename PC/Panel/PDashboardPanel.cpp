@@ -19,7 +19,8 @@
 namespace
 {
 constexpr int CLIENT_TIMESTAMP_COLUMN = 4;
-constexpr int CLIENT_UPDATE_COLUMN = 5;
+constexpr int CLIENT_STATUS_COLUMN = 5;
+constexpr int CLIENT_UPDATE_COLUMN = 6;
 
 QString FormatMetricValue(const QString &finalText, qreal progress)
 {
@@ -126,6 +127,7 @@ void DashboardPanel::SetClients(const QList<QStringList> &rows)
     ui->clientsTable->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     ui->clientsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->clientsTable->horizontalHeader()->setSectionResizeMode(CLIENT_TIMESTAMP_COLUMN, QHeaderView::ResizeToContents);
+    ui->clientsTable->horizontalHeader()->setSectionResizeMode(CLIENT_STATUS_COLUMN, QHeaderView::ResizeToContents);
     ui->clientsTable->horizontalHeader()->setSectionResizeMode(CLIENT_UPDATE_COLUMN, QHeaderView::Fixed);
     ui->clientsTable->setColumnWidth(CLIENT_UPDATE_COLUMN, 100);
     ui->clientsTable->setFocusPolicy(Qt::StrongFocus);
@@ -178,6 +180,15 @@ void DashboardPanel::DisplayCurrentDht(const QString &temperature, const QString
     ui->humidityTag->setText(source);
 }
 
+void DashboardPanel::DisplaySessionSummary(int onlineCount, int dbCount, const QString &error)
+{
+    SetMetricValue(ui->clientValue, onlineCount < 0 ? QStringLiteral("—") : QString::number(onlineCount).rightJustified(2, QLatin1Char('0')));
+    ui->clientTag->setText(onlineCount >= 0 ? tr("서버 세션 · %1대 접속").arg(onlineCount) : error.isEmpty() ? tr("접속 상태 확인 중…")
+                                                                                                             : tr("접속 상태 확인 실패"));
+    ui->clientTag->setToolTip(error);
+    ui->clientsSubtitle->setText(onlineCount >= 0 ? tr("서버 DB %1대 · 현장 접속 %2대").arg(dbCount).arg(onlineCount) : tr("서버 DB %1대 · 접속 상태 미확인").arg(dbCount));
+}
+
 void DashboardPanel::SetDhtLoading(bool loading, bool collecting)
 {
     ui->reloadDbButton->setEnabled(!loading);
@@ -188,6 +199,7 @@ void DashboardPanel::SetDhtLoading(bool loading, bool collecting)
 
 void DashboardPanel::ResetDhtLabels()
 {
+    ui->clientTag->setToolTip(QString());
     ui->clientTag->setText(tr("STM32 / Arduino · 샘플"));
     ui->clientsSubtitle->setText(tr("DB 조회 결과 · 샘플 데이터"));
 }

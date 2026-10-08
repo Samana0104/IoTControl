@@ -61,6 +61,7 @@ typedef struct _HeaderData
 #define MSG_FW_CHUNK 0x000C
 #define MSG_FW_END 0x000D
 #define MSG_FAN_UPDATE 0x000E
+#define MSG_SESSION_ALL 0x000F
 
 /* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
@@ -105,3 +106,9 @@ typedef struct _HeaderData
 #define REQ_DHT_ALL MSG_DHT_ALL             /* no payload */
 #define NFY_DHT_ROW MAKE_NOTIFY(MSG_DHT_ALL) /* DhtRowData */
 #define ACK_DHT_ALL REQ_TO_ACK(REQ_DHT_ALL) /* ResultData */
+
+/* Authenticated PC -> server: unique connected STM32/Arduino IDs from RSession.
+   Zero or more NFY_SESSION_ROW frames, then ACK_SESSION_ALL. */
+#define REQ_SESSION_ALL MSG_SESSION_ALL /* no payload */
+#define NFY_SESSION_ROW MAKE_NOTIFY(MSG_SESSION_ALL) /* SessionRowData */
+#define ACK_SESSION_ALL REQ_TO_ACK(REQ_SESSION_ALL) /* ResultData */

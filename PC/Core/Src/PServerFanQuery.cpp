@@ -3,6 +3,10 @@
 #include "IoTPacketCodec.h"
 #include "PServerConnection.h"
 
+#include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
 #include <QTimer>
 #include <algorithm>
 
@@ -21,6 +25,7 @@ ServerFanQuery::ServerFanQuery(ServerConnection *connection, QObject *parent) : 
     connect(connection, &ServerConnection::Disconnected, this, &ServerFanQuery::HandleConnectionClosed);
     connect(connection, &ServerConnection::ConnectionFailed, this, &ServerFanQuery::HandleConnectionClosed);
     connect(connection, &ServerConnection::Connected, this, &ServerFanQuery::CancelQuery);
+    WriteDiagnostic(QStringLiteral("start executable=%1 built=%2 %3 request=0x000E ack=0x800E").arg(QCoreApplication::applicationFilePath(), QString::fromLatin1(__DATE__), QString::fromLatin1(__TIME__)));
 }
 
 void ServerFanQuery::LoadFanSpeed(int timeoutMs)
@@ -36,6 +41,7 @@ void ServerFanQuery::LoadFanSpeed(int timeoutMs)
     const size_t LENGTH = MakeFanQueryPacket(frame, sizeof(frame));
     loading = true;
     queryTimer->start(std::max(1, timeoutMs));
+    WriteDiagnostic(QStringLiteral("send query cmd=0x000A length=0"));
     if (LENGTH == 0 || !connection->SendPacket(QByteArray(reinterpret_cast<const char *>(frame), static_cast<qsizetype>(LENGTH))))
         FailQuery(tr("팬 속도 조회 요청을 전송하지 못했습니다."), false);
 }
@@ -61,6 +67,7 @@ void ServerFanQuery::UpdateFanSpeed(int percent, int timeoutMs)
     updating = true;
     loading = true;
     queryTimer->start(std::max(1, timeoutMs));
+    WriteDiagnostic(QStringLiteral("send update cmd=0x000E length=%1 percent=%2 timeoutMs=%3").arg(FAN_DATA_SIZE).arg(percent).arg(timeoutMs));
     if (LENGTH == 0 || !connection->SendPacket(QByteArray(reinterpret_cast<const char *>(frame), static_cast<qsizetype>(LENGTH))))
         FailQuery(tr("팬 DB 저장 요청을 전송하지 못했습니다."), false);
 }
@@ -104,6 +111,8 @@ void ServerFanQuery::ReceiveData(const QByteArray &data)
         }
         HeaderData header{};
         DecodePacketHeader(reinterpret_cast<const uint8_t *>(receiveBuffer.constData()), &header);
+        if (loading && receiveBuffer.size() == HEADER_SIZE)
+            WriteDiagnostic(QStringLiteral("receive header cmd=0x%1 length=%2").arg(header.cmd, 4, 16, QLatin1Char('0')).arg(header.length));
         const uint16_t EXPECTED_ACK = updating ? ACK_FAN_UPDATE : ACK_FAN_QUERY;
         if (loading && header.cmd == EXPECTED_ACK && CheckPacketLength(header.cmd, header.length) != 0)
         {
@@ -132,6 +141,7 @@ void ServerFanQuery::ReceiveData(const QByteArray &data)
                 return;
             }
             const int PERCENT = requestedPercent;
+            WriteDiagnostic(QStringLiteral("update ack result=%1 percent=%2").arg(result.result).arg(PERCENT));
             PauseQuery();
             receiveBuffer.clear();
             if (result.result == RESULT_SUCCESS)
@@ -172,6 +182,7 @@ void ServerFanQuery::FailQuery(const QString &message, bool closeConnection)
     if (!loading)
         return;
     const bool WAS_UPDATING = updating;
+    WriteDiagnostic(QStringLiteral("failure operation=%1 closeRequested=%2 connected=%3 reason=%4").arg(updating ? QStringLiteral("update") : QStringLiteral("query")).arg(closeConnection).arg(connection->IsConnected()).arg(message));
     PauseQuery();
     if (closeConnection)
     {
@@ -183,4 +194,13 @@ void ServerFanQuery::FailQuery(const QString &message, bool closeConnection)
         emit UpdateFailed(message);
     else
         emit QueryFailed(message);
+}
+
+void ServerFanQuery::WriteDiagnostic(const QString &message) const
+{
+    // 로그인/비밀번호 및 수신 payload는 기록하지 않습니다.
+    QFile log(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("fan-connection.log")));
+    const QIODevice::OpenMode MODE = QIODevice::WriteOnly | (log.size() > 1024 * 1024 ? QIODevice::Truncate : QIODevice::Append);
+    if (log.open(MODE))
+        log.write((QDateTime::currentDateTime().toString(Qt::ISODateWithMs) + QLatin1Char(' ') + message + QLatin1Char('\n')).toUtf8());
 }

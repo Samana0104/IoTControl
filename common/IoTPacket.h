@@ -56,6 +56,21 @@ typedef struct _DhtRowData
     uint8_t memberType;
 } DhtRowData;
 
+#define SESSION_ROW_DATA_SIZE (MEM_ID_SIZE + 1 + 1)
+#define SESSION_MAX_ROWS 64
+#define SESSION_MEMBER_STM32 1
+#define SESSION_MEMBER_ARDUINO 2
+#define SESSION_LINK_TCP 0x01
+#define SESSION_LINK_BT 0x02
+
+/* One unique authenticated field device. links may contain TCP and BT together.
+   Member IDs are fixed-width; internal server file descriptors are not exposed. */
+typedef struct _SessionRowData
+{
+    char id[MEM_ID_SIZE];
+    uint8_t memberType;
+    uint8_t links;
+} SessionRowData;
 typedef struct _FanData
 {
     uint16_t fanSpeed;

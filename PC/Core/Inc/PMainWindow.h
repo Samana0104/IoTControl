@@ -2,6 +2,7 @@
 
 #include "PDhtRecord.h"
 #include "PLoginResult.h"
+#include "PSessionRecord.h"
 
 #include <QByteArray>
 #include <QMainWindow>
@@ -19,6 +20,7 @@ class ServerConnection;
 class ServerLogin;
 class ServerDhtQuery;
 class ServerFanQuery;
+class ServerSessionQuery;
 
 class MainWindow : public QMainWindow
 {
@@ -43,6 +45,7 @@ class MainWindow : public QMainWindow
     void HandleServerConnected();
     void HandleServerDisconnected();
     void HandleServerConnectionFailed(const QString &message);
+    void ShowServerFailure(const QString &message);
     void SubmitLogin();
     bool ReadLoginMember(MemData &member);
     void SaveLoginUsername();
@@ -61,6 +64,10 @@ class MainWindow : public QMainWindow
     void UpdateFanSpeed(int percent);
     void HandleFanUpdated(int percent);
     void HandleFanUpdateFailed(const QString &message);
+    void InitializeSessionControls();
+    void LoadSessionStatus();
+    void HandleSessionsLoaded(const SessionRecords &records);
+    void HandleSessionQueryFailed(const QString &message);
 
     AccessPanel *accessPanel;
     QStackedWidget *pages;
@@ -70,9 +77,12 @@ class MainWindow : public QMainWindow
     ServerLogin *serverLogin;
     ServerDhtQuery *serverDhtQuery;
     ServerFanQuery *serverFanQuery;
+    ServerSessionQuery *serverSessionQuery;
     QTimer *dhtPollTimer;
+    QTimer *sessionPollTimer;
     bool authenticated = false;
     bool backgroundDhtQuery = false;
     QString serverHost;
+    QString serverFailureMessage;
     quint16 serverPort = 0;
 };

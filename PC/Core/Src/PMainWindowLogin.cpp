@@ -118,16 +118,13 @@ void MainWindow::HandleLoginResult(LoginResult result)
         accessPanel->ShowLoginError(tr("로그인이 거절되었습니다. 아이디와 비밀번호를 확인해 주세요."), false, true);
         break;
     case LOGIN_NO_SERVER:
-        ShowServerConnection();
-        accessPanel->SetServerFeedback(tr("로그인 요청을 전송하지 못했습니다. 다시 접속해 주세요."));
+        ShowServerFailure(tr("로그인 중 서버 연결이 종료되었거나 요청 전송에 실패했습니다. 다시 접속해 주세요."));
         break;
     case LOGIN_TIMEOUT:
-        ShowServerConnection();
-        accessPanel->SetServerFeedback(tr("로그인 응답 시간이 초과되었습니다. 다시 접속해 주세요. (5초)"));
+        ShowServerFailure(tr("로그인 응답 시간이 초과되었습니다. 다시 접속해 주세요. (5초)"));
         break;
     default:
-        ShowServerConnection();
-        accessPanel->SetServerFeedback(tr("로그인 응답 패킷이 올바르지 않습니다. 다시 접속해 주세요."));
+        ShowServerFailure(tr("로그인 응답 패킷이 올바르지 않습니다. 다시 접속해 주세요."));
         break;
     }
 }
@@ -137,10 +134,16 @@ void MainWindow::HandleLoginSuccess()
     accessPanel->ClearLoginFeedback();
     authenticated = true;
     dashboard->SetFanUpdateMode(true);
+    dashboard->ResetSessionStatus();
     ShowDashboard();
     dashboard->DisplayDhtRecords({});
     LoadFanSpeed();
     LoadAllDht();
+    // 먼저 로그인 ACK가 포함된 수신 바이트를 각 파서에서 모두 소비합니다.
+    QTimer::singleShot(0, this, &MainWindow::LoadSessionStatus);
     if (authenticated && serverConnection->IsConnected())
+    {
         dhtPollTimer->start();
+        sessionPollTimer->start();
+    }
 }

@@ -18,6 +18,9 @@ extern "C" {
 int CheckPacketLength(uint16_t cmd, size_t length);
 
 /* ---- Make*Packet: one complete frame. Returns the frame length, or 0 if size is too small. ---- */
+/* Current authenticated field-device sessions, not database rows. */
+size_t MakeSessionAllPacket(uint8_t *buffer, size_t size);
+size_t MakeSessionRowPacket(uint8_t *buffer, size_t size, const SessionRowData *data);
 size_t MakeDhtPacket(uint8_t *buffer, size_t size, const DhtData *data);
 /* Server SELECT: zero or more NFY_DHT_ROW frames, then ACK_DHT_ALL. */
 size_t MakeDhtAllPacket(uint8_t *buffer, size_t size);
@@ -51,6 +54,7 @@ size_t MakeFirmwareChunkAckPacket(uint8_t *buffer, size_t size, const FirmwareCh
 size_t MakeAckPacket(uint8_t *buffer, size_t size, uint16_t reqCmd, uint8_t result);
 
 /* ---- Read*: payload (without header) -> struct. Returns 0 only for the exact payload size. ---- */
+int ReadSessionRowData(const uint8_t *payload, size_t length, SessionRowData *data);
 int ReadDhtData(const uint8_t *payload, size_t length, DhtData *data);
 int ReadDhtRowData(const uint8_t *payload, size_t length, DhtRowData *data);
 int ReadFanData(const uint8_t *payload, size_t length, FanData *data);
