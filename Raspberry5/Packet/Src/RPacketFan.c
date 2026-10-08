@@ -149,3 +149,36 @@ int RPacketFanSetSpeed(int fd, uint8_t percent)
     RLOG_INFO("FAN control sent: fd=%d, speed=%u%%", fd, (unsigned int)percent);
     return 0;
 }
+int RPacketFanSetSpeed(int fd, uint8_t percent)
+{
+    FanData data = {.fanSpeed = percent};
+    uint8_t frame[HEADER_SIZE + FAN_DATA_SIZE];
+    size_t frameLength;
+    int result;
+
+    if(fd < 0 || percent > FAN_MAX_PERCENT)
+    {
+        RLOG_ERROR("RPacketFanSetSpeed: invalid argument: fd=%d, percent=%u", fd, (unsigned int)percent);
+        return -1;
+    }
+    frameLength = MakeFanControlPacket(frame, sizeof(frame), &data);
+    if(frameLength == 0)
+    {
+        RLOG_ERROR("REQ_FAN frame build failed");
+        return -1;
+    }
+
+    result = RNetSend(fd, frame, frameLength);
+    if(result == 1)
+    {
+        RLOG_WARN("FAN control skipped: fd=%d has no connected session", fd);
+        return 1;
+    }
+    if(result != 0)
+    {
+        RLOG_WARN("FAN control send failed: fd=%d", fd);
+        return -1;
+    }
+    RLOG_INFO("FAN control sent: fd=%d, speed=%u%%", fd, (unsigned int)percent);
+    return 0;
+}

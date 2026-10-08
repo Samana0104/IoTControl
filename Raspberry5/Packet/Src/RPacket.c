@@ -45,6 +45,7 @@ static const RPacketEntry PACKET_TABLE[] =
     {NFY_FAN, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketFanReceive},
     {NFY_CON, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketConReceive},
     {ACK_FAN, PACKET_FLAG_BT, RPacketFanReceiveAck},
+    {REQ_FAN_UPDATE, PACKET_FLAG_TCP, RPacketFanUpdateReceive},
     {ACK_DHT, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketDhtReceiveAck}
 };
 
