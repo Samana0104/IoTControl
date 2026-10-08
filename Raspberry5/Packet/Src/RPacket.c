@@ -88,15 +88,16 @@ int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size
         RLOG_ERROR("RPacketProcess: NULL argument: cmd=0x%04X", (unsigned int)cmd);
         return -1;
     }
-    if(CheckPacketLength(cmd, length) != 0)
-    {
-        RLOG_WARN("Unknown command or invalid length from %s: cmd=0x%04X, length=%zu", session->label, (unsigned int)cmd, length);
-        return -1;
-    }
+    // CRC를 통과했으므로 프레임 경계는 맞음: 서버가 처리하지 않는 cmd는 버리고 연결은 유지
     entry = FindPacketEntry(cmd);
     if(entry == NULL)
     {
-        RLOG_WARN("Unsupported command from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
+        RLOG_WARN("Unsupported command from %s ignored: cmd=0x%04X, length=%zu", session->label, (unsigned int)cmd, length);
+        return 0;
+    }
+    if(CheckPacketLength(cmd, length) != 0)
+    {
+        RLOG_WARN("Invalid length from %s: cmd=0x%04X, length=%zu", session->label, (unsigned int)cmd, length);
         return -1;
     }
     if(ValidatePacketPermission(session, entry) != 0)
