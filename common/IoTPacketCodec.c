@@ -16,7 +16,6 @@ int CheckPacketLength(uint16_t cmd, size_t length)
         case NFY_DHT_ROW: return length == DHT_ROW_DATA_SIZE ? 0 : -1;
         case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE ? 0 : -1;
         case REQ_BT_CONNECT: return length == BLUETOOTH_CONNECT_DATA_SIZE ? 0 : -1;
-        case REQ_FAN: return length == FAN_DATA_SIZE ? 0 : -1;
         case REQ_FW_BEGIN: return length == FIRMWARE_BEGIN_DATA_SIZE ? 0 : -1;
         case REQ_FW_CHUNK: return length > FIRMWARE_CHUNK_OFFSET_SIZE && length <= FIRMWARE_CHUNK_OFFSET_SIZE + FIRMWARE_CHUNK_SIZE ? 0 : -1;
         case REQ_FW_END: return length == 0 ? 0 : -1;
