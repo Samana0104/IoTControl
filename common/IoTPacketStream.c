@@ -38,6 +38,17 @@ void IoTPacketPushUint16(IoTPacketWriter *writer, uint16_t value)
     IoTPacketPushBytes(writer, bytes, sizeof(bytes));
 }
 
+void IoTPacketPushUint32(IoTPacketWriter *writer, uint32_t value)
+{
+    uint8_t bytes[4];
+
+    bytes[0] = (uint8_t)(value & 0xFF);
+    bytes[1] = (uint8_t)((value >> 8) & 0xFF);
+    bytes[2] = (uint8_t)((value >> 16) & 0xFF);
+    bytes[3] = (uint8_t)(value >> 24);
+    IoTPacketPushBytes(writer, bytes, sizeof(bytes));
+}
+
 void IoTPacketPushBytes(IoTPacketWriter *writer, const void *data, size_t length)
 {
     if(writer->overflow || length > writer->capacity - writer->length)
@@ -94,6 +105,14 @@ uint16_t IoTPacketPopUint16(IoTPacketReader *reader)
 
     IoTPacketPopBytes(reader, bytes, sizeof(bytes));
     return (uint16_t)(bytes[0] | (bytes[1] << 8));
+}
+
+uint32_t IoTPacketPopUint32(IoTPacketReader *reader)
+{
+    uint8_t bytes[4] = {0, 0, 0, 0};
+
+    IoTPacketPopBytes(reader, bytes, sizeof(bytes));
+    return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
 void IoTPacketPopBytes(IoTPacketReader *reader, void *out, size_t length)

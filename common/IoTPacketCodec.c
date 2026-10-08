@@ -16,6 +16,11 @@ int CheckPacketLength(uint16_t cmd, size_t length)
         case NFY_DHT_ROW: return length == DHT_ROW_DATA_SIZE ? 0 : -1;
         case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE ? 0 : -1;
         case REQ_BT_CONNECT: return length == BLUETOOTH_CONNECT_DATA_SIZE ? 0 : -1;
+        case REQ_FAN: return length == FAN_DATA_SIZE ? 0 : -1;
+        case REQ_FW_BEGIN: return length == FIRMWARE_BEGIN_DATA_SIZE ? 0 : -1;
+        case REQ_FW_CHUNK: return length > FIRMWARE_CHUNK_OFFSET_SIZE && length <= FIRMWARE_CHUNK_OFFSET_SIZE + FIRMWARE_CHUNK_SIZE ? 0 : -1;
+        case REQ_FW_END: return length == 0 ? 0 : -1;
+        case ACK_FW_CHUNK: return length == FIRMWARE_CHUNK_ACK_DATA_SIZE ? 0 : -1;
         case REQ_FAN:
         case REQ_FAN_UPDATE: return length == FAN_DATA_SIZE ? 0 : -1;
         case REQ_DHT:
@@ -26,6 +31,8 @@ int CheckPacketLength(uint16_t cmd, size_t length)
         case ACK_BT_REGISTER:
         case ACK_BT_CONNECT:
         case ACK_FAN:
+        case ACK_FW_BEGIN:
+        case ACK_FW_END:
         case ACK_FAN_UPDATE:
         case ACK_DHT_COLLECT: return length == RESULT_DATA_SIZE ? 0 : -1;
         case NFY_CHAT: return length <= MAX_CHAT_SIZE ? 0 : -1;
@@ -179,6 +186,49 @@ size_t MakeDhtAckPacket(uint8_t *buffer, size_t size, const DhtAckData *data)
     return IoTPacketEnd(&writer);
 }
 
+size_t MakeFirmwareBeginPacket(uint8_t *buffer, size_t size, const FirmwareBeginData *data)
+{
+    IoTPacketWriter writer;
+
+    IoTPacketBegin(&writer, buffer, size, REQ_FW_BEGIN);
+    IoTPacketPushUint32(&writer, data->size);
+    IoTPacketPushUint32(&writer, data->crc32);
+    IoTPacketPushUint32(&writer, data->version);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeFirmwareChunkPacket(uint8_t *buffer, size_t size, const FirmwareChunkData *data)
+{
+    IoTPacketWriter writer;
+
+    if(data->length == 0 || data->length > FIRMWARE_CHUNK_SIZE)
+    {
+        return 0;
+    }
+    IoTPacketBegin(&writer, buffer, size, REQ_FW_CHUNK);
+    IoTPacketPushUint32(&writer, data->offset);
+    IoTPacketPushBytes(&writer, data->data, data->length);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeFirmwareEndPacket(uint8_t *buffer, size_t size)
+{
+    IoTPacketWriter writer;
+
+    IoTPacketBegin(&writer, buffer, size, REQ_FW_END);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeFirmwareChunkAckPacket(uint8_t *buffer, size_t size, const FirmwareChunkAckData *data)
+{
+    IoTPacketWriter writer;
+
+    IoTPacketBegin(&writer, buffer, size, ACK_FW_CHUNK);
+    IoTPacketPushUint8(&writer, data->result);
+    IoTPacketPushUint32(&writer, data->offset);
+    return IoTPacketEnd(&writer);
+}
+
 size_t MakeAckPacket(uint8_t *buffer, size_t size, uint16_t reqCmd, uint8_t result)
 {
     IoTPacketWriter writer;
@@ -271,6 +321,42 @@ int ReadDhtAckData(const uint8_t *payload, size_t length, DhtAckData *data)
     data->result = IoTPacketPopUint8(&reader);
     data->dht.temp = IoTPacketPopUint16(&reader);
     data->dht.humi = IoTPacketPopUint16(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+int ReadFirmwareBeginData(const uint8_t *payload, size_t length, FirmwareBeginData *data)
+{
+    IoTPacketReader reader;
+
+    IoTPacketOpen(&reader, payload, length);
+    data->size = IoTPacketPopUint32(&reader);
+    data->crc32 = IoTPacketPopUint32(&reader);
+    data->version = IoTPacketPopUint32(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+int ReadFirmwareChunkData(const uint8_t *payload, size_t length, FirmwareChunkData *data)
+{
+    IoTPacketReader reader;
+
+    if(length <= FIRMWARE_CHUNK_OFFSET_SIZE || length > FIRMWARE_CHUNK_OFFSET_SIZE + FIRMWARE_CHUNK_SIZE)
+    {
+        return -1;
+    }
+    data->length = (uint16_t)(length - FIRMWARE_CHUNK_OFFSET_SIZE);
+    IoTPacketOpen(&reader, payload, length);
+    data->offset = IoTPacketPopUint32(&reader);
+    IoTPacketPopBytes(&reader, data->data, data->length);
+    return IoTPacketCheckRead(&reader);
+}
+
+int ReadFirmwareChunkAckData(const uint8_t *payload, size_t length, FirmwareChunkAckData *data)
+{
+    IoTPacketReader reader;
+
+    IoTPacketOpen(&reader, payload, length);
+    data->result = IoTPacketPopUint8(&reader);
+    data->offset = IoTPacketPopUint32(&reader);
     return IoTPacketCheckRead(&reader);
 }
 

@@ -2,6 +2,14 @@
 
 #include "RSession.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 // 장치 → 서버 NFY_FAN: 팬 속도를 fan 행(singleton_id=1)에 기록
 int RPacketFanReceive(RSession *session, const uint8_t *payload, size_t length);
 // 장치 → 서버 ACK_FAN: RPacketFanSetSpeed 요청의 처리 결과
@@ -17,4 +25,12 @@ int RPacketFanSetSpeed(int fd, uint8_t percent);
 
 // PC -> 서버 REQ_FAN_UPDATE: 인증된 PC가 fan(singleton_id=1)의 speed를 0..100%로 저장
 // DB 저장 확인 후 ACK_FAN_UPDATE 응답. 장치 제어는 보내지 않음
+<<<<<<< Updated upstream
 int RPacketFanUpdateReceive(RSession *session, const uint8_t *payload, size_t length);
+=======
+int RPacketFanUpdateReceive(RSession *session, const uint8_t *payload, size_t length);
+
+#ifdef __cplusplus
+}
+#endif
+>>>>>>> Stashed changes

@@ -57,7 +57,10 @@ typedef struct _HeaderData
 #define MSG_DHT_ALL 0x0008
 #define MSG_DHT_COLLECT 0x0009
 #define MSG_FAN_QUERY 0x000A
-#define MSG_FAN_UPDATE 0x000B
+#define MSG_FW_BEGIN 0x000B
+#define MSG_FW_CHUNK 0x000C
+#define MSG_FW_END 0x000D
+#define MSG_FAN_UPDATE 0x000E
 
 /* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
@@ -82,6 +85,15 @@ typedef struct _HeaderData
 #define ACK_FAN REQ_TO_ACK(REQ_FAN)         /* ResultData */
 #define REQ_DHT MSG_DHT                     /* no payload, read DHT now */
 #define ACK_DHT REQ_TO_ACK(REQ_DHT)         /* DhtAckData, server stores it like NFY_DHT */
+
+/* Server -> STM32 firmware update (BT), see IoTFirmware.h.
+   BEGIN, then CHUNK from offset 0 in order, then END; the device reboots after ACK_FW_END. */
+#define REQ_FW_BEGIN MSG_FW_BEGIN           /* FirmwareBeginData: device erases its staging area */
+#define ACK_FW_BEGIN REQ_TO_ACK(REQ_FW_BEGIN) /* ResultData */
+#define REQ_FW_CHUNK MSG_FW_CHUNK           /* FirmwareChunkData: offset + 1..FIRMWARE_CHUNK_SIZE bytes */
+#define ACK_FW_CHUNK REQ_TO_ACK(REQ_FW_CHUNK) /* FirmwareChunkAckData */
+#define REQ_FW_END MSG_FW_END               /* no payload: device checks CRC32, marks the image ready */
+#define ACK_FW_END REQ_TO_ACK(REQ_FW_END)   /* ResultData */
 
 /* Device -> server reports */
 #define NFY_CHAT MAKE_NOTIFY(MSG_CHAT)      /* text, 0..MAX_CHAT_SIZE bytes */

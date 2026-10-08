@@ -23,6 +23,11 @@ extern "C" {
 #define BLUETOOTH_REGISTER_DATA_SIZE (BLUETOOTH_MAC_SIZE + BLUETOOTH_PIN_SIZE)
 #define BLUETOOTH_CONNECT_DATA_SIZE (MEM_ID_SIZE + MEM_PW_SIZE + BLUETOOTH_MAC_SIZE)
 #define RESULT_DATA_SIZE 1
+/* Firmware image bytes per REQ_FW_CHUNK. */
+#define FIRMWARE_CHUNK_SIZE 256
+#define FIRMWARE_BEGIN_DATA_SIZE 12
+#define FIRMWARE_CHUNK_OFFSET_SIZE 4
+#define FIRMWARE_CHUNK_ACK_DATA_SIZE (RESULT_DATA_SIZE + 4)
 #define DHT_ACK_DATA_SIZE (RESULT_DATA_SIZE + DHT_DATA_SIZE)
 /* NFY_CHAT text limit, kept small for 8-bit devices. */
 #define MAX_CHAT_SIZE 255
@@ -103,6 +108,29 @@ typedef struct _DhtAckData
     uint8_t result;
     DhtData dht;
 } DhtAckData;
+
+/* REQ_FW_BEGIN payload */
+typedef struct _FirmwareBeginData
+{
+    uint32_t size;    /* image bytes, 1..FIRMWARE_APP_MAX_SIZE */
+    uint32_t crc32;   /* ComputeFirmwareCrc32 of the whole image */
+    uint32_t version; /* FirmwareInfo.version inside the image */
+} FirmwareBeginData;
+
+/* REQ_FW_CHUNK payload: offset, then length bytes (length comes from the frame length). */
+typedef struct _FirmwareChunkData
+{
+    uint32_t offset;
+    uint16_t length;
+    uint8_t data[FIRMWARE_CHUNK_SIZE];
+} FirmwareChunkData;
+
+/* ACK_FW_CHUNK payload: offset echoes the acknowledged chunk. */
+typedef struct _FirmwareChunkAckData
+{
+    uint8_t result;
+    uint32_t offset;
+} FirmwareChunkAckData;
 
 #ifdef __cplusplus
 }

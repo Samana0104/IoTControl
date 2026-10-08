@@ -1,0 +1,4 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}/Raspberry5",
+    "cmake.buildDirectory": "${workspaceFolder}/Raspberry5/build"
+}

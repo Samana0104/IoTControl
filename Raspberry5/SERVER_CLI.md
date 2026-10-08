@@ -31,10 +31,13 @@ iot-server> server sessions
 - `server sessions`: TCP 클라이언트와 BT 장치 세션을 함께 조회 (FD, 종류, IP/MAC, 회원 ID, 인증 상태). FD는 `fan set`에 사용
 - `bt list`: 현재 연결된 BT 세션의 FD, 회원 ID, MAC 조회
 - `bt connect <회원ID>`: DB에 등록된 해당 회원의 Bluetooth MAC으로 연결 또는 재연결, 성공하면 세션 FD 표시
+- `bt connectall`: DB `bluetooth` 테이블에 등록된 모든 회원의 HC-05에 차례로 연결하고 기기별 결과와 `N/M connected`를 표시. 이미 연결된 기기는 그대로 두며, 기기마다 연결을 기다리므로 끝날 때까지 CLI가 멈춤
 - `bt scan [이름]`: 근처 클래식 BT 장치를 10초 동안 검색해 MAC, RSSI, 페어링 여부, 이름 표시. 이름을 주면 대소문자 무시 부분 일치로 거름 (예: `bt scan hc`). 서버 시작 전에도 사용 가능하며 검색하는 동안 CLI가 멈춤
 - `bt pair <회원ID> <MAC> <PIN>`: HC-05를 PIN으로 페어링하고 `bluetooth` 테이블에 회원 ID-MAC을 등록한 뒤 연결. 회원이 없거나, 이미 HC-05가 등록된 회원이거나, 다른 회원에 등록된 MAC이면 거부
 - `dht collect`: 연결된 모든 장치에 `REQ_DHT`를 보내 DHT 값을 받아 DB에 기록 (PC의 `REQ_DHT_COLLECT`와 같음)
 - `fan set <FD> <0..100>`: 해당 FD 세션의 장치에 팬 속도(%) 요청 (`REQ_FAN`). 장치의 `ACK_FAN` 결과는 서버 로그에 표시
+- `fw list`: 공유 폴더 `/srv/samba/firmware/stm32`의 STM32 펌웨어 파일과 버전 표시 (STM32 앱 이미지가 아니면 invalid)
+- `fw push <회원ID> <파일>`: BT로 연결된 STM32에 펌웨어를 보냄. 끝나면 장치가 재부팅해 부트로더가 설치하고, 서버는 BT 세션을 확인(끊겼으면 다시 연결). 9600bps에서 50KB에 1분 정도 걸리며 그동안 CLI가 멈춤 (진행률은 로그)
 - `member add <ID> <비밀번호> <stm32|arduino|pc>`: 회원가입. 서버가 비밀번호를 argon2(libsodium)로 해시해 `member` 테이블에 저장합니다. ID는 1..8바이트, 비밀번호는 공백 없이 입력합니다. 이미 있는 ID는 거부합니다.
 - `member list`: 등록된 회원 ID와 타입 조회
 - `help`: 명령 목록 조회
@@ -121,6 +124,10 @@ REQ = ID (ACK 필요), ACK = ID | 0x8000 (페이로드 첫 바이트 = 결과), 
 | 0x0006 | `REQ_BT_REGISTER` (0x0006): mac, pin | `ACK_BT_REGISTER` (0x8006), 실패 시 ACK 후 연결 종료 |
 | 0x0007 | `REQ_BT_CONNECT` (0x0007): id, pw, mac | `ACK_BT_CONNECT` (0x8007) |
 | 0x0009 | `REQ_DHT_COLLECT` (0x0009): 로그인 후, 페이로드 없음 | `ACK_DHT_COLLECT` (0x8009), 장치 1개 이상에 보냈으면 성공 |
+| 0x000A | `REQ_FAN_QUERY` (0x000A): 로그인 후, 페이로드 없음 | `ACK_FAN_QUERY` (0x800A): result + fanSpeed(u16, 0..100). `fan` 행(singleton_id=1)이 없거나 DB 오류면 RESULT_FAIL |
+| 0x000B | `REQ_FW_BEGIN` (0x000B): 서버 → STM32, size(u32) + crc32(u32) + version(u32) | `ACK_FW_BEGIN` (0x800B): 대기 영역 지우기 결과 |
+| 0x000C | `REQ_FW_CHUNK` (0x000C): 서버 → STM32, offset(u32) + 데이터 1~256바이트 | `ACK_FW_CHUNK` (0x800C): result + offset(u32) |
+| 0x000D | `REQ_FW_END` (0x000D): 서버 → STM32, 페이로드 없음 | `ACK_FW_END` (0x800D): CRC32·이미지 확인 결과, 성공하면 장치가 0.5초 뒤 재부팅 |
 
 헤더를 받은 뒤 5초 안에 페이로드가 오지 않거나, cmd·길이·권한·CRC가 맞지 않으면 서버는 연결을 끊습니다.
 
@@ -149,6 +156,34 @@ PC     → 서버: REQ_DHT_COLLECT (0x0009), length=0
 
 `ACK_DHT_COLLECT`는 요청을 장치에 보냈다는 뜻이며 DB 저장 완료를 뜻하지 않습니다. 센서 읽기에 실패한 장치는 `result=RESULT_FAIL`로 응답하면 됩니다(temp/humi는 0).
 서버 CLI의 `dht collect`도 같은 동작을 합니다.
+
+## STM32 펌웨어 업데이트
+
+플래시 배치와 동작 순서는 `common/IoTFirmware.h`에 있습니다.
+
+```text
+섹터 0     0x08000000  16KB   부트로더 (STM32/Bootloader)
+섹터 1~4   0x08004000  112KB  앱 (STM32/, 버전은 이미지 +0x200의 FirmwareInfo)
+섹터 5     0x08020000  128KB  대기 영역: 받은 이미지 + 헤더(CRC32 확인 후 마지막에 씀)
+섹터 7     0x08060000  128KB  SData (업데이트로 지우지 않음)
+```
+
+1. 처음 한 번만 ST-Link로 부트로더(`STM32/Bootloader` 빌드의 `IoTBootloader.elf`)와 앱(`IoTControl.elf`)을 굽습니다. 앱이 0x08004000에서 시작하므로 부트로더 없이는 실행되지 않습니다.
+2. 앱 버전을 올려 빌드합니다: `cmake -DFIRMWARE_VERSION=2 ...` → 빌드 폴더에 `IoTControl-v2.bin`이 생깁니다.
+3. PC에서 Samba 공유 `\\<파이>\samba\firmware\stm32\`에 `.bin`을 복사합니다.
+4. 서버 CLI에서 `fw list`로 버전을 확인하고 `fw push <회원ID> IoTControl-v2.bin`을 실행합니다.
+
+```text
+서버 → STM32: REQ_FW_BEGIN (크기, CRC32, 버전)  → 대기 영역 지우기 (1~2초) → ACK
+서버 → STM32: REQ_FW_CHUNK (오프셋, 256바이트) → 대기 영역에 쓰기 → ACK(오프셋)   ... 끝까지
+서버 → STM32: REQ_FW_END                         → CRC32·이미지 확인, 대기 헤더 쓰기 → ACK → 재부팅
+부트로더:     대기 이미지가 앱과 다르면 앱 영역으로 복사·검증한 뒤 대기 헤더 magic을 지우고 앱 실행
+```
+
+- 서버는 파일을 보내기 전에 STM32 앱 이미지인지(크기, 스택 포인터, 리셋 벡터, FirmwareInfo) 확인합니다.
+- 청크 ACK가 오지 않으면 같은 청크를 3번까지 다시 보냅니다. 장치는 이미 쓴 청크의 재전송을 성공으로 응답합니다.
+- 전송이 중간에 끊기면 대기 헤더가 쓰이지 않으므로 기존 앱이 그대로 실행됩니다. 부트로더가 복사하는 중에 전원이 꺼지면 다음 부팅 때 다시 복사합니다.
+- 부트로더는 버전이 아니라 내용(CRC32)으로 앱과 대기 이미지를 비교합니다. 같은 이미지를 다시 보내도 문제없습니다.
 
 ## 등록된 Bluetooth 장치 연결 요청
 

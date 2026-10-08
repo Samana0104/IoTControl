@@ -8,6 +8,7 @@
 #include "RPacketDht.h"
 #include "RPacketDhtQuery.h"
 #include "RPacketFan.h"
+#include "RPacketFirmware.h"
 #include "RPacketMember.h"
 
 #include <string.h>
@@ -31,7 +32,7 @@ static const RPacketEntry *FindPacketEntry(uint16_t cmd);
 static int ValidatePacketPermission(const RSession *session, const RPacketEntry *entry);
 
 // 수신 cmd → 처리 함수. 길이 검사는 CheckPacketLength가 먼저 함.
-// 서버가 REQ를 보내는 곳은 BT 장치(REQ_FAN, REQ_DHT)와 Wi-Fi 장치(REQ_DHT)뿐이므로 ACK도 그 경로만 허용
+// 서버가 REQ를 보내는 곳은 BT 장치(REQ_FAN, REQ_DHT, REQ_FW_*)와 Wi-Fi 장치(REQ_DHT)뿐이므로 ACK도 그 경로만 허용
 static const RPacketEntry PACKET_TABLE[] =
 {
     {REQ_LOGIN, PACKET_FLAG_TCP | PACKET_FLAG_NO_LOGIN, RPacketLoginReceive},
@@ -47,6 +48,10 @@ static const RPacketEntry PACKET_TABLE[] =
     {ACK_FAN, PACKET_FLAG_BT, RPacketFanReceiveAck},
     {REQ_FAN_UPDATE, PACKET_FLAG_TCP, RPacketFanUpdateReceive},
     {ACK_DHT, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketDhtReceiveAck}
+    {ACK_DHT, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketDhtReceiveAck},
+    {ACK_FW_BEGIN, PACKET_FLAG_BT, RPacketFirmwareBeginReceiveAck},
+    {ACK_FW_CHUNK, PACKET_FLAG_BT, RPacketFirmwareChunkReceiveAck},
+    {ACK_FW_END, PACKET_FLAG_BT, RPacketFirmwareEndReceiveAck}
 };
 
 // member.type 문자열 최대 길이 ('STM32', 'ARDUINO', 'PC')

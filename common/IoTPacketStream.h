@@ -22,6 +22,7 @@ typedef struct _IoTPacketWriter
 void IoTPacketBegin(IoTPacketWriter *writer, uint8_t *buffer, size_t capacity, uint16_t cmd);
 void IoTPacketPushUint8(IoTPacketWriter *writer, uint8_t value);
 void IoTPacketPushUint16(IoTPacketWriter *writer, uint16_t value);
+void IoTPacketPushUint32(IoTPacketWriter *writer, uint32_t value);
 void IoTPacketPushBytes(IoTPacketWriter *writer, const void *data, size_t length);
 /* Fills length and crc16. Returns the frame length, or 0 on overflow or a payload over MAX_PAYLOAD_SIZE. */
 size_t IoTPacketEnd(IoTPacketWriter *writer);
@@ -38,6 +39,7 @@ typedef struct _IoTPacketReader
 void IoTPacketOpen(IoTPacketReader *reader, const uint8_t *payload, size_t length);
 uint8_t IoTPacketPopUint8(IoTPacketReader *reader);
 uint16_t IoTPacketPopUint16(IoTPacketReader *reader);
+uint32_t IoTPacketPopUint32(IoTPacketReader *reader);
 void IoTPacketPopBytes(IoTPacketReader *reader, void *out, size_t length);
 /* Returns 0 when every byte was read without underflow, otherwise -1. */
 int IoTPacketCheckRead(const IoTPacketReader *reader);

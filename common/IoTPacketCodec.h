@@ -41,6 +41,12 @@ size_t MakeDhtRequestPacket(uint8_t *buffer, size_t size);
 size_t MakeDhtCollectPacket(uint8_t *buffer, size_t size);
 /* ACK_DHT: device -> server, reply to REQ_DHT. */
 size_t MakeDhtAckPacket(uint8_t *buffer, size_t size, const DhtAckData *data);
+/* REQ_FW_*: server -> STM32. REQ_FW_END has no payload. */
+size_t MakeFirmwareBeginPacket(uint8_t *buffer, size_t size, const FirmwareBeginData *data);
+size_t MakeFirmwareChunkPacket(uint8_t *buffer, size_t size, const FirmwareChunkData *data);
+size_t MakeFirmwareEndPacket(uint8_t *buffer, size_t size);
+/* ACK_FW_CHUNK: STM32 -> server. ACK_FW_BEGIN/ACK_FW_END use MakeAckPacket. */
+size_t MakeFirmwareChunkAckPacket(uint8_t *buffer, size_t size, const FirmwareChunkAckData *data);
 /* ACK for reqCmd (a REQ_* value) with one RESULT_* byte. */
 size_t MakeAckPacket(uint8_t *buffer, size_t size, uint16_t reqCmd, uint8_t result);
 
@@ -54,6 +60,10 @@ int ReadMemData(const uint8_t *payload, size_t length, MemData *data);
 int ReadBluetoothRegisterData(const uint8_t *payload, size_t length, BluetoothRegisterData *data);
 int ReadBluetoothConnectData(const uint8_t *payload, size_t length, BluetoothConnectData *data);
 int ReadDhtAckData(const uint8_t *payload, size_t length, DhtAckData *data);
+int ReadFirmwareBeginData(const uint8_t *payload, size_t length, FirmwareBeginData *data);
+/* data->length = payload length - FIRMWARE_CHUNK_OFFSET_SIZE (1..FIRMWARE_CHUNK_SIZE) */
+int ReadFirmwareChunkData(const uint8_t *payload, size_t length, FirmwareChunkData *data);
+int ReadFirmwareChunkAckData(const uint8_t *payload, size_t length, FirmwareChunkAckData *data);
 int ReadResultData(const uint8_t *payload, size_t length, ResultData *data);
 
 #ifdef __cplusplus
