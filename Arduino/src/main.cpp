@@ -5,6 +5,7 @@
 #include <AWiFi.h>
 #include <AIntervalMS.h>
 #include <ALog.h>
+#include <APacket.h>
 
 #ifdef DEBUG_CLI
 #include <ACLI.h>
@@ -23,72 +24,15 @@ static AWiFi WiFiModule(RX_PIN, TX_PIN);
 static ADht Dht(DHT_PIN);
 static bool tryServerConnect = true;
 
-// 마지막으로 성공한 DHT 값 (REQ_DHT 응답용)
-static bool dhtValid = false;
-static uint16_t lastTemperature = 0;
-static uint16_t lastHumidity = 0;
-
 #ifdef DEBUG_CLI
 static ACLI CLIHandler(Serial);
 #endif
 
-static constexpr uint32_t INTERVAL_MS_2Sec = 2000;
+static constexpr uint32_t INTERVAL_MS_POLL = 200;
 static constexpr uint32_t INTERVAL_MS_5Sec = 5000;
 
-static IntervalMS interval2Sec(INTERVAL_MS_2Sec);
+static IntervalMS intervalPoll(INTERVAL_MS_POLL);
 static IntervalMS interval5Sec(INTERVAL_MS_5Sec);
-
-
-// DHT11 값을 읽어 저장, 실패(NaN)면 다음 REQ_DHT에 RESULT_FAIL로 응답
-static void ReadDht()
-{
-    float humidity = Dht.GetHumidity();
-    float temperature = Dht.GetTemperature();
-
-    dhtValid = !isnan(humidity) && !isnan(temperature) && temperature >= 0;
-    if (dhtValid)
-    {
-        lastTemperature = (uint16_t)temperature;
-        lastHumidity = (uint16_t)humidity;
-    }
-}
-
-// 서버 → 장치 REQ_DHT: 마지막 측정값을 ACK_DHT로 응답
-static void HandleDhtRequest()
-{
-    DhtAckData ack = {};
-
-    ack.result = dhtValid ? RESULT_SUCCESS : RESULT_FAIL;
-    if (dhtValid)
-    {
-        ack.dht.temp = lastTemperature;
-        ack.dht.humi = lastHumidity;
-    }
-    if (!WiFiModule.SendDhtAck(ack))
-    {
-        ALOG_WARN("ACK_DHT send failed");
-        return;
-    }
-    ALOG_INFO("ACK_DHT sent, result=", ack.result, " temp=", ack.dht.temp, " humi=", ack.dht.humi);
-}
-
-static void HandleServerPackets()
-{
-    HeaderData header;
-    const uint8_t *payload;
-
-    while (WiFiModule.PollServerPacket(header, payload))
-    {
-        if (header.cmd == REQ_DHT)
-        {
-            HandleDhtRequest();
-        }
-        else
-        {
-            ALOG_DEBUG("server packet ignored, cmd=", header.cmd);
-        }
-    }
-}
 
 void loop()
 {
@@ -100,14 +44,10 @@ void loop()
 
     uint32_t currentTime = millis();
 
-    if (interval2Sec.Elapsed(currentTime))
+    // 수신 확인(available)은 데이터가 없으면 ESP에 AT 커맨드를 보내므로 주기적으로만
+    if (!tryServerConnect && intervalPoll.Elapsed(currentTime))
     {
-        ReadDht();
-    }
-
-    if (!tryServerConnect)
-    {
-        HandleServerPackets();
+        APacketProcess();
     }
 
     if (interval5Sec.Elapsed(currentTime))
@@ -128,25 +68,7 @@ void loop()
                 tryServerConnect = false;
 
                 // 저장된 계정(member set)으로 로그인 요청
-                MemData member;
-                if (LoadData(DATA_ADDR_MEMBER, reinterpret_cast<uint8_t *>(&member), sizeof(member)))
-                {
-                    LoginResult result = WiFiModule.LoginToServer(member);
-                    memset(&member, 0, sizeof(member));
-
-                    if (result == LOGIN_SUCCESS)
-                    {
-                        ALOG_INFO("Login success");
-                    }
-                    else
-                    {
-                        ALOG_WARN("Login failed, result=", (int)result);
-                    }
-                }
-                else
-                {
-                    ALOG_WARN("No member saved, skip login");
-                }
+                APacketLogin();
             }
         }
 
@@ -161,6 +83,8 @@ void setup()
     Dht.Begin();
     BeginLog(Serial);
     ALOG_INFO("Boot Arduino");
+
+    APacketBegin(WiFiModule, Dht);
 
     if (!WiFiModule.Begin(ESP_BAUD_RATE))
     {

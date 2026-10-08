@@ -1,7 +1,7 @@
 #include "ACmdWiFi.h"
 #include "ACommand.h"
 
-#include <AData.h>
+#include <APacket.h>
 #include <AWiFi.h>
 #include <stdlib.h>
 #include <string.h>
@@ -113,18 +113,9 @@ static void WiFiLogin(Print &out, const char *args)
         return;
     }
 
-    MemData member;
-    if (!LoadData(DATA_ADDR_MEMBER, reinterpret_cast<uint8_t *>(&member), sizeof(member)))
-    {
-        out.println(F("no member saved (member set <id> <pw>)"));
-        return;
-    }
-
     out.println(F("login..."));
-    LoginResult result = wifi->LoginToServer(member);
-    memset(&member, 0, sizeof(member));
 
-    switch (result)
+    switch (APacketLogin())
     {
     case LOGIN_SUCCESS:
         out.println(F("login success"));
@@ -137,6 +128,9 @@ static void WiFiLogin(Print &out, const char *args)
         break;
     case LOGIN_TIMEOUT:
         out.println(F("no response (timeout)"));
+        break;
+    case LOGIN_NO_MEMBER:
+        out.println(F("no member saved (member set <id> <pw>)"));
         break;
     default:
         out.println(F("bad response packet"));
