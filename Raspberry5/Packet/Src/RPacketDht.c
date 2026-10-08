@@ -8,9 +8,6 @@
 #include <inttypes.h>
 #include <string.h>
 
-// member.type 최대 길이 ('STM32', 'ARDUINO', 'PC')
-#define MEMBER_TYPE_SIZE 16
-
 static void SaveDhtData(const RSession *session, const DhtData *data);
 static int IsDhtDevice(const RSessionSnapshot *snapshot);
 
@@ -132,12 +129,9 @@ static void SaveDhtData(const RSession *session, const DhtData *data)
     RLOG_INFO("[%s] DHT DB INSERT: id=%s, inserted=%" PRIu64, session->label, session->memberId, insertedRows);
 }
 
-// BT 세션은 등록된 장치. TCP는 로그인한 회원의 type이 PC가 아니면 장치
+// BT 세션은 등록된 장치. TCP는 로그인한 회원의 type이 STM32/ARDUINO면 장치
 static int IsDhtDevice(const RSessionSnapshot *snapshot)
 {
-    DatabaseValue idParam[1];
-    char memberType[MEMBER_TYPE_SIZE];
-
     if(!snapshot->authenticated)
     {
         return 0;
@@ -146,10 +140,5 @@ static int IsDhtDevice(const RSessionSnapshot *snapshot)
     {
         return 1;
     }
-    idParam[0] = DATABASE_TEXT(snapshot->memberId);
-    if(QueryDatabaseValue(QUERY_SELECT_MEMBER_TYPE, idParam, 1, memberType, sizeof(memberType)) != 1)
-    {
-        return 0;
-    }
-    return strcmp(memberType, "PC") != 0;
+    return snapshot->memberType == MEMBER_TYPE_STM32 || snapshot->memberType == MEMBER_TYPE_ARDUINO;
 }

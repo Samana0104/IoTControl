@@ -1,5 +1,6 @@
 #include "RPacket.h"
 #include "IoTPacketCodec.h"
+#include "RDatabaseQuery.h"
 #include "RLog.h"
 #include "RNetwork.h"
 #include "RPacketBt.h"
@@ -8,6 +9,8 @@
 #include "RPacketDhtQuery.h"
 #include "RPacketFan.h"
 #include "RPacketMember.h"
+
+#include <string.h>
 
 // 패킷을 받을 수 있는 세션 (PACKET_FLAG_*를 OR로 조합)
 #define PACKET_FLAG_TCP 0x01      // TCP 클라이언트에서 받음
@@ -44,6 +47,9 @@ static const RPacketEntry PACKET_TABLE[] =
     {ACK_FAN, PACKET_FLAG_BT, RPacketFanReceiveAck},
     {ACK_DHT, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketDhtReceiveAck}
 };
+
+// member.type 문자열 최대 길이 ('STM32', 'ARDUINO', 'PC')
+#define MEMBER_TYPE_TEXT_SIZE 16
 
 #define PACKET_TABLE_COUNT (sizeof(PACKET_TABLE) / sizeof(PACKET_TABLE[0]))
 
@@ -96,6 +102,40 @@ int RPacketSendAck(RSession *session, uint16_t reqCmd, int succeeded)
         return -1;
     }
     return 0;
+}
+
+RMemberType RPacketReadMemberType(const char *memberId)
+{
+    DatabaseValue idParam[1];
+    char typeText[MEMBER_TYPE_TEXT_SIZE];
+    int queryResult;
+
+    if(memberId == NULL)
+    {
+        RLOG_ERROR("RPacketReadMemberType: NULL memberId");
+        return MEMBER_TYPE_UNKNOWN;
+    }
+    idParam[0] = DATABASE_TEXT(memberId);
+    queryResult = QueryDatabaseValue(QUERY_SELECT_MEMBER_TYPE, idParam, 1, typeText, sizeof(typeText));
+    if(queryResult != 1)
+    {
+        RLOG_WARN("Member type lookup failed: id=%s, reason=%s", memberId, queryResult == 0 ? "no such member" : "database error");
+        return MEMBER_TYPE_UNKNOWN;
+    }
+    if(strcmp(typeText, "STM32") == 0)
+    {
+        return MEMBER_TYPE_STM32;
+    }
+    if(strcmp(typeText, "ARDUINO") == 0)
+    {
+        return MEMBER_TYPE_ARDUINO;
+    }
+    if(strcmp(typeText, "PC") == 0)
+    {
+        return MEMBER_TYPE_PC;
+    }
+    RLOG_WARN("Unknown member type: id=%s, type=%s", memberId, typeText);
+    return MEMBER_TYPE_UNKNOWN;
 }
 
 static int ReceiveChat(RSession *session, const uint8_t *payload, size_t length)

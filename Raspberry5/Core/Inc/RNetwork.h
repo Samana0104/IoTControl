@@ -21,7 +21,7 @@ void RNetStop(void);
 int RNetOpenTcp(int fd, const struct sockaddr_in *address);
 // 이미 연결된 HC-05 RFCOMM fd를 회원 세션으로 등록. 실패해도 fd는 닫힘.
 // 0: 등록됨, -1: 실패 (errno: ENOSPC 가득 참, ECANCELED 종료 중)
-int RNetOpenBt(int fd, const char *memberId, const char *mac);
+int RNetOpenBt(int fd, const char *memberId, const char *mac, RMemberType memberType);
 
 // 완성된 프레임(Make*Packet 결과)을 fd 연결로 보냄 (바로 못 보낸 나머지는 워커가 이어서 보냄).
 // 0: 보냄 또는 큐에 넣음, 1: 그 fd의 열린 연결 없음, -1: 실패 (errno 설정)

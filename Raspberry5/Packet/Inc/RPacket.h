@@ -11,3 +11,6 @@ int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size
 
 // reqCmd(REQ_*)에 대한 ACK를 이 세션으로 보냄. 0: 보냄(또는 큐에 넣음), -1: 실패
 int RPacketSendAck(RSession *session, uint16_t reqCmd, int succeeded);
+
+// DB member.type을 읽음. 회원이 없거나 DB 오류면 MEMBER_TYPE_UNKNOWN (로그 남김)
+RMemberType RPacketReadMemberType(const char *memberId);

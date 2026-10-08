@@ -14,6 +14,7 @@ int RPacketLoginReceive(RSession *session, const uint8_t *payload, size_t length
     size_t memberIdLength;
     size_t passwordLength;
     int verifyResult;
+    RMemberType memberType;
 
     if(session == NULL || payload == NULL)
     {
@@ -40,7 +41,8 @@ int RPacketLoginReceive(RSession *session, const uint8_t *payload, size_t length
         return -1;
     }
 
-    RSessionLogin(session, memberId, memberIdLength);
-    RLOG_INFO("[%s] Member authenticated: id=%s", session->label, memberId);
+    memberType = RPacketReadMemberType(memberId);
+    RSessionLogin(session, memberId, memberIdLength, memberType);
+    RLOG_INFO("[%s] Member authenticated: id=%s, type=%s", session->label, memberId, RSessionMemberTypeName(memberType));
     return RPacketSendAck(session, REQ_LOGIN, 1);
 }

@@ -85,13 +85,13 @@ static void ServerSessions(TCPServer *server, const char *args)
     (void)server;
     (void)args;
     flockfile(stdout);
-    puts("FD  TYPE ADDRESS           ID       AUTH");
+    puts("FD  TYPE ADDRESS           ID       DEVICE  AUTH");
     for(size_t index = 0; index < snapshotCount; ++index)
     {
         const RSessionSnapshot *snapshot = &snapshots[index];
         const char *memberId = snapshot->memberId[0] != '\0' ? snapshot->memberId : "-";
 
-        printf("%-3d %-4s %-17s %-8s %s\n", snapshot->fd, snapshot->type == SESSION_TCP ? "TCP" : "BT", snapshot->address, memberId, snapshot->authenticated ? "yes" : "no");
+        printf("%-3d %-4s %-17s %-8s %-7s %s\n", snapshot->fd, snapshot->type == SESSION_TCP ? "TCP" : "BT", snapshot->address, memberId, RSessionMemberTypeName(snapshot->memberType), snapshot->authenticated ? "yes" : "no");
     }
     if(snapshotCount == 0)
     {

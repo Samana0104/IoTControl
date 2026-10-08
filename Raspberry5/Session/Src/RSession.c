@@ -9,7 +9,9 @@ static RSession sessions[MAX_SESSION];
 // 슬롯 추가/삭제와 로그인 상태 변경을 목록 조회와 직렬화
 static pthread_mutex_t tableMutex = PTHREAD_MUTEX_INITIALIZER;
 
-RSession *RSessionAdd(RSessionType type, int fd, const char *address, const char *memberId)
+static void CopySnapshot(const RSession *session, RSessionSnapshot *snapshot);
+
+RSession *RSessionAdd(RSessionType type, int fd, const char *address, const char *memberId, RMemberType memberType)
 {
     RSession *session = NULL;
 
@@ -34,6 +36,7 @@ RSession *RSessionAdd(RSessionType type, int fd, const char *address, const char
         if(memberId != NULL)
         {
             snprintf(session->memberId, sizeof(session->memberId), "%s", memberId);
+            session->memberType = memberType;
             session->authenticated = 1;
         }
         if(type == SESSION_BLUETOOTH)
@@ -106,17 +109,49 @@ size_t RSessionGetSnapshots(RSessionSnapshot *snapshots)
             continue;
         }
         snapshot = &snapshots[snapshotCount++];
-        snapshot->type = session->type;
-        snapshot->fd = session->fd;
-        snapshot->authenticated = session->authenticated;
-        memcpy(snapshot->address, session->address, sizeof(snapshot->address));
-        memcpy(snapshot->memberId, session->memberId, sizeof(snapshot->memberId));
+        CopySnapshot(session, snapshot);
     }
     pthread_mutex_unlock(&tableMutex);
     return snapshotCount;
 }
 
-void RSessionLogin(RSession *session, const char *memberId, size_t memberIdLength)
+int RSessionFindByFd(int fd, RSessionSnapshot *snapshot)
+{
+    int result = -1;
+
+    if(snapshot == NULL)
+    {
+        RLOG_ERROR("RSessionFindByFd: NULL snapshot");
+        return -1;
+    }
+    pthread_mutex_lock(&tableMutex);
+    for(int index = 0; index < MAX_SESSION; ++index)
+    {
+        const RSession *session = &sessions[index];
+
+        if(session->inUse && session->fd == fd)
+        {
+            CopySnapshot(session, snapshot);
+            result = 0;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&tableMutex);
+    return result;
+}
+
+const char *RSessionMemberTypeName(RMemberType memberType)
+{
+    switch(memberType)
+    {
+        case MEMBER_TYPE_STM32: return "STM32";
+        case MEMBER_TYPE_ARDUINO: return "ARDUINO";
+        case MEMBER_TYPE_PC: return "PC";
+        default: return "-";
+    }
+}
+
+void RSessionLogin(RSession *session, const char *memberId, size_t memberIdLength, RMemberType memberType)
 {
     if(session == NULL || memberId == NULL)
     {
@@ -130,6 +165,7 @@ void RSessionLogin(RSession *session, const char *memberId, size_t memberIdLengt
     pthread_mutex_lock(&tableMutex);
     memcpy(session->memberId, memberId, memberIdLength);
     session->memberId[memberIdLength] = '\0';
+    session->memberType = memberType;
     session->authenticated = 1;
     pthread_mutex_unlock(&tableMutex);
 }
@@ -143,6 +179,18 @@ void RSessionLogout(RSession *session)
     }
     pthread_mutex_lock(&tableMutex);
     session->memberId[0] = '\0';
+    session->memberType = MEMBER_TYPE_UNKNOWN;
     session->authenticated = 0;
     pthread_mutex_unlock(&tableMutex);
+}
+
+// tableMutex를 잡은 상태에서 호출
+static void CopySnapshot(const RSession *session, RSessionSnapshot *snapshot)
+{
+    snapshot->type = session->type;
+    snapshot->fd = session->fd;
+    snapshot->authenticated = session->authenticated;
+    memcpy(snapshot->address, session->address, sizeof(snapshot->address));
+    memcpy(snapshot->memberId, session->memberId, sizeof(snapshot->memberId));
+    snapshot->memberType = session->memberType;
 }

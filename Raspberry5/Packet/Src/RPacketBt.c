@@ -249,6 +249,7 @@ static int ConnectRegisteredDevice(const char *memberId, const char *requestedMa
 // 같은 회원이 같은 MAC으로 연결돼 있으면 그대로 0, MAC이 바뀌었으면 이전 연결을 닫고 새로 연결
 static int ConnectDevice(const char *memberId, const char *mac)
 {
+    RMemberType memberType;
     uint8_t rfcommChannel;
     int previousFd;
     int conflict;
@@ -283,7 +284,8 @@ static int ConnectDevice(const char *memberId, const char *mac)
         errno = connectError;
         return -1;
     }
-    if(RNetOpenBt(fd, memberId, mac) != 0)
+    memberType = RPacketReadMemberType(memberId);
+    if(RNetOpenBt(fd, memberId, mac, memberType) != 0)
     {
         int openError = errno;
 
