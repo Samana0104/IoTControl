@@ -106,13 +106,20 @@ if(IOT_BUILD_TESTS)
     add_test(NAME server_login_tests COMMAND server_login_tests -o -,txt)
 
     find_package(Qt6 REQUIRED COMPONENTS Sql)
-    qt_add_executable(dht_query_tests tests/Pdhtquerytest.cpp ${PC_UI_SOURCES})
+    qt_add_executable(dht_query_tests tests/Pdhtquerytest.cpp ${PC_UI_SOURCES} ../Raspberry5/Packet/Src/RPacketDhtQuery.c ../Raspberry5/Packet/Src/RPacketDht.c)
     target_include_directories(dht_query_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/serverstub"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
         "${CMAKE_CURRENT_SOURCE_DIR}/Panel"
         "${CMAKE_CURRENT_SOURCE_DIR}/widget"
         "${CMAKE_CURRENT_SOURCE_DIR}/../common"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../Raspberry5/Packet/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../Raspberry5/Database/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../Raspberry5/Session/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../Raspberry5/Driver/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../Raspberry5/Utils/Inc"
     )
+    target_compile_definitions(dht_query_tests PRIVATE RLOG_LEVEL=0)
     target_link_libraries(dht_query_tests PRIVATE Qt6::Widgets Qt6::Network Qt6::Test Qt6::Sql)
     set_target_properties(dht_query_tests PROPERTIES AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/screens")
     add_test(NAME dht_query_tests COMMAND dht_query_tests -o -,txt)

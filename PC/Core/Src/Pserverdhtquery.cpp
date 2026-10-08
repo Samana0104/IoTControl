@@ -21,7 +21,7 @@ ServerDhtQuery::ServerDhtQuery(ServerConnection *connection, QObject *parent) : 
 
 void ServerDhtQuery::LoadAllDht(int timeoutMs)
 {
-    if (loading)
+    if (IsBusy())
         return;
     if (!connection->IsConnected())
     {
@@ -38,6 +38,24 @@ void ServerDhtQuery::LoadAllDht(int timeoutMs)
         FailQuery(tr("dht 전체 조회 요청을 전송하지 못했습니다."), false);
 }
 
+void ServerDhtQuery::RequestDhtCollect(int timeoutMs)
+{
+    if (IsBusy())
+        return;
+    if (!connection->IsConnected())
+    {
+        emit QueryFailed(tr("현장 갱신 요청 전에 서버에 접속해 주세요."));
+        return;
+    }
+    uint8_t frame[HEADER_SIZE]{};
+    const size_t LENGTH = MakeDhtCollectPacket(frame, sizeof(frame));
+    collecting = true;
+    queryTimer->start(std::max(1, timeoutMs));
+    const QByteArray PACKET(reinterpret_cast<const char *>(frame), static_cast<qsizetype>(LENGTH));
+    if (LENGTH == 0 || !connection->SendPacket(PACKET))
+        FailQuery(tr("현장 DHT 갱신 요청을 전송하지 못했습니다."), false);
+}
+
 void ServerDhtQuery::CancelQuery()
 {
     PauseQuery();
@@ -49,11 +67,14 @@ void ServerDhtQuery::PauseQuery()
 {
     // 같은 TCP 연결에서 로그인 화면으로 돌아가도 수신 프레임 경계는 유지합니다.
     loading = false;
+    collecting = false;
     queryTimer->stop();
     pendingRecords.clear();
 }
 
 bool ServerDhtQuery::IsLoading() const { return loading; }
+bool ServerDhtQuery::IsCollecting() const { return collecting; }
+bool ServerDhtQuery::IsBusy() const { return loading || collecting; }
 
 void ServerDhtQuery::ReceiveData(const QByteArray &data)
 {
@@ -77,7 +98,7 @@ void ServerDhtQuery::ReceiveData(const QByteArray &data)
         }
         HeaderData header{};
         DecodePacketHeader(reinterpret_cast<const uint8_t *>(receiveBuffer.constData()), &header);
-        if (loading && (header.cmd == NFY_DHT_ROW || header.cmd == ACK_DHT_ALL) && CheckPacketLength(header.cmd, header.length) != 0)
+        if (IsBusy() && (header.cmd == NFY_DHT_ROW || header.cmd == ACK_DHT_ALL || header.cmd == ACK_DHT_COLLECT) && CheckPacketLength(header.cmd, header.length) != 0)
         {
             FailQuery(tr("dht 조회 응답 길이가 올바르지 않습니다."), true);
             return;
@@ -95,7 +116,7 @@ void ServerDhtQuery::ReceiveData(const QByteArray &data)
         if (receiveBuffer.size() < FRAME_LENGTH)
             return;
         const auto *frame = reinterpret_cast<const uint8_t *>(receiveBuffer.constData());
-        if (loading && CheckPacketCrc(frame, &header, frame + HEADER_SIZE) != 0)
+        if (IsBusy() && CheckPacketCrc(frame, &header, frame + HEADER_SIZE) != 0)
         {
             FailQuery(tr("dht 조회 응답 CRC가 올바르지 않습니다."), true);
             return;
@@ -123,6 +144,19 @@ void ServerDhtQuery::ReceiveData(const QByteArray &data)
                 pendingRecords.clear();
                 emit DhtLoaded(RECORDS);
             }
+        }
+        if (collecting && header.cmd == ACK_DHT_COLLECT)
+        {
+            ResultData result{};
+            if (ReadResultData(frame + HEADER_SIZE, header.length, &result) != 0 || (result.result != RESULT_SUCCESS && result.result != RESULT_FAIL))
+            {
+                FailQuery(tr("현장 갱신 요청 응답이 올바르지 않습니다."), true);
+                return;
+            }
+            collecting = false;
+            queryTimer->stop();
+            // SUCCESS는 요청을 한 기기 이상에 보냈다는 뜻입니다. 측정 완료 ACK가 아닙니다.
+            emit CollectFinished(result.result == RESULT_SUCCESS);
         }
         receiveBuffer.clear();
     }
@@ -162,24 +196,28 @@ bool ServerDhtQuery::StoreDhtRow(const uint8_t *payload, size_t length)
     default:
         break;
     }
-    pendingRecords.insert(record.id, record);
+    const auto EXISTING = pendingRecords.constFind(record.id);
+    // 기록형 DB에서 같은 기기의 행이 여러 개 오면 최신 시각을 표시합니다.
+    if (EXISTING == pendingRecords.cend() || !EXISTING->updatedAt.isValid() || (record.updatedAt.isValid() && record.updatedAt >= EXISTING->updatedAt))
+        pendingRecords.insert(record.id, record);
     return true;
 }
 
 void ServerDhtQuery::HandleConnectionClosed()
 {
-    if (loading)
+    if (IsBusy())
         FailQuery(tr("dht 조회 중 서버 연결이 종료되었습니다."), false);
     CancelQuery();
 }
 
-void ServerDhtQuery::HandleTimeout() { FailQuery(tr("dht 전체 조회 응답 시간이 초과되었습니다. 다시 접속해 주세요."), true); }
+void ServerDhtQuery::HandleTimeout() { FailQuery(collecting ? tr("현장 갱신 요청 응답 시간이 초과되었습니다. 다시 접속해 주세요.") : tr("dht 전체 조회 응답 시간이 초과되었습니다. 다시 접속해 주세요."), true); }
 
 void ServerDhtQuery::FailQuery(const QString &message, bool closeConnection)
 {
-    if (!loading)
+    if (!IsBusy())
         return;
     loading = false;
+    collecting = false;
     queryTimer->stop();
     pendingRecords.clear();
     if (closeConnection)

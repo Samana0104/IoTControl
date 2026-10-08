@@ -1512,10 +1512,10 @@ QLabel#serverEndpoint { color: #9acde5; font-size: 11px; }
             <item>
              <widget class="QPushButton" name="requestAllButton">
               <property name="text">
-               <string>현장 갱신 · 준비 중</string>
+               <string>현장 갱신 요청</string>
               </property>
               <property name="toolTip">
-               <string>현장 측정 갱신 요청은 서버 통신 규격 작업 중입니다. DB 새로고침은 서버에 저장된 값을 조회합니다.</string>
+               <string>연결된 모든 기기에 새 측정을 요청합니다. 측정·저장 결과는 이후 DB 조회로 확인합니다.</string>
               </property>
               <property name="role" stdset="0">
                <string notr="true">secondary</string>

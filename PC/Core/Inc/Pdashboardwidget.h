@@ -17,7 +17,7 @@ class DashboardWidget final : public QWidget
     void SetServerEndpoint(const QString &host, int port);
     void DisplayDhtRecords(const DhtRecords &records);
     void SetDataFeedback(const QString &message);
-    void SetDhtLoading(bool loading);
+    void SetDhtLoading(bool loading, bool collecting = false);
     void ResetDhtView();
 
   signals:
@@ -25,6 +25,7 @@ class DashboardWidget final : public QWidget
     void ServerChangeRequested();
     void ServerDisconnectRequested();
     void ReloadDhtRequested();
+    void FieldDataUpdateRequested(const QString &clientId);
 
   private:
     void ShowBluetoothDialog();
@@ -32,8 +33,8 @@ class DashboardWidget final : public QWidget
     void ApplyFanPreview();
     void PopulateSampleClients();
     void RequestDhtReload();
-    void RequestAllPreview();
-    void RequestClientPreview(const QString &clientId);
+    void RequestAllUpdate();
+    void RequestClientUpdate(const QString &clientId);
 
     DashboardPanel *panel;
 };

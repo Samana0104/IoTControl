@@ -31,7 +31,7 @@ class DashboardPanel final : public QObject
     void SetFeedback(const QString &message);
     void SetClients(const QList<QStringList> &rows);
     void DisplayDhtClients(const QList<QStringList> &rows);
-    void SetDhtLoading(bool loading);
+    void SetDhtLoading(bool loading, bool collecting = false);
     void ResetDhtLabels();
 
   signals:

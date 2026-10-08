@@ -52,6 +52,7 @@ class MainWindow : public QMainWindow
     void HandleDhtLoaded(const DhtRecords &records);
     void HandleDhtQueryFailed(const QString &message);
     void RequestFieldDataUpdate(const QString &clientId);
+    void HandleFieldDataUpdateResult(bool requested);
 
     AccessPanel *accessPanel;
     QStackedWidget *pages;

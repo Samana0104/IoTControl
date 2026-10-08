@@ -19,13 +19,17 @@ class ServerDhtQuery final : public QObject
   public:
     explicit ServerDhtQuery(ServerConnection *connection, QObject *parent = nullptr);
     void LoadAllDht(int timeoutMs = 10000);
+    void RequestDhtCollect(int timeoutMs = 10000);
     void CancelQuery();
     void PauseQuery();
     bool IsLoading() const;
+    bool IsCollecting() const;
+    bool IsBusy() const;
 
   signals:
     void DhtLoaded(const DhtRecords &records);
     void QueryFailed(const QString &message);
+    void CollectFinished(bool requested);
 
   private:
     void ReceiveData(const QByteArray &data);
@@ -40,4 +44,5 @@ class ServerDhtQuery final : public QObject
     QMap<QString, DhtRecord> pendingRecords;
     qsizetype discardRemaining = 0;
     bool loading = false;
+    bool collecting = false;
 };

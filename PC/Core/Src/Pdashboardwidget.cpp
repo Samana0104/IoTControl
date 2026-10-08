@@ -49,7 +49,7 @@ void DashboardWidget::DisplayDhtRecords(const DhtRecords &records)
 
 void DashboardWidget::SetDataFeedback(const QString &message) { panel->SetFeedback(message); }
 
-void DashboardWidget::SetDhtLoading(bool loading) { panel->SetDhtLoading(loading); }
+void DashboardWidget::SetDhtLoading(bool loading, bool collecting) { panel->SetDhtLoading(loading, collecting); }
 
 void DashboardWidget::ResetDhtView()
 {

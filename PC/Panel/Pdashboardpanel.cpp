@@ -142,7 +142,7 @@ void DashboardPanel::SetClients(const QList<QStringList> &rows)
         requestButton->setObjectName(QStringLiteral("requestClient%1Button").arg(row));
         requestButton->setProperty("role", "rowAction");
         requestButton->setCursor(Qt::PointingHandCursor);
-        requestButton->setToolTip(tr("현장 측정 갱신 요청: 서버 통신 규격 작업 중"));
+        requestButton->setToolTip(tr("기기별 갱신은 준비 중입니다. 전체 기기 현장 갱신 요청을 사용해 주세요."));
         requestButton->setAccessibleName(tr("%1 현장 갱신 요청 준비 중").arg(rows[row][0]));
         ui->clientsTable->setCellWidget(row, CLIENT_UPDATE_COLUMN, requestButton);
         const QString CLIENT_ID = rows[row][0];
@@ -161,10 +161,12 @@ void DashboardPanel::DisplayDhtClients(const QList<QStringList> &rows)
     ui->clientsSubtitle->setText(tr("서버 DB 조회 결과 · dht %1건").arg(rows.size()));
 }
 
-void DashboardPanel::SetDhtLoading(bool loading)
+void DashboardPanel::SetDhtLoading(bool loading, bool collecting)
 {
     ui->reloadDbButton->setEnabled(!loading);
-    ui->reloadDbButton->setText(loading ? tr("DB 조회 중…") : tr("DB 새로고침"));
+    ui->reloadDbButton->setText(loading && !collecting ? tr("DB 조회 중…") : tr("DB 새로고침"));
+    ui->requestAllButton->setEnabled(!loading);
+    ui->requestAllButton->setText(collecting ? tr("요청 전송 중…") : tr("현장 갱신 요청"));
 }
 
 void DashboardPanel::ResetDhtLabels()
