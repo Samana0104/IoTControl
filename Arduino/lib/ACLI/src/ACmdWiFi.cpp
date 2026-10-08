@@ -1,6 +1,7 @@
 #include "ACmdWiFi.h"
 #include "ACommand.h"
 
+#include <AData.h>
 #include <AWiFi.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,6 +102,48 @@ static void WiFiBaud(Print &out, const char *args)
     out.println(wifi->SetModuleBaud(baud) ? F("module OK") : F("module not found"));
 }
 
+// EEPROM에 저장된 계정(member set)으로 서버에 로그인 요청
+static void WiFiLogin(Print &out, const char *args)
+{
+    (void)args;
+
+    if (!wifi->IsServerConnected())
+    {
+        out.println(F("server not connected"));
+        return;
+    }
+
+    MemData member;
+    if (!LoadData(DATA_ADDR_MEMBER, reinterpret_cast<uint8_t *>(&member), sizeof(member)))
+    {
+        out.println(F("no member saved (member set <id> <pw>)"));
+        return;
+    }
+
+    out.println(F("login..."));
+    LoginResult result = wifi->LoginToServer(member);
+    memset(&member, 0, sizeof(member));
+
+    switch (result)
+    {
+    case LOGIN_SUCCESS:
+        out.println(F("login success"));
+        break;
+    case LOGIN_REJECTED:
+        out.println(F("login rejected (id/pw)"));
+        break;
+    case LOGIN_NO_SERVER:
+        out.println(F("send failed"));
+        break;
+    case LOGIN_TIMEOUT:
+        out.println(F("no response (timeout)"));
+        break;
+    default:
+        out.println(F("bad response packet"));
+        break;
+    }
+}
+
 static const ACommand wifiCommands[] = {
     {"status", WiFiStatus},
     {"scan", WiFiScan},
@@ -109,6 +152,7 @@ static const ACommand wifiCommands[] = {
     {"autoconnect", WiFiAutoConnect},
     {"init", WiFiInit},
     {"baud", WiFiBaud},
+    {"login", WiFiLogin},
 };
 
 void CmdWiFi(Print &out, const char *args)

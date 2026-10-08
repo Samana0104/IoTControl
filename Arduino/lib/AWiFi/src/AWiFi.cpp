@@ -1,5 +1,5 @@
 #include "AWiFi.h"
-#include "../../../../common/IoTPacket.h"
+#include <ADefine.h>
 
 #include <WiFiEspAT.h>
 #include <string.h>
@@ -144,6 +144,95 @@ int AWiFi::ReceiveFromServer(uint8_t *buffer, size_t length)
 
     // Allow draining buffered data even after the server closes its socket.
     return client.read(buffer, count);
+}
+
+bool AWiFi::ReceiveExact(uint8_t *buffer, size_t length, uint32_t startMs, uint32_t timeoutMs)
+{
+    size_t received = 0;
+    while (received < length)
+    {
+        if (millis() - startMs >= timeoutMs)
+        {
+            return false;
+        }
+
+        int count = ReceiveFromServer(buffer + received, length - received);
+        if (count > 0)
+        {
+            received += (size_t)count;
+        }
+    }
+    return true;
+}
+
+LoginResult AWiFi::LoginToServer(const MemData &member, uint32_t timeoutMs)
+{
+    uint8_t frame[HEADER_SIZE + MEM_DATA_SIZE];
+    size_t frameLength = MakeLoginPacket(frame, sizeof(frame), &member);
+    size_t sent = frameLength > 0 ? SendToServer(frame, frameLength) : 0;
+
+    // pw가 스택에 남지 않게 지움
+    memset(frame, 0, sizeof(frame));
+
+    if (frameLength == 0 || sent != frameLength)
+    {
+        return LOGIN_NO_SERVER;
+    }
+
+    uint32_t startMs = millis();
+    while (true)
+    {
+        uint8_t headerData[HEADER_SIZE];
+        uint8_t payload[RECEIVE_PAYLOAD_SIZE];
+        HeaderData header;
+
+        if (!ReceiveExact(headerData, HEADER_SIZE, startMs, timeoutMs))
+        {
+            return LOGIN_TIMEOUT;
+        }
+
+        DecodePacketHeader(headerData, &header);
+
+        // 기다리는 ACK가 아닌 큰 프레임은 payload만 읽고 버림
+        if (header.length > sizeof(payload))
+        {
+            for (uint16_t left = header.length; left > 0;)
+            {
+                uint8_t chunk = left > sizeof(payload) ? sizeof(payload) : (uint8_t)left;
+                if (!ReceiveExact(payload, chunk, startMs, timeoutMs))
+                {
+                    return LOGIN_TIMEOUT;
+                }
+                left -= chunk;
+            }
+            continue;
+        }
+
+        if (!ReceiveExact(payload, header.length, startMs, timeoutMs))
+        {
+            return LOGIN_TIMEOUT;
+        }
+
+        // CRC가 틀리면 프레임 경계를 믿을 수 없음
+        if (CheckPacketCrc(headerData, &header, payload) != 0)
+        {
+            return LOGIN_BAD_PACKET;
+        }
+
+        if (header.cmd != ACK_LOGIN)
+        {
+            continue;
+        }
+
+        ResultData result;
+        if (CheckPacketLength(header.cmd, header.length) != 0 ||
+            ReadResultData(payload, header.length, &result) != 0)
+        {
+            return LOGIN_BAD_PACKET;
+        }
+
+        return result.result == RESULT_SUCCESS ? LOGIN_SUCCESS : LOGIN_REJECTED;
+    }
 }
 
 bool AWiFi::SetAutoConnect(bool enable)

@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ADefine.h>
+#include <AData.h>
 #include <ADht.h>
 #include <AWiFi.h>
 #include <AIntervalMS.h>
@@ -26,30 +27,20 @@ static bool tryServerConnect = true;
 static ACLI CLIHandler(Serial);
 #endif
 
+static constexpr uint32_t INTERVAL_MS_2Sec = 2000;
+static constexpr uint32_t INTERVAL_MS_5Sec = 5000;
+
+static IntervalMS interval2Sec(INTERVAL_MS_2Sec);
+static IntervalMS interval5Sec(INTERVAL_MS_5Sec);
 
 
 void loop()
 {
     // 내부에서만 사용
-    static constexpr uint32_t INTERVAL_MS_2Sec = 2000;
-
-    static IntervalMS interval2Sec(INTERVAL_MS_2Sec);
-
-
 
 #ifdef DEBUG_CLI
     CLIHandler.ReadSerial();
 #endif
-    if(tryServerConnect)
-    {
-        ALOG_INFO("Raspberry Server try Connect");
-        if(WiFiModule.ConnectServer("10.10.16.76",5000))
-        {
-            ALOG_INFO("Raspberry Server Connected");
-            
-        }
-        tryServerConnect = false;
-    }
 
     uint32_t currentTime = millis();
 
@@ -58,13 +49,47 @@ void loop()
         
         uint8_t humidity = Dht.GetHumidity();
         uint8_t temperature = Dht.GetTemperature();
-        ALOG_INFO("humi %ul, temp %ul",humidity, temperature);
-        if(WiFiModule.IsServerConnected())
-        {
-            WiFiModule.dhtSendToServer(&humidity,&temperature);
-        }
+        // if(WiFiModule.IsServerConnected())
+        // {
+        //     WiFiModule.dhtSendToServer(&humidity,&temperature);
+        // }
     }
 
+    if (interval5Sec.Elapsed(currentTime))
+    {
+        if (WiFiModule.IsConnected() && tryServerConnect)
+        {
+            ALOG_INFO("Raspberry Server try Connect");
+            if (WiFiModule.ConnectServer("10.10.16.76", 5000))
+            {
+                ALOG_INFO("Raspberry Server Connected");
+                tryServerConnect = false;
+
+                // 저장된 계정(member set)으로 로그인 요청
+                MemData member;
+                if (LoadData(DATA_ADDR_MEMBER, reinterpret_cast<uint8_t *>(&member), sizeof(member)))
+                {
+                    LoginResult result = WiFiModule.LoginToServer(member);
+                    memset(&member, 0, sizeof(member));
+
+                    if (result == LOGIN_SUCCESS)
+                    {
+                        ALOG_INFO("Login success");
+                    }
+                    else
+                    {
+                        ALOG_WARN("Login failed, result=", (int)result);
+                    }
+                }
+                else
+                {
+                    ALOG_WARN("No member saved, skip login");
+                }
+            }
+        }
+
+        // 5초마다 실행할 코드 작성
+    }
 }
 
 void setup()

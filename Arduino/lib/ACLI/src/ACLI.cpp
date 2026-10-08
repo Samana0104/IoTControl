@@ -2,6 +2,7 @@
 #include "ACmdSys.h"
 #include "ACmdGpio.h"
 #include "ACmdWiFi.h"
+#include "ACmdMember.h"
 
 #include <string.h>
 
@@ -9,6 +10,7 @@ const ACommand ACLI::commands[] = {
     {"sys", CmdSys},
     {"gpio", CmdGpio},
     {"wifi", CmdWiFi},
+    {"member", CmdMember},
 };
 
 const uint8_t ACLI::commandCount = sizeof(commands) / sizeof(commands[0]);
