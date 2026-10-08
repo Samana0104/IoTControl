@@ -10,7 +10,9 @@ int CheckPacketLength(uint16_t cmd, size_t length)
     switch(cmd)
     {
         case REQ_LOGIN: return length == MEM_DATA_SIZE ? 0 : -1;
-        case REQ_DHT_ALL: return length == 0 ? 0 : -1;
+        case REQ_DHT_ALL:
+        case REQ_FAN_QUERY: return length == 0 ? 0 : -1;
+        case ACK_FAN_QUERY: return length == FAN_QUERY_ACK_DATA_SIZE ? 0 : -1;
         case NFY_DHT_ROW: return length == DHT_ROW_DATA_SIZE ? 0 : -1;
         case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE ? 0 : -1;
         case REQ_BT_CONNECT: return length == BLUETOOTH_CONNECT_DATA_SIZE ? 0 : -1;
@@ -48,6 +50,28 @@ size_t MakeFanPacket(uint8_t *buffer, size_t size, const FanData *data)
 
     IoTPacketBegin(&writer, buffer, size, NFY_FAN);
     IoTPacketPushUint16(&writer, data->fanSpeed);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeFanQueryPacket(uint8_t *buffer, size_t size)
+{
+    IoTPacketWriter writer;
+
+    IoTPacketBegin(&writer, buffer, size, REQ_FAN_QUERY);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeFanQueryAckPacket(uint8_t *buffer, size_t size, const FanQueryAckData *data)
+{
+    IoTPacketWriter writer;
+
+    if(data == NULL)
+    {
+        return 0;
+    }
+    IoTPacketBegin(&writer, buffer, size, ACK_FAN_QUERY);
+    IoTPacketPushUint8(&writer, data->result);
+    IoTPacketPushUint16(&writer, data->fan.fanSpeed);
     return IoTPacketEnd(&writer);
 }
 
@@ -167,6 +191,20 @@ int ReadFanData(const uint8_t *payload, size_t length, FanData *data)
 
     IoTPacketOpen(&reader, payload, length);
     data->fanSpeed = IoTPacketPopUint16(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+int ReadFanQueryAckData(const uint8_t *payload, size_t length, FanQueryAckData *data)
+{
+    IoTPacketReader reader;
+
+    if(payload == NULL || data == NULL || length != FAN_QUERY_ACK_DATA_SIZE)
+    {
+        return -1;
+    }
+    IoTPacketOpen(&reader, payload, length);
+    data->result = IoTPacketPopUint8(&reader);
+    data->fan.fanSpeed = IoTPacketPopUint16(&reader);
     return IoTPacketCheckRead(&reader);
 }
 

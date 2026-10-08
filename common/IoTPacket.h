@@ -17,6 +17,7 @@ extern "C" {
    fixed-width and not guaranteed to be null-terminated. Do not use sizeof(struct). */
 #define DHT_DATA_SIZE 4
 #define FAN_DATA_SIZE 2
+#define FAN_QUERY_ACK_DATA_SIZE (RESULT_DATA_SIZE + FAN_DATA_SIZE)
 #define CON_DATA_SIZE 2
 #define MEM_DATA_SIZE (MEM_ID_SIZE + MEM_PW_SIZE)
 #define BLUETOOTH_REGISTER_DATA_SIZE (BLUETOOTH_MAC_SIZE + BLUETOOTH_PIN_SIZE)
@@ -54,6 +55,13 @@ typedef struct _FanData
 {
     uint16_t fanSpeed;
 } FanData;
+
+/* ACK_FAN_QUERY: fan is valid only when result == RESULT_SUCCESS. */
+typedef struct _FanQueryAckData
+{
+    uint8_t result;
+    FanData fan;
+} FanQueryAckData;
 
 typedef struct _ConData
 {
