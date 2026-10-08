@@ -2,5 +2,5 @@
 
 #include "RCommand.h"
 
-// bt <list|connect|scan|pair> ...
+// bt <list|connect|connectall|scan|pair> ...
 void RCmdBt(TCPServer *server, const char *args);
