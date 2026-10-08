@@ -1,7 +1,7 @@
-#include "Pserverdhtquery.h"
+#include "PServerDhtQuery.h"
 
 #include "IoTPacketCodec.h"
-#include "Pserverconnection.h"
+#include "PServerConnection.h"
 
 #include <QTimer>
 #include <algorithm>

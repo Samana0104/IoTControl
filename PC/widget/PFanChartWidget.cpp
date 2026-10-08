@@ -1,4 +1,4 @@
-#include "Pfanchartwidget.h"
+#include "PFanChartWidget.h"
 
 #include <QKeyEvent>
 #include <QMouseEvent>

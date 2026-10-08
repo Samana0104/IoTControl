@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Pdhtrecord.h"
+#include "PDhtRecord.h"
 
 #include <QByteArray>
 #include <QMap>

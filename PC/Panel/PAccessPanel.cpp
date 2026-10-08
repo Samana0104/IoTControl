@@ -1,8 +1,8 @@
-#include "Paccesspanel.h"
-#include "Pconnectioncanvas.h"
-#include "Pfeaturedetailswidget.h"
-#include "Pgamingtheme.h"
-#include "ui_Pmainwindow.h"
+#include "PAccessPanel.h"
+#include "PConnectionCanvas.h"
+#include "PFeatureDetailsWidget.h"
+#include "PGamingTheme.h"
+#include "ui_PMainWindow.h"
 
 #include <QEvent>
 #include <QGraphicsDropShadowEffect>

@@ -1,4 +1,4 @@
-#include "Pserverconnection.h"
+#include "PServerConnection.h"
 
 #include <QTcpSocket>
 #include <QTimer>

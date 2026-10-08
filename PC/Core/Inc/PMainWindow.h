@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Pdhtrecord.h"
-#include "Ploginresult.h"
+#include "PDhtRecord.h"
+#include "PLoginResult.h"
 
 #include <QByteArray>
 #include <QMainWindow>
@@ -18,6 +18,7 @@ class QTimer;
 class ServerConnection;
 class ServerLogin;
 class ServerDhtQuery;
+class ServerFanQuery;
 
 class MainWindow : public QMainWindow
 {
@@ -48,11 +49,15 @@ class MainWindow : public QMainWindow
     void HandleLoginResult(LoginResult result);
     void HandleLoginSuccess();
     void InitializeDhtControls();
-    void LoadAllDht();
+    void LoadAllDht(bool background = false);
     void HandleDhtLoaded(const DhtRecords &records);
     void HandleDhtQueryFailed(const QString &message);
     void RequestFieldDataUpdate(const QString &clientId);
     void HandleFieldDataUpdateResult(bool requested);
+    void InitializeFanControls();
+    void LoadFanSpeed();
+    void HandleFanLoaded(int percent);
+    void HandleFanQueryFailed(const QString &message);
 
     AccessPanel *accessPanel;
     QStackedWidget *pages;
@@ -61,8 +66,10 @@ class MainWindow : public QMainWindow
     ServerConnection *serverConnection;
     ServerLogin *serverLogin;
     ServerDhtQuery *serverDhtQuery;
+    ServerFanQuery *serverFanQuery;
     QTimer *dhtPollTimer;
     bool authenticated = false;
+    bool backgroundDhtQuery = false;
     QString serverHost;
     quint16 serverPort = 0;
 };

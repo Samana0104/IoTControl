@@ -1,8 +1,8 @@
-#include "Pdashboardpanel.h"
-#include "Pfanchartwidget.h"
-#include "Pfanrotorwidget.h"
-#include "Pgamingtheme.h"
-#include "ui_Pdashboard.h"
+#include "PDashboardPanel.h"
+#include "PFanChartWidget.h"
+#include "PFanRotorWidget.h"
+#include "PGamingTheme.h"
+#include "ui_PDashboard.h"
 
 #include <QFontMetrics>
 #include <QGraphicsOpacityEffect>
@@ -23,9 +23,13 @@ constexpr int CLIENT_UPDATE_COLUMN = 5;
 
 QString FormatMetricValue(const QString &finalText, qreal progress)
 {
+    bool numeric = false;
+    const double VALUE = finalText.toDouble(&numeric);
+    if (!numeric)
+        return finalText;
     const int DOT = finalText.indexOf(QLatin1Char('.'));
     const int DECIMALS = DOT < 0 ? 0 : finalText.size() - DOT - 1;
-    QString text = QString::number(finalText.toDouble() * progress, 'f', DECIMALS);
+    QString text = QString::number(VALUE * progress, 'f', DECIMALS);
     if (DOT < 0 && finalText.startsWith(QLatin1Char('0')))
         text = text.rightJustified(finalText.size(), QLatin1Char('0'));
     return text;
@@ -114,12 +118,7 @@ void DashboardPanel::SetClients(const QList<QStringList> &rows)
 {
     ui->clientsTable->clearContents();
     ui->clientsTable->setRowCount(static_cast<int>(rows.size()));
-    ui->clientValue->setText(QString::number(rows.size()).rightJustified(2, QLatin1Char('0')));
-    for (int index = 0; index < metricLabels.size(); ++index)
-    {
-        if (metricLabels[index] == ui->clientValue)
-            metricFinalText[index] = ui->clientValue->text();
-    }
+    SetMetricValue(ui->clientValue, QString::number(rows.size()).rightJustified(2, QLatin1Char('0')));
     ui->clientsTable->verticalHeader()->hide();
     ui->clientsTable->verticalHeader()->setDefaultSectionSize(39);
     ui->clientsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -151,14 +150,32 @@ void DashboardPanel::SetClients(const QList<QStringList> &rows)
     }
 }
 
+void DashboardPanel::SetMetricValue(QLabel *label, const QString &text)
+{
+    label->setText(text);
+    for (int index = 0; index < metricLabels.size(); ++index)
+    {
+        if (metricLabels[index] == label)
+            metricFinalText[index] = text;
+    }
+}
+
 void DashboardPanel::DisplayDhtClients(const QList<QStringList> &rows)
 {
     if (entranceAnimation)
         entranceAnimation->stop();
     FinishEntrance();
     SetClients(rows);
-    ui->clientTag->setText(tr("dht 전체 조회 · %1건").arg(rows.size()));
+    ui->clientTag->setText(tr("DHT 데이터 보유 · %1대").arg(rows.size()));
     ui->clientsSubtitle->setText(tr("서버 DB 조회 결과 · dht %1건").arg(rows.size()));
+}
+
+void DashboardPanel::DisplayCurrentDht(const QString &temperature, const QString &humidity, const QString &source)
+{
+    SetMetricValue(ui->temperatureValue, temperature);
+    SetMetricValue(ui->humidityValue, humidity);
+    ui->temperatureTag->setText(source);
+    ui->humidityTag->setText(source);
 }
 
 void DashboardPanel::SetDhtLoading(bool loading, bool collecting)
@@ -173,6 +190,20 @@ void DashboardPanel::ResetDhtLabels()
 {
     ui->clientTag->setText(tr("STM32 / Arduino · 샘플"));
     ui->clientsSubtitle->setText(tr("DB 조회 결과 · 샘플 데이터"));
+}
+
+void DashboardPanel::DisplayFanSpeed(int percent, bool sample)
+{
+    SetMetricValue(ui->fanValue, QString::number(percent));
+    ui->fanTag->setText(sample ? tr("단일 팬 · DB 측정값 샘플") : tr("단일 팬 · 서버 DB 조회"));
+    ui->fanTag->setToolTip(QString());
+}
+
+void DashboardPanel::SetFanStatus(const QString &status, const QString &detail)
+{
+    SetMetricValue(ui->fanValue, QStringLiteral("—"));
+    ui->fanTag->setText(status);
+    ui->fanTag->setToolTip(detail);
 }
 
 void DashboardPanel::SetServerEndpoint(const QString &host, int port)

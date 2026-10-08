@@ -1,8 +1,8 @@
-#include "Pmainwindow.h"
+#include "PMainWindow.h"
 
-#include "Paccesspanel.h"
-#include "Pdashboardwidget.h"
-#include "Pserverconnection.h"
+#include "PAccessPanel.h"
+#include "PDashboardWidget.h"
+#include "PServerConnection.h"
 
 void MainWindow::InitializeServerControls()
 {

@@ -1,7 +1,7 @@
-#include "Pdashboardwidget.h"
+#include "PDashboardWidget.h"
 
-#include "Pbluetoothdialog.h"
-#include "Pdashboardpanel.h"
+#include "PBluetoothDialog.h"
+#include "PDashboardPanel.h"
 
 #include <QList>
 #include <QStringList>
@@ -33,9 +33,10 @@ void DashboardWidget::PopulateSampleClients()
 {
     const QList<QStringList> ROWS = {{QStringLiteral("STM32-01"), QStringLiteral("STM32"), QStringLiteral("26.4 °C"), QStringLiteral("58.2 %"), QStringLiteral("09:10 · 샘플")}, {QStringLiteral("ARDUINO-01"), QStringLiteral("Arduino"), QStringLiteral("25.8 °C"), QStringLiteral("61.0 %"), QStringLiteral("09:10 · 샘플")}};
     panel->SetClients(ROWS);
+    panel->DisplayCurrentDht(QStringLiteral("26.4"), QStringLiteral("58.2"), tr("STM32-01 · 샘플"));
 }
 
-void DashboardWidget::DisplayDhtRecords(const DhtRecords &records)
+void DashboardWidget::DisplayDhtRecords(const DhtRecords &records, bool showFeedback)
 {
     QList<QStringList> rows;
     rows.reserve(records.size());
@@ -44,17 +45,33 @@ void DashboardWidget::DisplayDhtRecords(const DhtRecords &records)
         rows.append({RECORD.id, RECORD.memberType.isEmpty() ? QStringLiteral("—") : RECORD.memberType, tr("%1 °C").arg(RECORD.temp, 0, 'f', 1), tr("%1 %").arg(RECORD.humi, 0, 'f', 1), RECORD.updatedAt.isValid() ? RECORD.updatedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")) : QStringLiteral("—")});
     }
     panel->DisplayDhtClients(rows);
-    panel->SetFeedback(tr("dht 전체 조회 완료: %1건").arg(records.size()));
+    if (records.isEmpty())
+        panel->DisplayCurrentDht(QStringLiteral("—"), QStringLiteral("—"), tr("DHT 데이터 없음"));
+    else
+    {
+        // 상단 현재 온도·습도는 클라이언트 목록 첫 번째 기기의 최신 측정값입니다.
+        const DhtRecord &RECORD = records.first();
+        panel->DisplayCurrentDht(QString::number(RECORD.temp, 'f', 1), QString::number(RECORD.humi, 'f', 1), tr("1번 · %1").arg(RECORD.id));
+    }
+    if (showFeedback)
+        panel->SetFeedback(tr("dht 전체 조회 완료: %1건").arg(records.size()));
 }
 
 void DashboardWidget::SetDataFeedback(const QString &message) { panel->SetFeedback(message); }
 
 void DashboardWidget::SetDhtLoading(bool loading, bool collecting) { panel->SetDhtLoading(loading, collecting); }
 
+void DashboardWidget::DisplayFanSpeed(int percent) { panel->DisplayFanSpeed(percent); }
+
+void DashboardWidget::SetFanLoading() { panel->SetFanStatus(tr("팬 속도 조회 중…")); }
+
+void DashboardWidget::SetFanError(const QString &message) { panel->SetFanStatus(tr("팬 조회 실패"), message); }
+
 void DashboardWidget::ResetDhtView()
 {
     PopulateSampleClients();
     panel->ResetDhtLabels();
+    panel->DisplayFanSpeed(65, true);
     panel->SetFeedback(QString());
 }
 
@@ -64,9 +81,7 @@ void DashboardWidget::ApplyFanPreview()
 {
     const int PERCENT = panel->ReadTarget() < MIN_FAN_PERCENT ? 0 : panel->ReadTarget();
     panel->SetTarget(PERCENT);
-    panel->SetFeedback(tr("미리보기 목표 팬 속도: %1%. DB 측정값은 샘플 65%로 유지되며 실제 "
-                          "장치에는 명령을 전송하지 않습니다.")
-                           .arg(PERCENT));
+    panel->SetFeedback(tr("미리보기 목표 팬 속도: %1%. 실제 장치에는 명령을 전송하지 않습니다.").arg(PERCENT));
 }
 
 void DashboardWidget::RequestDhtReload() { emit ReloadDhtRequested(); }

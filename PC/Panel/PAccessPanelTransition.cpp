@@ -1,6 +1,6 @@
-#include "Paccesspanel.h"
+#include "PAccessPanel.h"
 
-#include "ui_Pmainwindow.h"
+#include "ui_PMainWindow.h"
 
 #include <QLayout>
 #include <QMainWindow>

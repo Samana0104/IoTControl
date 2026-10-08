@@ -31,8 +31,11 @@ class DashboardPanel final : public QObject
     void SetFeedback(const QString &message);
     void SetClients(const QList<QStringList> &rows);
     void DisplayDhtClients(const QList<QStringList> &rows);
+    void DisplayCurrentDht(const QString &temperature, const QString &humidity, const QString &source);
     void SetDhtLoading(bool loading, bool collecting = false);
     void ResetDhtLabels();
+    void DisplayFanSpeed(int percent, bool sample = false);
+    void SetFanStatus(const QString &status, const QString &detail = QString());
 
   signals:
     void ReturnToLogin();
@@ -52,6 +55,7 @@ class DashboardPanel final : public QObject
     void SelectSection(QPushButton *navigation);
     void PlayEntrance();
     void FinishEntrance();
+    void SetMetricValue(QLabel *label, const QString &text);
 
     QWidget *host;
     Ui::DashboardWidget *ui;

@@ -1,6 +1,6 @@
-#include "Pbluetoothpanel.h"
-#include "Pgamingtheme.h"
-#include "ui_Pbluetoothdialog.h"
+#include "PBluetoothPanel.h"
+#include "PGamingTheme.h"
+#include "ui_PBluetoothDialog.h"
 
 #include <QDialog>
 #include <QStyle>

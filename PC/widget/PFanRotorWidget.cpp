@@ -1,4 +1,4 @@
-#include "Pfanrotorwidget.h"
+#include "PFanRotorWidget.h"
 
 #include <QEvent>
 #include <QPainter>

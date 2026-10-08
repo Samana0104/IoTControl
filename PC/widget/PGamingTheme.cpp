@@ -1,4 +1,4 @@
-#include "Pgamingtheme.h"
+#include "PGamingTheme.h"
 
 #include <QEvent>
 #include <QPainter>

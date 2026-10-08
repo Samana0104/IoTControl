@@ -1,4 +1,4 @@
-#include "Pconnectioncanvas.h"
+#include "PConnectionCanvas.h"
 
 #include <QEvent>
 #include <QPainter>

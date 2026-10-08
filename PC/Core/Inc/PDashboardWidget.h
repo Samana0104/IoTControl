@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Pdhtrecord.h"
+#include "PDhtRecord.h"
 
 #include <QString>
 #include <QWidget>
@@ -15,9 +15,12 @@ class DashboardWidget final : public QWidget
     explicit DashboardWidget(QWidget *parent = nullptr);
     ~DashboardWidget() override;
     void SetServerEndpoint(const QString &host, int port);
-    void DisplayDhtRecords(const DhtRecords &records);
+    void DisplayDhtRecords(const DhtRecords &records, bool showFeedback = true);
     void SetDataFeedback(const QString &message);
     void SetDhtLoading(bool loading, bool collecting = false);
+    void DisplayFanSpeed(int percent);
+    void SetFanLoading();
+    void SetFanError(const QString &message);
     void ResetDhtView();
 
   signals:

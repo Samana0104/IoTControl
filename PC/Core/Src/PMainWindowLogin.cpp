@@ -1,10 +1,10 @@
-#include "Pmainwindow.h"
+#include "PMainWindow.h"
 
 #include "IoTPacket.h"
-#include "Paccesspanel.h"
-#include "Pdashboardwidget.h"
-#include "Pserverconnection.h"
-#include "Pserverlogin.h"
+#include "PAccessPanel.h"
+#include "PDashboardWidget.h"
+#include "PServerConnection.h"
+#include "PServerLogin.h"
 
 #include <QSettings>
 #include <QTimer>
@@ -138,6 +138,7 @@ void MainWindow::HandleLoginSuccess()
     authenticated = true;
     ShowDashboard();
     dashboard->DisplayDhtRecords({});
+    LoadFanSpeed();
     LoadAllDht();
     if (authenticated && serverConnection->IsConnected())
         dhtPollTimer->start();

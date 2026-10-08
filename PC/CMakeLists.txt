@@ -10,56 +10,59 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
 set(PC_UI_SOURCES
-    Core/Src/Pmainwindow.cpp
-    Core/Src/Pmainwindowserver.cpp
-    Core/Src/Pmainwindowlogin.cpp
-    Core/Src/Pserverconnection.cpp
-    Core/Inc/Pserverconnection.h
-    Core/Src/Pserverlogin.cpp
-    Core/Inc/Pserverlogin.h
-    Core/Inc/Ploginresult.h
-    Core/Inc/Pdhtrecord.h
-    Core/Src/Pserverdhtquery.cpp
-    Core/Inc/Pserverdhtquery.h
-    Core/Src/Pmainwindowdata.cpp
-    Panel/Paccesspaneltransition.cpp
-    Panel/Paccesspanel.cpp
-    Panel/Paccesspanel.h
-    Panel/Pdashboardpanel.cpp
-    Panel/Pdashboardpanel.h
-    Panel/Pbluetoothpanel.cpp
-    Panel/Pbluetoothpanel.h
-    widget/Pconnectioncanvas.cpp
-    widget/Pfeaturedetailswidget.cpp
-    Core/Src/Pdashboardwidget.cpp
-    widget/Pfanchartwidget.cpp
-    widget/Pfanrotorwidget.cpp
-    Core/Src/Pbluetoothdialog.cpp
-    widget/Pgamingtheme.cpp
-    Core/Inc/Pmainwindow.h
-    widget/Pconnectioncanvas.h
-    widget/Pfeaturedetailswidget.h
-    Core/Inc/Pdashboardwidget.h
-    widget/Pfanchartwidget.h
-    widget/Pfanrotorwidget.h
-    Core/Inc/Pbluetoothdialog.h
-    widget/Pgamingtheme.h
-    screens/Pmainwindow.ui
-    screens/Pdashboard.ui
-    screens/Pbluetoothdialog.ui
+    Core/Src/PMainWindow.cpp
+    Core/Src/PMainWindowServer.cpp
+    Core/Src/PMainWindowLogin.cpp
+    Core/Src/PServerConnection.cpp
+    Core/Inc/PServerConnection.h
+    Core/Src/PServerLogin.cpp
+    Core/Inc/PServerLogin.h
+    Core/Inc/PLoginResult.h
+    Core/Inc/PDhtRecord.h
+    Core/Src/PServerDhtQuery.cpp
+    Core/Inc/PServerDhtQuery.h
+    Core/Src/PServerFanQuery.cpp
+    Core/Inc/PServerFanQuery.h
+    Core/Src/PMainWindowFan.cpp
+    Core/Src/PMainWindowData.cpp
+    Panel/PAccessPanelTransition.cpp
+    Panel/PAccessPanel.cpp
+    Panel/PAccessPanel.h
+    Panel/PDashboardPanel.cpp
+    Panel/PDashboardPanel.h
+    Panel/PBluetoothPanel.cpp
+    Panel/PBluetoothPanel.h
+    widget/PConnectionCanvas.cpp
+    widget/PFeatureDetailsWidget.cpp
+    Core/Src/PDashboardWidget.cpp
+    widget/PFanChartWidget.cpp
+    widget/PFanRotorWidget.cpp
+    Core/Src/PBluetoothDialog.cpp
+    widget/PGamingTheme.cpp
+    Core/Inc/PMainWindow.h
+    widget/PConnectionCanvas.h
+    widget/PFeatureDetailsWidget.h
+    Core/Inc/PDashboardWidget.h
+    widget/PFanChartWidget.h
+    widget/PFanRotorWidget.h
+    Core/Inc/PBluetoothDialog.h
+    widget/PGamingTheme.h
+    screens/PMainWindow.ui
+    screens/PDashboard.ui
+    screens/PBluetoothDialog.ui
     ../common/IoTPacketCodec.c
     ../common/IoTPacketStream.c
 )
 
-qt_add_executable(IoTControl_PC Core/Src/Pmain.cpp ${PC_UI_SOURCES})
+qt_add_executable(IoTControl_PC Core/Src/PMain.cpp ${PC_UI_SOURCES})
 
 # UI 문구/레이아웃 변경도 해당 Panel 구현을 다시 컴파일합니다.
-set_source_files_properties(Panel/Paccesspanel.cpp Panel/Paccesspaneltransition.cpp
-    PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/screens/Pmainwindow.ui")
-set_source_files_properties(Panel/Pdashboardpanel.cpp
-    PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/screens/Pdashboard.ui")
-set_source_files_properties(Panel/Pbluetoothpanel.cpp
-    PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/screens/Pbluetoothdialog.ui")
+set_source_files_properties(Panel/PAccessPanel.cpp Panel/PAccessPanelTransition.cpp
+    PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/screens/PMainWindow.ui")
+set_source_files_properties(Panel/PDashboardPanel.cpp
+    PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/screens/PDashboard.ui")
+set_source_files_properties(Panel/PBluetoothPanel.cpp
+    PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/screens/PBluetoothDialog.ui")
 
 target_include_directories(IoTControl_PC PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
@@ -74,7 +77,7 @@ if(IOT_BUILD_TESTS)
     find_package(Qt6 REQUIRED COMPONENTS Test)
     enable_testing()
     qt_add_executable(server_connection_tests
-        tests/Pserverconnectiontest.cpp
+        tests/PServerConnectionTest.cpp
         ${PC_UI_SOURCES}
     )
     target_include_directories(server_connection_tests PRIVATE
@@ -90,7 +93,7 @@ if(IOT_BUILD_TESTS)
     add_test(NAME server_connection_tests COMMAND server_connection_tests -o -,txt)
 
     qt_add_executable(server_login_tests
-        tests/Pserverlogintest.cpp
+        tests/PServerLoginTest.cpp
         ${PC_UI_SOURCES}
     )
     target_include_directories(server_login_tests PRIVATE
@@ -106,9 +109,10 @@ if(IOT_BUILD_TESTS)
     add_test(NAME server_login_tests COMMAND server_login_tests -o -,txt)
 
     find_package(Qt6 REQUIRED COMPONENTS Sql)
-    qt_add_executable(dht_query_tests tests/Pdhtquerytest.cpp ${PC_UI_SOURCES} ../Raspberry5/Packet/Src/RPacketDhtQuery.c ../Raspberry5/Packet/Src/RPacketDht.c)
+    qt_add_executable(dht_query_tests tests/PDhtQueryTest.cpp ${PC_UI_SOURCES} examples/PFanQueryServerExample.c ../Raspberry5/Packet/Src/RPacketDhtQuery.c ../Raspberry5/Packet/Src/RPacketDht.c)
     target_include_directories(dht_query_tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/serverstub"
+        "${CMAKE_CURRENT_SOURCE_DIR}/examples"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
         "${CMAKE_CURRENT_SOURCE_DIR}/Panel"
         "${CMAKE_CURRENT_SOURCE_DIR}/widget"

@@ -1,4 +1,4 @@
-#include "Pfeaturedetailswidget.h"
+#include "PFeatureDetailsWidget.h"
 
 #include <QEvent>
 #include <QKeyEvent>

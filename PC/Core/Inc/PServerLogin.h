@@ -1,7 +1,7 @@
 #pragma once
 
 #include "IoTPacket.h"
-#include "Ploginresult.h"
+#include "PLoginResult.h"
 
 #include <QByteArray>
 #include <QObject>
