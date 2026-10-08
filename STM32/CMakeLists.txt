@@ -65,13 +65,20 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/../common
 )
 
-# 펌웨어 버전: 업데이트할 때마다 올림 (cmake -DFIRMWARE_VERSION=2 또는 CMakePresets)
-set(FIRMWARE_VERSION 1 CACHE STRING "Application firmware version stored in FirmwareInfo")
+# 펌웨어 버전은 IoTControl/Common/SDefine.h의 FIRMWARE_VERSION (.bin 파일 이름용으로 여기서 읽음)
+# SDefine.h가 바뀌면 다시 configure해서 이름도 따라 바뀜
+set(FIRMWARE_DEFINE_FILE ${CMAKE_SOURCE_DIR}/IoTControl/Common/SDefine.h)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FIRMWARE_DEFINE_FILE})
+file(STRINGS ${FIRMWARE_DEFINE_FILE} FIRMWARE_VERSION_LINE REGEX "^#define FIRMWARE_VERSION ")
+string(REGEX MATCH "[0-9]+" FIRMWARE_VERSION "${FIRMWARE_VERSION_LINE}")
+if(NOT FIRMWARE_VERSION)
+    message(FATAL_ERROR "FIRMWARE_VERSION not found in ${FIRMWARE_DEFINE_FILE}")
+endif()
+message("Firmware version: ${FIRMWARE_VERSION}")
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
-    FIRMWARE_VERSION=${FIRMWARE_VERSION}U
     # 앱은 부트로더 뒤 0x08004000 (common/IoTFirmware.h의 FIRMWARE_APP_ADDRESS)에서 실행
     USER_VECT_TAB_ADDRESS
     VECT_TAB_OFFSET=0x00004000U

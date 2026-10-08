@@ -2,6 +2,7 @@
 #include "SIotProtocol.h"
 #include "SLog.h"
 #include "IoTPacketCodec.h"
+#include "SDefine.h"
 
 #include <stddef.h>
 

@@ -1,5 +1,9 @@
 #pragma once
 
+// 펌웨어 버전: OTA로 배포할 때마다 올림 (서버 fw list/push, 부팅 로그, 빌드 결과 IoTControl-v<버전>.bin)
+// CMakeLists.txt가 이 줄에서 숫자를 읽으므로 형식(#define FIRMWARE_VERSION 숫자U)을 유지할 것
+#define FIRMWARE_VERSION 1U
+
 // 디버그 빌드 (릴리즈에서는 주석 처리)
 #define DEBUG_BUILD
 
