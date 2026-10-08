@@ -34,6 +34,7 @@ int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size
         case REQ_DHT_ALL: return RPacketDhtAllReceive(session, payload, length);
         case REQ_BT_REGISTER: return RPacketBtRegisterReceive(session, payload, length);
         case REQ_BT_CONNECT: return RPacketBtConnectReceive(session, payload, length);
+        case REQ_DHT_COLLECT: return RPacketDhtCollectReceive(session, payload, length);
         case NFY_CHAT:
             RLOG_INFO("[%s] %.*s", session->label, (int)length, (const char *)payload);
             return 0;
@@ -41,6 +42,7 @@ int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size
         case NFY_FAN: return RPacketFanReceive(session, payload, length);
         case NFY_CON: return RPacketConReceive(session, payload, length);
         case ACK_FAN: return RPacketFanReceiveAck(session, payload, length);
+        case ACK_DHT: return RPacketDhtReceiveAck(session, payload, length);
         default:
             RLOG_WARN("Unsupported command from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
             return -1;
@@ -76,7 +78,7 @@ static int ValidatePacketPermission(RSession *session, uint16_t cmd)
     if(session->type == SESSION_BLUETOOTH)
     {
         // BT 링크는 이미 등록된 회원/MAC에 묶여 있으므로 관리 명령을 받지 않음
-        if(cmd == REQ_LOGIN || cmd == REQ_BT_REGISTER || cmd == REQ_BT_CONNECT || cmd == REQ_DHT_ALL)
+        if(cmd == REQ_LOGIN || cmd == REQ_BT_REGISTER || cmd == REQ_BT_CONNECT || cmd == REQ_DHT_ALL || cmd == REQ_DHT_COLLECT)
         {
             RLOG_WARN("Management command not allowed from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
             return -1;
@@ -88,8 +90,8 @@ static int ValidatePacketPermission(RSession *session, uint16_t cmd)
         RLOG_WARN("Unauthenticated command from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
         return -1;
     }
-    // 서버는 TCP 클라이언트에 REQ를 보내지 않으므로 ACK가 올 이유가 없음
-    if(IS_ACK(cmd))
+    // 서버가 TCP 클라이언트에 보내는 REQ는 REQ_DHT뿐 (Wi-Fi 장치)
+    if(IS_ACK(cmd) && cmd != ACK_DHT)
     {
         RLOG_WARN("Unexpected ACK from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
         return -1;

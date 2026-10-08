@@ -22,6 +22,7 @@ extern "C" {
 #define BLUETOOTH_REGISTER_DATA_SIZE (BLUETOOTH_MAC_SIZE + BLUETOOTH_PIN_SIZE)
 #define BLUETOOTH_CONNECT_DATA_SIZE (MEM_ID_SIZE + MEM_PW_SIZE + BLUETOOTH_MAC_SIZE)
 #define RESULT_DATA_SIZE 1
+#define DHT_ACK_DATA_SIZE (RESULT_DATA_SIZE + DHT_DATA_SIZE)
 /* NFY_CHAT text limit, kept small for 8-bit devices. */
 #define MAX_CHAT_SIZE 255
 
@@ -87,6 +88,13 @@ typedef struct _ResultData
 {
     uint8_t result; /* RESULT_SUCCESS or RESULT_FAIL */
 } ResultData;
+
+/* ACK_DHT payload. dht is valid only when result == RESULT_SUCCESS. */
+typedef struct _DhtAckData
+{
+    uint8_t result;
+    DhtData dht;
+} DhtAckData;
 
 #ifdef __cplusplus
 }

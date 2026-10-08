@@ -41,11 +41,45 @@ static void HandleFanControl(const uint8_t *data, uint16_t length)
     SIotProtocolSendPacket(ACK_FAN, &result, RESULT_DATA_SIZE);
 }
 
+// 서버 → 장치 REQ_DHT: 마지막으로 성공한 측정값을 ACK_DHT로 응답 (0.1 단위 → 정수 단위)
+// 마지막 읽기가 실패했거나 아직 값이 없으면 RESULT_FAIL
+static void HandleDhtRequest(void)
+{
+    DhtAckData ack = {0};
+    uint8_t payload[DHT_ACK_DATA_SIZE];
+    int16_t temperature = SDhtGetTemperature();
+
+    ack.result = RESULT_FAIL;
+    if (SDhtHasData() && SDhtGetStatus() == SDHT_STATUS_OK && temperature >= 0)
+    {
+        ack.result = RESULT_SUCCESS;
+        ack.dht.temp = (uint16_t)(temperature / 10);
+        ack.dht.humi = (uint16_t)(SDhtGetHumidity() / 10);
+        SLOG_INFO("bt dht request: temp=%u, humi=%u", (unsigned int)ack.dht.temp, (unsigned int)ack.dht.humi);
+    }
+    else
+    {
+        SLOG_WARN("bt dht request: no valid reading, status=%d", (int)SDhtGetStatus());
+    }
+
+    // SIotProtocolSendPacket은 payload 바이트를 받으므로 와이어 형식(little-endian)으로 직렬화
+    payload[0] = ack.result;
+    payload[1] = (uint8_t)(ack.dht.temp & 0xFF);
+    payload[2] = (uint8_t)(ack.dht.temp >> 8);
+    payload[3] = (uint8_t)(ack.dht.humi & 0xFF);
+    payload[4] = (uint8_t)(ack.dht.humi >> 8);
+    SIotProtocolSendPacket(ACK_DHT, payload, DHT_ACK_DATA_SIZE);
+}
+
 static void HandleBluetoothPacket(uint16_t cmd, const uint8_t *data, uint16_t length)
 {
     if (cmd == REQ_FAN)
     {
         HandleFanControl(data, length);
+    }
+    else if (cmd == REQ_DHT)
+    {
+        HandleDhtRequest();
     }
     else if (cmd == NFY_CHAT)
     {

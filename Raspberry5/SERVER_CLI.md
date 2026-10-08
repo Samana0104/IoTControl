@@ -31,6 +31,9 @@ iot-server> server sessions
 - `server sessions`: TCP 클라이언트와 BT 장치 세션을 함께 조회 (FD, 종류, IP/MAC, 회원 ID, 인증 상태). FD는 `fan set`에 사용
 - `bt list`: 현재 연결된 BT 세션의 FD, 회원 ID, MAC 조회
 - `bt connect <회원ID>`: DB에 등록된 해당 회원의 Bluetooth MAC으로 연결 또는 재연결, 성공하면 세션 FD 표시
+- `bt scan [이름]`: 근처 클래식 BT 장치를 10초 동안 검색해 MAC, RSSI, 페어링 여부, 이름 표시. 이름을 주면 대소문자 무시 부분 일치로 거름 (예: `bt scan hc`). 서버 시작 전에도 사용 가능하며 검색하는 동안 CLI가 멈춤
+- `bt pair <회원ID> <MAC> <PIN>`: HC-05를 PIN으로 페어링하고 `bluetooth` 테이블에 회원 ID-MAC을 등록한 뒤 연결. 회원이 없거나, 이미 HC-05가 등록된 회원이거나, 다른 회원에 등록된 MAC이면 거부
+- `dht collect`: 연결된 모든 장치에 `REQ_DHT`를 보내 DHT 값을 받아 DB에 기록 (PC의 `REQ_DHT_COLLECT`와 같음)
 - `fan set <FD> <0..100>`: 해당 FD 세션의 장치에 팬 속도(%) 요청 (`REQ_FAN`). 장치의 `ACK_FAN` 결과는 서버 로그에 표시
 - `member add <ID> <비밀번호> <stm32|arduino|pc>`: 회원가입. 서버가 비밀번호를 argon2(libsodium)로 해시해 `member` 테이블에 저장합니다. ID는 1..8바이트, 비밀번호는 공백 없이 입력합니다. 이미 있는 ID는 거부합니다.
 - `member list`: 등록된 회원 ID와 타입 조회
@@ -67,14 +70,14 @@ DB 조회나 BT 연결·페어링이 진행 중이라면 해당 작업이 끝나
 서버 콘솔에는 DB 명령이 없습니다. 데이터 조회·수정은 MySQL Workbench 등 DB 도구를 사용합니다.
 서버 코드가 쓰는 쿼리는 `Database/Inc/RDatabaseQuery.h`에 모여 있습니다.
 
-## 센서 수신 시 DB UPDATE
+## 센서 수신 시 DB 기록
 
-`RPacketDhtReceive` / `RPacketFanReceive` / `RPacketConReceive`는 정상 패킷을 받은 뒤 DB UPDATE를 실행합니다.
+`RPacketDhtReceive` / `RPacketFanReceive` / `RPacketConReceive`는 정상 패킷을 받은 뒤 DB에 기록합니다. DHT는 INSERT(측정마다 한 행), FAN/CON은 UPDATE입니다.
 TCP/WiFi와 Bluetooth 모두 기존 공용 수신 경로를 사용하며, 패킷 형식은 바꾸지 않았습니다.
-각 함수가 `Database/Inc/RDatabaseQuery.h`의 `QUERY_UPDATE_DHT` / `QUERY_UPDATE_FAN` / `QUERY_UPDATE_CON`을 `ExecuteDatabaseQuery()`로 바로 실행합니다. 실패하면 MySQL 오류 메시지와 쿼리가 로그에 남습니다.
+각 함수가 `Database/Inc/RDatabaseQuery.h`의 `QUERY_INSERT_DHT` / `QUERY_UPDATE_FAN` / `QUERY_UPDATE_CON`을 `ExecuteDatabaseQuery()`로 바로 실행합니다. 실패하면 MySQL 오류 메시지와 쿼리가 로그에 남습니다.
 
 ```sql
-UPDATE dht SET temp = ?, humi = ? WHERE id = ?;
+INSERT INTO dht(id, temp, humi) VALUES(?, ?, ?);
 UPDATE fan SET speed = ? WHERE singleton_id = 1;
 UPDATE con SET temp = ? WHERE singleton_id = 1;
 ```
@@ -83,11 +86,11 @@ DHT의 ID는 패킷에 추가하지 않고 TCP 세션의 인증된 회원 ID 또
 숫자와 ID는 prepared statement로 바인딩하며, 수신한 uint16_t 값을 그대로 저장합니다. 별도 소수점 배율 변환은 하지 않습니다.
 FAN/CON은 공용 단일 행이므로 여러 장치가 보내면 마지막으로 성공한 UPDATE 값이 남습니다.
 
-INSERT 또는 upsert는 하지 않습니다. `dht`의 해당 ID 행과 `fan` / `con`의 `singleton_id=1` 행을 미리 준비해야 합니다.
-변경 행 수는 `DB UPDATE: ... affected=N` 로그로 확인합니다. `affected=0`은 값이 같거나 대상 행이 없는 경우입니다.
-각 호출은 별도 DB 연결을 사용하며 autocommit으로 반영합니다. DB 계정에는 각 테이블에 대한 UPDATE 권한이 필요합니다.
+`dht`는 회원 ID만 `member`에 있으면 행이 자동으로 쌓입니다. `fan` / `con`은 `singleton_id=1` 행을 미리 준비해야 합니다.
+DHT는 `DHT DB INSERT: ... inserted=1`, FAN/CON은 `DB UPDATE: ... affected=N` 로그로 확인합니다. `affected=0`은 값이 같거나 대상 행이 없는 경우입니다.
+각 호출은 별도 DB 연결을 사용하며 autocommit으로 반영합니다. DB 계정에는 `dht` INSERT 권한과 `fan` / `con` UPDATE 권한이 필요합니다.
 DB 오류는 로그로 남기고 TCP/BT 연결을 유지합니다. 오류 데이터에 대한 자동 재시도·저장 큐나 클라이언트 저장 완료 응답은 추가하지 않았습니다.
-`dht.created_at`은 행을 추가할 때의 시각(`DEFAULT CURRENT_TIMESTAMP`)이며, UPDATE로 값을 바꿔도 갱신되지 않습니다.
+`dht.created_at`은 행을 추가한 시각(`DEFAULT CURRENT_TIMESTAMP`)이라 측정 시각으로 쓸 수 있습니다.
 
 ## 클라이언트 DHT 송신
 
@@ -112,10 +115,12 @@ REQ = ID (ACK 필요), ACK = ID | 0x8000 (페이로드 첫 바이트 = 결과), 
 | 0x0001 | `REQ_LOGIN` (0x0001): id, pw | `ACK_LOGIN` (0x8001), 실패 시 ACK 후 연결 종료 |
 | 0x0002 | `NFY_CHAT` (0x4002): 텍스트 0~255바이트 | 없음 |
 | 0x0003 | `NFY_DHT` (0x4003) | 없음 |
+| 0x0003 | `REQ_DHT` (0x0003): 서버 → 장치, 페이로드 없음 | `ACK_DHT` (0x8003): result + temp + humi (5바이트) |
 | 0x0004 | `NFY_FAN` (0x4004) | 없음 |
 | 0x0005 | `NFY_CON` (0x4005) | 없음 |
 | 0x0006 | `REQ_BT_REGISTER` (0x0006): mac, pin | `ACK_BT_REGISTER` (0x8006), 실패 시 ACK 후 연결 종료 |
 | 0x0007 | `REQ_BT_CONNECT` (0x0007): id, pw, mac | `ACK_BT_CONNECT` (0x8007) |
+| 0x0009 | `REQ_DHT_COLLECT` (0x0009): 로그인 후, 페이로드 없음 | `ACK_DHT_COLLECT` (0x8009), 장치 1개 이상에 보냈으면 성공 |
 
 헤더를 받은 뒤 5초 안에 페이로드가 오지 않거나, cmd·길이·권한·CRC가 맞지 않으면 서버는 연결을 끊습니다.
 
@@ -124,11 +129,26 @@ REQ = ID (ACK 필요), ACK = ID | 0x8000 (페이로드 첫 바이트 = 결과), 
 
 ```text
 클라이언트 → 서버: cmd=NFY_DHT (0x4003) | length=4 | reserved=0 | crc16 | temp=10 (u16) + humi=10 (u16)
-서버:              CRC 확인 → 인증된 회원 ID의 dht 행 UPDATE (응답 없음)
+서버:              CRC 확인 → 인증된 회원 ID로 dht 행 INSERT (응답 없음)
 ```
 
-`NFY_DHT`에는 응답이 없습니다. 서버의 `DHT DB UPDATE: id=test, affected=N` 로그나 MySQL Workbench에서 실제 값을 확인합니다.
-해당 ID의 `dht` 행은 미리 존재해야 합니다.
+`NFY_DHT`에는 응답이 없습니다. 서버의 `DHT DB INSERT: id=test, inserted=1` 로그나 MySQL Workbench에서 실제 값을 확인합니다.
+
+## DHT 일괄 수집 (PC 요청)
+
+PC가 `MakeDhtCollectPacket()`으로 `REQ_DHT_COLLECT`를 보내면 서버가 모든 장치에 `REQ_DHT`를 보냅니다.
+대상은 BT 세션 전부와, 로그인한 회원의 `member.type`이 `PC`가 아닌 TCP 세션입니다(요청한 PC는 제외).
+
+```text
+PC     → 서버: REQ_DHT_COLLECT (0x0009), length=0
+서버   → PC:   ACK_DHT_COLLECT (0x8009), result (보낸 장치가 없으면 RESULT_FAIL)
+서버   → 장치: REQ_DHT (0x0003), length=0
+장치   → 서버: ACK_DHT (0x8003), result(u8) + temp(u16, ℃) + humi(u16, %)   ← MakeDhtAckPacket()
+서버:          result가 성공이면 NFY_DHT와 같이 그 장치 회원 ID로 dht 행 INSERT
+```
+
+`ACK_DHT_COLLECT`는 요청을 장치에 보냈다는 뜻이며 DB 저장 완료를 뜻하지 않습니다. 센서 읽기에 실패한 장치는 `result=RESULT_FAIL`로 응답하면 됩니다(temp/humi는 0).
+서버 CLI의 `dht collect`도 같은 동작을 합니다.
 
 ## 등록된 Bluetooth 장치 연결 요청
 

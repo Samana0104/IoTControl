@@ -30,6 +30,12 @@ size_t MakeLoginPacket(uint8_t *buffer, size_t size, const MemData *data);
 size_t MakeChatPacket(uint8_t *buffer, size_t size, const char *message, size_t length);
 size_t MakeBluetoothRegisterPacket(uint8_t *buffer, size_t size, const BluetoothRegisterData *data);
 size_t MakeBluetoothConnectPacket(uint8_t *buffer, size_t size, const BluetoothConnectData *data);
+/* REQ_DHT: server -> device, no payload. */
+size_t MakeDhtRequestPacket(uint8_t *buffer, size_t size);
+/* REQ_DHT_COLLECT: PC -> server, no payload. */
+size_t MakeDhtCollectPacket(uint8_t *buffer, size_t size);
+/* ACK_DHT: device -> server, reply to REQ_DHT. */
+size_t MakeDhtAckPacket(uint8_t *buffer, size_t size, const DhtAckData *data);
 /* ACK for reqCmd (a REQ_* value) with one RESULT_* byte. */
 size_t MakeAckPacket(uint8_t *buffer, size_t size, uint16_t reqCmd, uint8_t result);
 
@@ -41,6 +47,7 @@ int ReadConData(const uint8_t *payload, size_t length, ConData *data);
 int ReadMemData(const uint8_t *payload, size_t length, MemData *data);
 int ReadBluetoothRegisterData(const uint8_t *payload, size_t length, BluetoothRegisterData *data);
 int ReadBluetoothConnectData(const uint8_t *payload, size_t length, BluetoothConnectData *data);
+int ReadDhtAckData(const uint8_t *payload, size_t length, DhtAckData *data);
 int ReadResultData(const uint8_t *payload, size_t length, ResultData *data);
 
 #ifdef __cplusplus

@@ -21,6 +21,8 @@
 #define QUERY_SELECT_MEMBER_PASSWORD "SELECT pw_hash FROM member WHERE id = ? LIMIT 1"
 // ? = id
 #define QUERY_SELECT_MEMBER "SELECT id, type FROM member WHERE id = ? LIMIT 1"
+// ? = id
+#define QUERY_SELECT_MEMBER_TYPE "SELECT type FROM member WHERE id = ? LIMIT 1"
 #define QUERY_SELECT_MEMBER_ALL "SELECT id, type FROM member ORDER BY id"
 // ? = id, pw_hash, type
 #define QUERY_INSERT_MEMBER "INSERT INTO member(id, pw_hash, type) VALUES(?, ?, ?)"

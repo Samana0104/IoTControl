@@ -54,6 +54,14 @@ class AWiFi final
     // 그 사이 들어온 다른 프레임은 버림
     LoginResult LoginToServer(const MemData &member, uint32_t timeoutMs = LOGIN_TIMEOUT_MS);
 
+    // 서버 프레임을 들어온 만큼만 모음 (논블로킹, loop에서 계속 호출)
+    // 프레임 하나가 다 모이고 CRC가 맞으면 true, payload는 다음 호출 전까지 유효
+    // payload가 RECEIVE_PAYLOAD_SIZE보다 큰 프레임은 읽고 버림
+    bool PollServerPacket(HeaderData &header, const uint8_t *&payload);
+
+    // 서버 REQ_DHT에 대한 ACK_DHT 응답
+    bool SendDhtAck(const DhtAckData &ack);
+
     // 전원 인가 시 저장된 AP로 자동 접속 여부 (ESP 플래시에 저장)
     bool SetAutoConnect(bool enable);
 
@@ -65,6 +73,7 @@ class AWiFi final
   private:
     // startMs부터 timeoutMs 안에 정확히 length 바이트를 읽음
     bool ReceiveExact(uint8_t *buffer, size_t length, uint32_t startMs, uint32_t timeoutMs);
+    void ResetPoll();
 
   private:
     static constexpr uint8_t SCAN_MAX = 5;
@@ -77,4 +86,11 @@ class AWiFi final
 
     long baudRate = 0;
     bool ready = false;
+
+    // PollServerPacket 수신 상태
+    uint8_t pollHeaderData[HEADER_SIZE];
+    uint8_t pollPayload[RECEIVE_PAYLOAD_SIZE];
+    HeaderData pollHeader = {};
+    uint8_t pollHeaderLength = 0;
+    uint16_t pollPayloadLength = 0;
 };

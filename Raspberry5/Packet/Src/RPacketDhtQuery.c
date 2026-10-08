@@ -1,6 +1,6 @@
 #include "RPacketDhtQuery.h"
 
-#include "IoTDhtQuery.h"
+#include "IoTPacketCodec.h"
 #include "RDatabaseQuery.h"
 #include "RLog.h"
 #include "RNetwork.h"

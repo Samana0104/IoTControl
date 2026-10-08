@@ -55,6 +55,7 @@ typedef struct _HeaderData
 #define MSG_BT_REGISTER 0x0006
 #define MSG_BT_CONNECT 0x0007
 #define MSG_DHT_ALL 0x0008
+#define MSG_DHT_COLLECT 0x0009
 
 /* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
@@ -63,10 +64,14 @@ typedef struct _HeaderData
 #define ACK_BT_REGISTER REQ_TO_ACK(REQ_BT_REGISTER)
 #define REQ_BT_CONNECT MSG_BT_CONNECT       /* BluetoothConnectData, no login needed */
 #define ACK_BT_CONNECT REQ_TO_ACK(REQ_BT_CONNECT)
+#define REQ_DHT_COLLECT MSG_DHT_COLLECT     /* no payload, after login: server sends REQ_DHT to every device */
+#define ACK_DHT_COLLECT REQ_TO_ACK(REQ_DHT_COLLECT) /* ResultData, SUCCESS if sent to at least one device */
 
 /* Server -> device control (BT) */
 #define REQ_FAN MSG_FAN                     /* FanData, fanSpeed = 0..100 percent */
 #define ACK_FAN REQ_TO_ACK(REQ_FAN)         /* ResultData */
+#define REQ_DHT MSG_DHT                     /* no payload, read DHT now */
+#define ACK_DHT REQ_TO_ACK(REQ_DHT)         /* DhtAckData, server stores it like NFY_DHT */
 
 /* Device -> server reports */
 #define NFY_CHAT MAKE_NOTIFY(MSG_CHAT)      /* text, 0..MAX_CHAT_SIZE bytes */

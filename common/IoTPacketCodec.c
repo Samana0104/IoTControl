@@ -15,11 +15,15 @@ int CheckPacketLength(uint16_t cmd, size_t length)
         case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE ? 0 : -1;
         case REQ_BT_CONNECT: return length == BLUETOOTH_CONNECT_DATA_SIZE ? 0 : -1;
         case REQ_FAN: return length == FAN_DATA_SIZE ? 0 : -1;
+        case REQ_DHT:
+        case REQ_DHT_COLLECT: return length == 0 ? 0 : -1;
+        case ACK_DHT: return length == DHT_ACK_DATA_SIZE ? 0 : -1;
         case ACK_LOGIN:
         case ACK_DHT_ALL:
         case ACK_BT_REGISTER:
         case ACK_BT_CONNECT:
-        case ACK_FAN: return length == RESULT_DATA_SIZE ? 0 : -1;
+        case ACK_FAN:
+        case ACK_DHT_COLLECT: return length == RESULT_DATA_SIZE ? 0 : -1;
         case NFY_CHAT: return length <= MAX_CHAT_SIZE ? 0 : -1;
         case NFY_DHT: return length == DHT_DATA_SIZE ? 0 : -1;
         case NFY_FAN: return length == FAN_DATA_SIZE ? 0 : -1;
@@ -109,6 +113,33 @@ size_t MakeBluetoothConnectPacket(uint8_t *buffer, size_t size, const BluetoothC
     return IoTPacketEnd(&writer);
 }
 
+size_t MakeDhtRequestPacket(uint8_t *buffer, size_t size)
+{
+    IoTPacketWriter writer;
+
+    IoTPacketBegin(&writer, buffer, size, REQ_DHT);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeDhtCollectPacket(uint8_t *buffer, size_t size)
+{
+    IoTPacketWriter writer;
+
+    IoTPacketBegin(&writer, buffer, size, REQ_DHT_COLLECT);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeDhtAckPacket(uint8_t *buffer, size_t size, const DhtAckData *data)
+{
+    IoTPacketWriter writer;
+
+    IoTPacketBegin(&writer, buffer, size, ACK_DHT);
+    IoTPacketPushUint8(&writer, data->result);
+    IoTPacketPushUint16(&writer, data->dht.temp);
+    IoTPacketPushUint16(&writer, data->dht.humi);
+    return IoTPacketEnd(&writer);
+}
+
 size_t MakeAckPacket(uint8_t *buffer, size_t size, uint16_t reqCmd, uint8_t result)
 {
     IoTPacketWriter writer;
@@ -176,6 +207,17 @@ int ReadBluetoothConnectData(const uint8_t *payload, size_t length, BluetoothCon
     IoTPacketPopBytes(&reader, data->id, MEM_ID_SIZE);
     IoTPacketPopBytes(&reader, data->pw, MEM_PW_SIZE);
     IoTPacketPopBytes(&reader, data->mac, BLUETOOTH_MAC_SIZE);
+    return IoTPacketCheckRead(&reader);
+}
+
+int ReadDhtAckData(const uint8_t *payload, size_t length, DhtAckData *data)
+{
+    IoTPacketReader reader;
+
+    IoTPacketOpen(&reader, payload, length);
+    data->result = IoTPacketPopUint8(&reader);
+    data->dht.temp = IoTPacketPopUint16(&reader);
+    data->dht.humi = IoTPacketPopUint16(&reader);
     return IoTPacketCheckRead(&reader);
 }
 

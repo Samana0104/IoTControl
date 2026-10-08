@@ -1,6 +1,7 @@
 #include "AWiFi.h"
 #include <ADefine.h>
 
+#include <ALog.h>
 #include <WiFiEspAT.h>
 #include <string.h>
 
@@ -74,6 +75,7 @@ bool AWiFi::ConnectServer(const char *host, uint16_t port)
 void AWiFi::DisconnectServer()
 {
     client.stop();
+    ResetPoll();
 }
 
 bool AWiFi::IsServerConnected()
@@ -233,6 +235,89 @@ LoginResult AWiFi::LoginToServer(const MemData &member, uint32_t timeoutMs)
 
         return result.result == RESULT_SUCCESS ? LOGIN_SUCCESS : LOGIN_REJECTED;
     }
+}
+
+bool AWiFi::PollServerPacket(HeaderData &header, const uint8_t *&payload)
+{
+    while (true)
+    {
+        if (pollHeaderLength < HEADER_SIZE)
+        {
+            int count = ReceiveFromServer(pollHeaderData + pollHeaderLength, HEADER_SIZE - pollHeaderLength);
+            if (count <= 0)
+            {
+                return false;
+            }
+            pollHeaderLength += (uint8_t)count;
+            if (pollHeaderLength < HEADER_SIZE)
+            {
+                return false;
+            }
+            DecodePacketHeader(pollHeaderData, &pollHeader);
+            pollPayloadLength = 0;
+        }
+
+        // 담을 수 없는 큰 프레임은 payload를 읽어 버림
+        if (pollHeader.length > sizeof(pollPayload))
+        {
+            uint8_t chunk[RECEIVE_PAYLOAD_SIZE];
+            uint16_t left = pollHeader.length - pollPayloadLength;
+            int count = ReceiveFromServer(chunk, left > sizeof(chunk) ? sizeof(chunk) : left);
+            if (count <= 0)
+            {
+                return false;
+            }
+            pollPayloadLength += (uint16_t)count;
+            if (pollPayloadLength == pollHeader.length)
+            {
+                ResetPoll();
+            }
+            continue;
+        }
+
+        if (pollPayloadLength < pollHeader.length)
+        {
+            int count = ReceiveFromServer(pollPayload + pollPayloadLength, pollHeader.length - pollPayloadLength);
+            if (count <= 0)
+            {
+                return false;
+            }
+            pollPayloadLength += (uint16_t)count;
+            if (pollPayloadLength < pollHeader.length)
+            {
+                return false;
+            }
+        }
+
+        bool valid = CheckPacketCrc(pollHeaderData, &pollHeader, pollPayload) == 0 &&
+                     CheckPacketLength(pollHeader.cmd, pollHeader.length) == 0;
+        header = pollHeader;
+        payload = pollPayload;
+        // 다음 호출은 새 헤더부터 받음 (payload 버퍼는 그때까지 유지)
+        pollHeaderLength = 0;
+        if (valid)
+        {
+            return true;
+        }
+        // CRC가 틀리면 프레임 경계를 믿을 수 없으므로 연결을 다시 맺게 함
+        ALOG_WARN("bad frame from server, disconnect");
+        DisconnectServer();
+        return false;
+    }
+}
+
+bool AWiFi::SendDhtAck(const DhtAckData &ack)
+{
+    uint8_t frame[HEADER_SIZE + DHT_ACK_DATA_SIZE];
+    size_t frameLength = MakeDhtAckPacket(frame, sizeof(frame), &ack);
+
+    return frameLength > 0 && SendToServer(frame, frameLength) == frameLength;
+}
+
+void AWiFi::ResetPoll()
+{
+    pollHeaderLength = 0;
+    pollPayloadLength = 0;
 }
 
 bool AWiFi::SetAutoConnect(bool enable)
