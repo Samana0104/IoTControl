@@ -1,4 +1,5 @@
 #include "IoTPacketCodec.h"
+#include <string.h>
 
 /* Shared by Raspberry5, STM32, Arduino and PC: no dynamic allocation, no stdio. */
 
@@ -9,10 +10,13 @@ int CheckPacketLength(uint16_t cmd, size_t length)
     switch(cmd)
     {
         case REQ_LOGIN: return length == MEM_DATA_SIZE ? 0 : -1;
+        case REQ_DHT_ALL: return length == 0 ? 0 : -1;
+        case NFY_DHT_ROW: return length == DHT_ROW_DATA_SIZE ? 0 : -1;
         case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE ? 0 : -1;
         case REQ_BT_CONNECT: return length == BLUETOOTH_CONNECT_DATA_SIZE ? 0 : -1;
         case REQ_FAN: return length == FAN_DATA_SIZE ? 0 : -1;
         case ACK_LOGIN:
+        case ACK_DHT_ALL:
         case ACK_BT_REGISTER:
         case ACK_BT_CONNECT:
         case ACK_FAN: return length == RESULT_DATA_SIZE ? 0 : -1;
@@ -181,5 +185,59 @@ int ReadResultData(const uint8_t *payload, size_t length, ResultData *data)
 
     IoTPacketOpen(&reader, payload, length);
     data->result = IoTPacketPopUint8(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+static void PushFloat32(IoTPacketWriter *writer, float value)
+{
+    uint32_t bits = 0;
+    memcpy(&bits, &value, 4);
+    IoTPacketPushUint16(writer, (uint16_t)(bits & 0xffffu));
+    IoTPacketPushUint16(writer, (uint16_t)(bits >> 16));
+}
+
+static float PopFloat32(IoTPacketReader *reader)
+{
+    uint32_t bits = IoTPacketPopUint16(reader);
+    float value = 0;
+    bits |= (uint32_t)IoTPacketPopUint16(reader) << 16;
+    memcpy(&value, &bits, 4);
+    return value;
+}
+
+size_t MakeDhtAllPacket(uint8_t *buffer, size_t size)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL)
+        return 0;
+    IoTPacketBegin(&writer, buffer, size, REQ_DHT_ALL);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeDhtRowPacket(uint8_t *buffer, size_t size, const DhtRowData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL || sizeof(float) != 4)
+        return 0;
+    IoTPacketBegin(&writer, buffer, size, NFY_DHT_ROW);
+    IoTPacketPushBytes(&writer, data->id, MEM_ID_SIZE);
+    PushFloat32(&writer, data->temp);
+    PushFloat32(&writer, data->humi);
+    IoTPacketPushBytes(&writer, data->updatedAt, DHT_TIMESTAMP_SIZE);
+    IoTPacketPushUint8(&writer, data->memberType);
+    return IoTPacketEnd(&writer);
+}
+
+int ReadDhtRowData(const uint8_t *payload, size_t length, DhtRowData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != DHT_ROW_DATA_SIZE || sizeof(float) != 4)
+        return -1;
+    IoTPacketOpen(&reader, payload, length);
+    IoTPacketPopBytes(&reader, data->id, MEM_ID_SIZE);
+    data->temp = PopFloat32(&reader);
+    data->humi = PopFloat32(&reader);
+    IoTPacketPopBytes(&reader, data->updatedAt, DHT_TIMESTAMP_SIZE);
+    data->memberType = IoTPacketPopUint8(&reader);
     return IoTPacketCheckRead(&reader);
 }

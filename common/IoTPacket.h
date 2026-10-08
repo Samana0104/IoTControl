@@ -31,6 +31,24 @@ typedef struct _DhtData
     uint16_t humi;
 } DhtData;
 
+#define DHT_TIMESTAMP_SIZE 19
+#define DHT_ROW_DATA_SIZE (MEM_ID_SIZE + 4 + 4 + DHT_TIMESTAMP_SIZE + 1)
+#define DHT_MEMBER_UNKNOWN 0
+#define DHT_MEMBER_STM32 1
+#define DHT_MEMBER_ARDUINO 2
+#define DHT_MEMBER_PC 3
+
+// Float32 values are IEEE-754 little-endian. Timestamp is YYYY-MM-DD HH:MM:SS,
+// or all zero bytes for SQL NULL. The server's database clock is preserved.
+typedef struct _DhtRowData
+{
+    char id[MEM_ID_SIZE];
+    float temp;
+    float humi;
+    char updatedAt[DHT_TIMESTAMP_SIZE];
+    uint8_t memberType;
+} DhtRowData;
+
 typedef struct _FanData
 {
     uint16_t fanSpeed;

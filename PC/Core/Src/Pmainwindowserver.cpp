@@ -6,24 +6,15 @@
 
 void MainWindow::InitializeServerControls()
 {
-    connect(dashboard, &DashboardWidget::ServerChangeRequested, this,
-            &MainWindow::ShowServerConnection);
-    connect(accessPanel, &AccessPanel::ServerChangeRequested, this,
-            &MainWindow::ShowServerConnection);
-    connect(accessPanel, &AccessPanel::ServerConnectRequested, this,
-            &MainWindow::ConnectToServer);
-    connect(accessPanel, &AccessPanel::ServerDisconnectRequested, this,
-            &MainWindow::DisconnectFromServer);
-    connect(dashboard, &DashboardWidget::ServerDisconnectRequested, this,
-            &MainWindow::DisconnectFromServer);
-    connect(serverConnection, &ServerConnection::Connected, this,
-            &MainWindow::HandleServerConnected);
-    connect(serverConnection, &ServerConnection::Disconnected, this,
-            &MainWindow::HandleServerDisconnected);
-    connect(serverConnection, &ServerConnection::ConnectionFailed, this,
-            &MainWindow::HandleServerConnectionFailed);
-    connect(serverConnection, &ServerConnection::DataReceived, this,
-            &MainWindow::ServerDataReceived);
+    connect(dashboard, &DashboardWidget::ServerChangeRequested, this, &MainWindow::ShowServerConnection);
+    connect(accessPanel, &AccessPanel::ServerChangeRequested, this, &MainWindow::ShowServerConnection);
+    connect(accessPanel, &AccessPanel::ServerConnectRequested, this, &MainWindow::ConnectToServer);
+    connect(accessPanel, &AccessPanel::ServerDisconnectRequested, this, &MainWindow::DisconnectFromServer);
+    connect(dashboard, &DashboardWidget::ServerDisconnectRequested, this, &MainWindow::DisconnectFromServer);
+    connect(serverConnection, &ServerConnection::Connected, this, &MainWindow::HandleServerConnected);
+    connect(serverConnection, &ServerConnection::Disconnected, this, &MainWindow::HandleServerDisconnected);
+    connect(serverConnection, &ServerConnection::ConnectionFailed, this, &MainWindow::HandleServerConnectionFailed);
+    connect(serverConnection, &ServerConnection::DataReceived, this, &MainWindow::ServerDataReceived);
 }
 
 void MainWindow::ConnectToServer()
@@ -37,14 +28,12 @@ void MainWindow::ConnectToServer()
     accessPanel->ClearServerFeedback();
     if (HOST.isEmpty())
     {
-        accessPanel->ShowServerError(tr("우분투 서버 주소를 입력해 주세요."),
-                                     true);
+        accessPanel->ShowServerError(tr("우분투 서버 주소를 입력해 주세요."), true);
         return;
     }
     if (!validPort || PORT < 1 || PORT > 65535)
     {
-        accessPanel->ShowServerError(tr("포트를 1–65535 범위로 입력해 주세요."),
-                                     false);
+        accessPanel->ShowServerError(tr("포트를 1–65535 범위로 입력해 주세요."), false);
         return;
     }
     // 비동기 접속 결과가 오기 전까지 입력값과 로그인 상태를 고정합니다.
@@ -52,8 +41,7 @@ void MainWindow::ConnectToServer()
     serverPort = static_cast<quint16>(PORT);
     accessPanel->SetLoginEnabled(false);
     accessPanel->SetServerConnecting(true);
-    accessPanel->SetServerFeedback(
-        tr("%1:%2 서버에 연결 중입니다…").arg(HOST).arg(PORT));
+    accessPanel->SetServerFeedback(tr("%1:%2 서버에 연결 중입니다…").arg(HOST).arg(PORT));
     serverConnection->ConnectToServer(serverHost, serverPort);
 }
 
@@ -77,20 +65,11 @@ void MainWindow::HandleServerConnected()
 void MainWindow::HandleServerDisconnected()
 {
     ShowServerConnection();
-    accessPanel->SetServerFeedback(
-        tr("서버와의 연결이 종료되었습니다. 다시 접속해 주세요."));
+    accessPanel->SetServerFeedback(tr("서버와의 연결이 종료되었습니다. 다시 접속해 주세요."));
 }
 
 void MainWindow::HandleServerConnectionFailed(const QString &message)
 {
     ShowServerConnection();
     accessPanel->SetServerFeedback(tr("서버 접속 실패: %1").arg(message));
-}
-
-void MainWindow::SendLoginPacket(const QByteArray &packet)
-{
-    if (serverConnection->SendPacket(packet))
-        accessPanel->SetLoginFeedback(
-            tr("로그인 요청을 전송했습니다. 서버 응답을 기다리고 있습니다."),
-            false);
 }

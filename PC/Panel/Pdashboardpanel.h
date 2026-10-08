@@ -30,6 +30,9 @@ class DashboardPanel final : public QObject
     void SetServerEndpoint(const QString &host, int port);
     void SetFeedback(const QString &message);
     void SetClients(const QList<QStringList> &rows);
+    void DisplayDhtClients(const QList<QStringList> &rows);
+    void SetDhtLoading(bool loading);
+    void ResetDhtLabels();
 
   signals:
     void ReturnToLogin();

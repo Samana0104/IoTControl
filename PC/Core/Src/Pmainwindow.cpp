@@ -3,12 +3,13 @@
 #include "Paccesspanel.h"
 #include "Pdashboardwidget.h"
 #include "Pserverconnection.h"
+#include "Pserverdhtquery.h"
+#include "Pserverlogin.h"
 
 #include <QStackedWidget>
+#include <QTimer>
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), accessPanel(new AccessPanel(this)),
-      serverConnection(new ServerConnection(this))
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new AccessPanel(this)), serverConnection(new ServerConnection(this)), serverLogin(new ServerLogin(serverConnection, this)), serverDhtQuery(new ServerDhtQuery(serverConnection, this)), dhtPollTimer(new QTimer(this))
 {
     pages = new QStackedWidget(this);
     pages->setObjectName(QStringLiteral("pageStack"));
@@ -16,24 +17,28 @@ MainWindow::MainWindow(QWidget *parent)
     dashboard = new DashboardWidget(pages);
     pages->addWidget(dashboard);
     setCentralWidget(pages);
-    connect(accessPanel, &AccessPanel::DashboardPreviewRequested, this,
-            &MainWindow::ShowDashboard);
-    connect(dashboard, &DashboardWidget::ReturnToLogin, this,
-            &MainWindow::ShowLogin);
+    connect(accessPanel, &AccessPanel::DashboardPreviewRequested, this, &MainWindow::ShowDashboard);
+    connect(dashboard, &DashboardWidget::ReturnToLogin, this, &MainWindow::ShowLogin);
     InitializeServerControls();
     InitializeLoginControls();
+    InitializeDhtControls();
     loginWindowSize = size();
     ShowServerConnection();
 }
 
 MainWindow::~MainWindow()
 {
+    dhtPollTimer->stop();
+    serverLogin->CancelLogin();
+    serverDhtQuery->CancelQuery();
     serverConnection->DisconnectFromServer();
     delete accessPanel;
 }
 
 void MainWindow::ShowDashboard()
 {
+    if (serverLogin->IsLoggingIn())
+        return;
     if (!serverConnection->IsConnected())
     {
         ShowServerConnection();
@@ -52,8 +57,14 @@ void MainWindow::ShowDashboard()
 void MainWindow::ShowServerConnection()
 {
     const bool FROM_DASHBOARD = pages->currentWidget() == dashboard;
-    const bool ANIMATE =
-        !FROM_DASHBOARD && accessPanel->IsAccessVisible() && !isMinimized();
+    const bool ANIMATE = !FROM_DASHBOARD && accessPanel->IsAccessVisible() && !isMinimized();
+    authenticated = false;
+    dhtPollTimer->stop();
+    serverDhtQuery->CancelQuery();
+    dashboard->SetDhtLoading(false);
+    dashboard->ResetDhtView();
+    serverLogin->CancelLogin();
+    accessPanel->SetLoginBusy(false);
     serverConnection->DisconnectFromServer();
     accessPanel->SetServerConnecting(false);
     pages->setCurrentIndex(0);
@@ -74,9 +85,12 @@ void MainWindow::ShowLogin()
         ShowServerConnection();
         return;
     }
+    authenticated = false;
+    dhtPollTimer->stop();
+    serverDhtQuery->PauseQuery();
+    dashboard->SetDhtLoading(false);
     const bool FROM_DASHBOARD = pages->currentWidget() == dashboard;
-    const bool ANIMATE =
-        !FROM_DASHBOARD && accessPanel->IsAccessVisible() && !isMinimized();
+    const bool ANIMATE = !FROM_DASHBOARD && accessPanel->IsAccessVisible() && !isMinimized();
     pages->setCurrentIndex(0);
     if (FROM_DASHBOARD)
         resize(loginWindowSize);

@@ -15,6 +15,13 @@ set(PC_UI_SOURCES
     Core/Src/Pmainwindowlogin.cpp
     Core/Src/Pserverconnection.cpp
     Core/Inc/Pserverconnection.h
+    Core/Src/Pserverlogin.cpp
+    Core/Inc/Pserverlogin.h
+    Core/Inc/Ploginresult.h
+    Core/Inc/Pdhtrecord.h
+    Core/Src/Pserverdhtquery.cpp
+    Core/Inc/Pserverdhtquery.h
+    Core/Src/Pmainwindowdata.cpp
     Panel/Paccesspaneltransition.cpp
     Panel/Paccesspanel.cpp
     Panel/Paccesspanel.h
@@ -81,6 +88,39 @@ if(IOT_BUILD_TESTS)
         AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/screens"
     )
     add_test(NAME server_connection_tests COMMAND server_connection_tests -o -,txt)
+
+    qt_add_executable(server_login_tests
+        tests/Pserverlogintest.cpp
+        ${PC_UI_SOURCES}
+    )
+    target_include_directories(server_login_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Panel"
+        "${CMAKE_CURRENT_SOURCE_DIR}/widget"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../common"
+    )
+    target_link_libraries(server_login_tests PRIVATE Qt6::Widgets Qt6::Network Qt6::Test)
+    set_target_properties(server_login_tests PROPERTIES
+        AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/screens"
+    )
+    add_test(NAME server_login_tests COMMAND server_login_tests -o -,txt)
+
+    find_package(Qt6 REQUIRED COMPONENTS Sql)
+    qt_add_executable(dht_query_tests tests/Pdhtquerytest.cpp ${PC_UI_SOURCES})
+    target_include_directories(dht_query_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Panel"
+        "${CMAKE_CURRENT_SOURCE_DIR}/widget"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../common"
+    )
+    target_link_libraries(dht_query_tests PRIVATE Qt6::Widgets Qt6::Network Qt6::Test Qt6::Sql)
+    set_target_properties(dht_query_tests PROPERTIES AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/screens")
+    add_test(NAME dht_query_tests COMMAND dht_query_tests -o -,txt)
+    if(WIN32)
+        get_target_property(QT_TEST_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
+        get_filename_component(QT_TEST_BIN_DIR "${QT_TEST_QMAKE_EXECUTABLE}" DIRECTORY)
+        set_tests_properties(dht_query_tests PROPERTIES ENVIRONMENT "QT_PLUGIN_PATH=${QT_TEST_BIN_DIR}/../plugins")
+    endif()
 endif()
 
 if(WIN32)

@@ -5,6 +5,7 @@
 #include "RPacketBt.h"
 #include "RPacketCon.h"
 #include "RPacketDht.h"
+#include "RPacketDhtQuery.h"
 #include "RPacketFan.h"
 #include "RPacketMember.h"
 
@@ -30,6 +31,7 @@ int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size
     switch(cmd)
     {
         case REQ_LOGIN: return RPacketLoginReceive(session, payload, length);
+        case REQ_DHT_ALL: return RPacketDhtAllReceive(session, payload, length);
         case REQ_BT_REGISTER: return RPacketBtRegisterReceive(session, payload, length);
         case REQ_BT_CONNECT: return RPacketBtConnectReceive(session, payload, length);
         case NFY_CHAT:
@@ -74,7 +76,7 @@ static int ValidatePacketPermission(RSession *session, uint16_t cmd)
     if(session->type == SESSION_BLUETOOTH)
     {
         // BT 링크는 이미 등록된 회원/MAC에 묶여 있으므로 관리 명령을 받지 않음
-        if(cmd == REQ_LOGIN || cmd == REQ_BT_REGISTER || cmd == REQ_BT_CONNECT)
+        if(cmd == REQ_LOGIN || cmd == REQ_BT_REGISTER || cmd == REQ_BT_CONNECT || cmd == REQ_DHT_ALL)
         {
             RLOG_WARN("Management command not allowed from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
             return -1;

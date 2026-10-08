@@ -54,6 +54,7 @@ typedef struct _HeaderData
 #define MSG_CON 0x0005
 #define MSG_BT_REGISTER 0x0006
 #define MSG_BT_CONNECT 0x0007
+#define MSG_DHT_ALL 0x0008
 
 /* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
@@ -72,3 +73,8 @@ typedef struct _HeaderData
 #define NFY_DHT MAKE_NOTIFY(MSG_DHT)        /* DhtData */
 #define NFY_FAN MAKE_NOTIFY(MSG_FAN)        /* FanData */
 #define NFY_CON MAKE_NOTIFY(MSG_CON)        /* ConData */
+
+/* Authenticated TCP client -> server: all dht rows, then completion ACK. */
+#define REQ_DHT_ALL MSG_DHT_ALL             /* no payload */
+#define NFY_DHT_ROW MAKE_NOTIFY(MSG_DHT_ALL) /* DhtRowData */
+#define ACK_DHT_ALL REQ_TO_ACK(REQ_DHT_ALL) /* ResultData */

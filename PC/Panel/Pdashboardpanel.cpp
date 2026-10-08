@@ -25,17 +25,14 @@ QString FormatMetricValue(const QString &finalText, qreal progress)
 {
     const int DOT = finalText.indexOf(QLatin1Char('.'));
     const int DECIMALS = DOT < 0 ? 0 : finalText.size() - DOT - 1;
-    QString text =
-        QString::number(finalText.toDouble() * progress, 'f', DECIMALS);
+    QString text = QString::number(finalText.toDouble() * progress, 'f', DECIMALS);
     if (DOT < 0 && finalText.startsWith(QLatin1Char('0')))
         text = text.rightJustified(finalText.size(), QLatin1Char('0'));
     return text;
 }
 } // namespace
 
-DashboardPanel::DashboardPanel(QWidget *host)
-    : QObject(host), host(host), ui(new Ui::DashboardWidget),
-      fanChart(new FanChartWidget(host)), fanRotor(new FanRotorWidget(host))
+DashboardPanel::DashboardPanel(QWidget *host) : QObject(host), host(host), ui(new Ui::DashboardWidget), fanChart(new FanChartWidget(host)), fanRotor(new FanRotorWidget(host))
 {
     ui->setupUi(host);
     overviewTableMaximumHeight = ui->clientsTable->maximumHeight();
@@ -50,61 +47,43 @@ DashboardPanel::DashboardPanel(QWidget *host)
     const QFontMetrics TARGET_METRICS(ui->targetValue->font());
     int readoutWidth = ui->targetValue->minimumWidth();
     for (int percent = 0; percent <= 100; ++percent)
-        readoutWidth = qMax(
-            readoutWidth,
-            TARGET_METRICS.boundingRect(tr("%1%").arg(percent)).width() + 2);
+        readoutWidth = qMax(readoutWidth, TARGET_METRICS.boundingRect(tr("%1%").arg(percent)).width() + 2);
     ui->targetValue->setFixedWidth(readoutWidth);
     ui->targetValueLayout->insertWidget(2, fanRotor, 0, Qt::AlignVCenter);
     ui->fanControlPanelLayout->setAlignment(Qt::AlignTop);
-    entrancePanels = {ui->temperatureCard, ui->humidityCard,
-                      ui->fanCard,         ui->clientCard,
-                      ui->chartPanel,      ui->fanControlPanel,
-                      ui->clientsPanel};
-    metricLabels = {ui->temperatureValue, ui->humidityValue, ui->fanValue,
-                    ui->clientValue};
+    entrancePanels = {ui->temperatureCard, ui->humidityCard, ui->fanCard, ui->clientCard, ui->chartPanel, ui->fanControlPanel, ui->clientsPanel};
+    metricLabels = {ui->temperatureValue, ui->humidityValue, ui->fanValue, ui->clientValue};
     for (auto *label : metricLabels)
         metricFinalText.append(label->text());
     for (auto *button : {ui->overviewNav, ui->fanNav, ui->clientsNav})
         button->setCheckable(true);
-    ui->overviewNav->setAccessibleDescription(
-        tr("모든 디바이스 데이터를 한눈에 확인하기"));
-    ui->fanNav->setAccessibleDescription(
-        tr("팬 그래프와 목표 속도 조절 화면 열기"));
-    ui->clientsNav->setAccessibleDescription(
-        tr("현장 보드 목록과 데이터 갱신 화면 열기"));
+    ui->overviewNav->setAccessibleDescription(tr("모든 디바이스 데이터를 한눈에 확인하기"));
+    ui->fanNav->setAccessibleDescription(tr("팬 그래프와 목표 속도 조절 화면 열기"));
+    ui->clientsNav->setAccessibleDescription(tr("현장 보드 목록과 데이터 갱신 화면 열기"));
 
-    connect(ui->returnToLoginButton, &QPushButton::clicked, this,
-            &DashboardPanel::ReturnToLogin);
-    connect(ui->dashboardChangeServerButton, &QPushButton::clicked, this,
-            &DashboardPanel::ServerChangeRequested);
-    connect(ui->dashboardDisconnectServerButton, &QPushButton::clicked, this,
-            &DashboardPanel::ServerDisconnectRequested);
-    connect(ui->sidebarBluetoothButton, &QPushButton::clicked, this,
-            &DashboardPanel::BluetoothRequested);
-    connect(ui->fanSpeedSlider, &QSlider::valueChanged, this,
-            &DashboardPanel::TargetChanged);
-    connect(fanChart, &FanChartWidget::TargetPreviewChanged, ui->fanSpeedSlider,
-            &QSlider::setValue);
-    connect(ui->applyFanButton, &QPushButton::clicked, this,
-            &DashboardPanel::ApplyFanRequested);
-    connect(ui->stopFanButton, &QPushButton::clicked, this,
-            [this] { SetTarget(0); });
-    connect(ui->fan25Button, &QPushButton::clicked, this,
-            [this] { SetTarget(25); });
-    connect(ui->fan50Button, &QPushButton::clicked, this,
-            [this] { SetTarget(50); });
-    connect(ui->fan100Button, &QPushButton::clicked, this,
-            [this] { SetTarget(100); });
-    connect(ui->reloadDbButton, &QPushButton::clicked, this,
-            &DashboardPanel::ReloadDbRequested);
-    connect(ui->requestAllButton, &QPushButton::clicked, this,
-            &DashboardPanel::UpdateAllRequested);
-    connect(ui->overviewNav, &QPushButton::clicked, this,
-            [this] { SelectSection(ui->overviewNav); });
-    connect(ui->fanNav, &QPushButton::clicked, this,
-            [this] { SelectSection(ui->fanNav); });
-    connect(ui->clientsNav, &QPushButton::clicked, this,
-            [this] { SelectSection(ui->clientsNav); });
+    connect(ui->returnToLoginButton, &QPushButton::clicked, this, &DashboardPanel::ReturnToLogin);
+    connect(ui->dashboardChangeServerButton, &QPushButton::clicked, this, &DashboardPanel::ServerChangeRequested);
+    connect(ui->dashboardDisconnectServerButton, &QPushButton::clicked, this, &DashboardPanel::ServerDisconnectRequested);
+    connect(ui->sidebarBluetoothButton, &QPushButton::clicked, this, &DashboardPanel::BluetoothRequested);
+    connect(ui->fanSpeedSlider, &QSlider::valueChanged, this, &DashboardPanel::TargetChanged);
+    connect(fanChart, &FanChartWidget::TargetPreviewChanged, ui->fanSpeedSlider, &QSlider::setValue);
+    connect(ui->applyFanButton, &QPushButton::clicked, this, &DashboardPanel::ApplyFanRequested);
+    connect(ui->stopFanButton, &QPushButton::clicked, this, [this]
+            { SetTarget(0); });
+    connect(ui->fan25Button, &QPushButton::clicked, this, [this]
+            { SetTarget(25); });
+    connect(ui->fan50Button, &QPushButton::clicked, this, [this]
+            { SetTarget(50); });
+    connect(ui->fan100Button, &QPushButton::clicked, this, [this]
+            { SetTarget(100); });
+    connect(ui->reloadDbButton, &QPushButton::clicked, this, &DashboardPanel::ReloadDbRequested);
+    connect(ui->requestAllButton, &QPushButton::clicked, this, &DashboardPanel::UpdateAllRequested);
+    connect(ui->overviewNav, &QPushButton::clicked, this, [this]
+            { SelectSection(ui->overviewNav); });
+    connect(ui->fanNav, &QPushButton::clicked, this, [this]
+            { SelectSection(ui->fanNav); });
+    connect(ui->clientsNav, &QPushButton::clicked, this, [this]
+            { SelectSection(ui->clientsNav); });
     SelectSection(ui->overviewNav);
     host->installEventFilter(this);
 }
@@ -120,8 +99,7 @@ DashboardPanel::~DashboardPanel()
 
 bool DashboardPanel::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == host && event->type() == QEvent::Show &&
-        !event->spontaneous())
+    if (watched == host && event->type() == QEvent::Show && !event->spontaneous())
         PlayEntrance();
     else if (watched == host && event->type() == QEvent::Hide)
     {
@@ -134,19 +112,22 @@ bool DashboardPanel::eventFilter(QObject *watched, QEvent *event)
 
 void DashboardPanel::SetClients(const QList<QStringList> &rows)
 {
+    ui->clientsTable->clearContents();
+    ui->clientsTable->setRowCount(static_cast<int>(rows.size()));
+    ui->clientValue->setText(QString::number(rows.size()).rightJustified(2, QLatin1Char('0')));
+    for (int index = 0; index < metricLabels.size(); ++index)
+    {
+        if (metricLabels[index] == ui->clientValue)
+            metricFinalText[index] = ui->clientValue->text();
+    }
     ui->clientsTable->verticalHeader()->hide();
     ui->clientsTable->verticalHeader()->setDefaultSectionSize(39);
-    ui->clientsTable->horizontalHeader()->setSectionResizeMode(
-        QHeaderView::Stretch);
+    ui->clientsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     ui->clientsTable->horizontalHeader()->setMinimumSectionSize(70);
-    ui->clientsTable->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft |
-                                                              Qt::AlignVCenter);
-    ui->clientsTable->horizontalHeader()->setSectionResizeMode(
-        0, QHeaderView::ResizeToContents);
-    ui->clientsTable->horizontalHeader()->setSectionResizeMode(
-        CLIENT_TIMESTAMP_COLUMN, QHeaderView::ResizeToContents);
-    ui->clientsTable->horizontalHeader()->setSectionResizeMode(
-        CLIENT_UPDATE_COLUMN, QHeaderView::Fixed);
+    ui->clientsTable->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    ui->clientsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    ui->clientsTable->horizontalHeader()->setSectionResizeMode(CLIENT_TIMESTAMP_COLUMN, QHeaderView::ResizeToContents);
+    ui->clientsTable->horizontalHeader()->setSectionResizeMode(CLIENT_UPDATE_COLUMN, QHeaderView::Fixed);
     ui->clientsTable->setColumnWidth(CLIENT_UPDATE_COLUMN, 100);
     ui->clientsTable->setFocusPolicy(Qt::StrongFocus);
     for (int row = 0; row < rows.size(); ++row)
@@ -157,20 +138,39 @@ void DashboardPanel::SetClients(const QList<QStringList> &rows)
             item->setTextAlignment(Qt::AlignVCenter | Qt::AlignLeft);
             ui->clientsTable->setItem(row, column, item);
         }
-        auto *requestButton =
-            new QPushButton(tr("즉시 갱신"), ui->clientsTable);
-        requestButton->setObjectName(
-            QStringLiteral("requestClient%1Button").arg(row));
+        auto *requestButton = new QPushButton(tr("준비 중"), ui->clientsTable);
+        requestButton->setObjectName(QStringLiteral("requestClient%1Button").arg(row));
         requestButton->setProperty("role", "rowAction");
         requestButton->setCursor(Qt::PointingHandCursor);
-        requestButton->setAccessibleName(
-            tr("%1 데이터 즉시 갱신 요청").arg(rows[row][0]));
-        ui->clientsTable->setCellWidget(row, CLIENT_UPDATE_COLUMN,
-                                        requestButton);
+        requestButton->setToolTip(tr("현장 측정 갱신 요청: 서버 통신 규격 작업 중"));
+        requestButton->setAccessibleName(tr("%1 현장 갱신 요청 준비 중").arg(rows[row][0]));
+        ui->clientsTable->setCellWidget(row, CLIENT_UPDATE_COLUMN, requestButton);
         const QString CLIENT_ID = rows[row][0];
-        connect(requestButton, &QPushButton::clicked, this,
-                [this, CLIENT_ID] { emit ClientUpdateRequested(CLIENT_ID); });
+        connect(requestButton, &QPushButton::clicked, this, [this, CLIENT_ID]
+                { emit ClientUpdateRequested(CLIENT_ID); });
     }
+}
+
+void DashboardPanel::DisplayDhtClients(const QList<QStringList> &rows)
+{
+    if (entranceAnimation)
+        entranceAnimation->stop();
+    FinishEntrance();
+    SetClients(rows);
+    ui->clientTag->setText(tr("dht 전체 조회 · %1건").arg(rows.size()));
+    ui->clientsSubtitle->setText(tr("서버 DB 조회 결과 · dht %1건").arg(rows.size()));
+}
+
+void DashboardPanel::SetDhtLoading(bool loading)
+{
+    ui->reloadDbButton->setEnabled(!loading);
+    ui->reloadDbButton->setText(loading ? tr("DB 조회 중…") : tr("DB 새로고침"));
+}
+
+void DashboardPanel::ResetDhtLabels()
+{
+    ui->clientTag->setText(tr("STM32 / Arduino · 샘플"));
+    ui->clientsSubtitle->setText(tr("DB 조회 결과 · 샘플 데이터"));
 }
 
 void DashboardPanel::SetServerEndpoint(const QString &host, int port)
@@ -188,8 +188,7 @@ void DashboardPanel::PlayEntrance()
     auto *group = new QParallelAnimationGroup(this);
     entranceAnimation = group;
     for (int index = 0; index < metricLabels.size(); ++index)
-        metricLabels[index]->setText(
-            FormatMetricValue(metricFinalText[index], 0));
+        metricLabels[index]->setText(FormatMetricValue(metricFinalText[index], 0));
     for (int index = 0; index < entrancePanels.size(); ++index)
     {
         auto *panel = entrancePanels[index];
@@ -218,14 +217,12 @@ void DashboardPanel::PlayEntrance()
             {
                 for (int index = 0; index < metricLabels.size(); ++index)
                 {
-                    metricLabels[index]->setText(FormatMetricValue(
-                        metricFinalText[index], value.toReal()));
+                    metricLabels[index]->setText(FormatMetricValue(metricFinalText[index], value.toReal()));
                 }
             });
     countSequence->addAnimation(counter);
     group->addAnimation(countSequence);
-    connect(group, &QParallelAnimationGroup::finished, this,
-            &DashboardPanel::FinishEntrance);
+    connect(group, &QParallelAnimationGroup::finished, this, &DashboardPanel::FinishEntrance);
     group->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
@@ -258,36 +255,29 @@ void DashboardPanel::SelectSection(QPushButton *navigation)
     ui->chartPanel->setVisible(!IS_CLIENTS);
     ui->fanControlPanel->setVisible(!IS_CLIENTS);
     ui->clientsPanel->setVisible(!IS_FAN);
-    ui->clientsTable->setMaximumHeight(IS_CLIENTS ? QWIDGETSIZE_MAX
-                                                  : overviewTableMaximumHeight);
-    ui->fanChartHost->setMaximumHeight(IS_FAN ? QWIDGETSIZE_MAX
-                                              : overviewChartMaximumHeight);
+    ui->clientsTable->setMaximumHeight(IS_CLIENTS ? QWIDGETSIZE_MAX : overviewTableMaximumHeight);
+    ui->fanChartHost->setMaximumHeight(IS_FAN ? QWIDGETSIZE_MAX : overviewChartMaximumHeight);
 
     if (IS_FAN)
     {
         ui->dashboardTitle->setText(QStringLiteral("FAN CONTROL"));
-        ui->dashboardSubtitle->setText(
-            tr("그래프와 슬라이더로 목표 팬 속도를 조절하세요."));
+        ui->dashboardSubtitle->setText(tr("그래프와 슬라이더로 목표 팬 속도를 조절하세요."));
     }
     else if (IS_CLIENTS)
     {
         ui->dashboardTitle->setText(QStringLiteral("FIELD CLIENTS"));
-        ui->dashboardSubtitle->setText(
-            tr("보드별 수집 데이터를 확인하고 즉시 갱신을 요청하세요."));
+        ui->dashboardSubtitle->setText(tr("보드별 수집 데이터를 확인하고 즉시 갱신을 요청하세요."));
     }
     else
     {
         ui->dashboardTitle->setText(QStringLiteral("CONTROL CENTER"));
-        ui->dashboardSubtitle->setText(
-            tr("센서 모니터링 · 팬 제어 · 현장 연결"));
+        ui->dashboardSubtitle->setText(tr("센서 모니터링 · 팬 제어 · 현장 연결"));
     }
 
     for (int index = 0; index < ui->dashboardContentLayout->count(); ++index)
     {
         auto *item = ui->dashboardContentLayout->itemAt(index);
-        const bool EXPAND =
-            (IS_FAN && item->layout() == ui->chartAndControlLayout) ||
-            (IS_CLIENTS && item->widget() == ui->clientsPanel);
+        const bool EXPAND = (IS_FAN && item->layout() == ui->chartAndControlLayout) || (IS_CLIENTS && item->widget() == ui->clientsPanel);
         ui->dashboardContentLayout->setStretch(index, EXPAND ? 1 : 0);
     }
     ui->dashboardContentLayout->activate();
@@ -296,10 +286,7 @@ void DashboardPanel::SelectSection(QPushButton *navigation)
 
 int DashboardPanel::ReadTarget() const { return ui->fanSpeedSlider->value(); }
 
-void DashboardPanel::SetTarget(int percent)
-{
-    ui->fanSpeedSlider->setValue(percent);
-}
+void DashboardPanel::SetTarget(int percent) { ui->fanSpeedSlider->setValue(percent); }
 
 void DashboardPanel::DisplayTarget(int percent, int rotorSpeed)
 {
@@ -308,7 +295,4 @@ void DashboardPanel::DisplayTarget(int percent, int rotorSpeed)
     fanRotor->SetSpeed(rotorSpeed);
 }
 
-void DashboardPanel::SetFeedback(const QString &message)
-{
-    ui->dashboardFeedback->setText(message);
-}
+void DashboardPanel::SetFeedback(const QString &message) { ui->dashboardFeedback->setText(message); }

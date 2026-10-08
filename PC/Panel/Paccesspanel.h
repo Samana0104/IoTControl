@@ -28,14 +28,14 @@ class AccessPanel final : public QObject
     void RestoreUsername(bool remember, const QString &username);
     void SetServerSummary(const QString &host, int port);
     void SetLoginEnabled(bool enabled);
+    void SetLoginBusy(bool busy);
     void SetServerConnecting(bool connecting);
     void ResetPassword();
     void ClearServerFeedback();
     void ShowServerError(const QString &message, bool invalidHost);
     void SetServerFeedback(const QString &message);
     void ClearLoginFeedback();
-    void ShowLoginError(const QString &message, bool invalidId,
-                        bool invalidPassword);
+    void ShowLoginError(const QString &message, bool invalidId, bool invalidPassword);
     void SetLoginFeedback(const QString &message, bool error);
     void ShowServerPage(bool animate);
     void ShowLoginPage(bool animate);
@@ -58,10 +58,13 @@ class AccessPanel final : public QObject
     void InitializeAccessTransition();
     void ShowAccessPage(QWidget *page, bool animate);
     void FocusAccessPage();
+    void UpdateLoginControls();
 
     QMainWindow *window;
     Ui::MainWindow *ui;
     QWidget *accessRoot;
     QWidget *accessTransition;
     QVariantAnimation *accessAnimation;
+    bool loginEnabled = false;
+    bool loginBusy = false;
 };

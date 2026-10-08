@@ -1,24 +1,33 @@
 #include "Pmainwindow.h"
 
-#include "IoTPacketCodec.h"
+#include "IoTPacket.h"
 #include "Paccesspanel.h"
+#include "Pdashboardwidget.h"
 #include "Pserverconnection.h"
+#include "Pserverlogin.h"
 
 #include <QSettings>
+#include <QTimer>
 #include <cstring>
+
+namespace
+{
+void ClearLoginMemory(void *memory, size_t length)
+{
+    volatile uint8_t *bytes = reinterpret_cast<volatile uint8_t *>(memory);
+    for (size_t index = 0; index < length; ++index)
+        bytes[index] = 0;
+}
+} // namespace
 
 void MainWindow::InitializeLoginControls()
 {
-    connect(accessPanel, &AccessPanel::LoginSubmitted, this,
-            &MainWindow::SubmitLogin);
-    connect(this, &MainWindow::LoginRequested, this,
-            &MainWindow::SendLoginPacket);
+    connect(accessPanel, &AccessPanel::LoginSubmitted, this, &MainWindow::SubmitLogin);
+    connect(serverLogin, &ServerLogin::LoginFinished, this, &MainWindow::HandleLoginResult);
+    connect(serverLogin, &ServerLogin::LoginRequested, this, &MainWindow::LoginRequested);
     QSettings settings;
-    const bool REMEMBER =
-        settings.value(QStringLiteral("login/rememberUsername"), false)
-            .toBool();
-    accessPanel->RestoreUsername(
-        REMEMBER, settings.value(QStringLiteral("login/username")).toString());
+    const bool REMEMBER = settings.value(QStringLiteral("login/rememberUsername"), false).toBool();
+    accessPanel->RestoreUsername(REMEMBER, settings.value(QStringLiteral("login/username")).toString());
     connect(accessPanel, &AccessPanel::RememberUsernameChanged, this,
             [](bool checked)
             {
@@ -26,63 +35,110 @@ void MainWindow::InitializeLoginControls()
                 {
                     QSettings settings;
                     settings.remove(QStringLiteral("login/username"));
-                    settings.setValue(QStringLiteral("login/rememberUsername"),
-                                      false);
+                    settings.setValue(QStringLiteral("login/rememberUsername"), false);
                 }
             });
 }
 
 void MainWindow::SubmitLogin()
 {
+    if (serverLogin->IsLoggingIn())
+        return;
     if (!serverConnection->IsConnected())
     {
         ShowServerConnection();
         accessPanel->SetServerFeedback(tr("서버에 먼저 접속해 주세요."));
         return;
     }
+    MemData member{};
+    if (!ReadLoginMember(member))
+        return;
+    SaveLoginUsername();
+    accessPanel->SetLoginBusy(true);
+    accessPanel->SetLoginFeedback(tr("로그인 요청을 전송합니다. 서버 응답을 기다리고 있습니다."), false);
+    serverLogin->LoginToServer(member);
+    // 로그인 통신 객체에는 비밀번호를 저장하지 않습니다.
+    ClearLoginMemory(&member, sizeof(member));
+    accessPanel->ResetPassword();
+}
+
+bool MainWindow::ReadLoginMember(MemData &member)
+{
     const QByteArray ID = accessPanel->ReadUsername().trimmed().toUtf8();
-    const QByteArray PASSWORD = accessPanel->ReadPassword().toUtf8();
+    QByteArray password = accessPanel->ReadPassword().toUtf8();
     const bool INVALID_ID = ID.isEmpty() || ID.size() > MEM_ID_SIZE || ID.contains('\0');
-    const bool INVALID_PASSWORD = PASSWORD.isEmpty() || PASSWORD.size() > MEM_PW_SIZE || PASSWORD.contains('\0');
+    const bool INVALID_PASSWORD = password.isEmpty() || password.size() > MEM_PW_SIZE || password.contains('\0');
     accessPanel->ClearLoginFeedback();
 
     if (INVALID_ID || INVALID_PASSWORD)
     {
-        accessPanel->ShowLoginError(
-            ID.isEmpty() && PASSWORD.isEmpty()
-                ? tr("아이디와 비밀번호를 입력해 주세요.")
-            : ID.isEmpty()       ? tr("아이디를 입력해 주세요.")
-            : PASSWORD.isEmpty() ? tr("비밀번호를 입력해 주세요.")
-            : INVALID_ID ? tr("아이디는 UTF-8 기준 1–%1바이트이며 널 문자를 "
-                              "포함할 수 없습니다.")
-                               .arg(MEM_ID_SIZE)
-                         : tr("비밀번호는 UTF-8 기준 1–%1바이트이며 널 문자를 "
-                              "포함할 수 없습니다.")
-                               .arg(MEM_PW_SIZE),
-            INVALID_ID, INVALID_PASSWORD);
-        return;
+        QString message;
+        if (ID.isEmpty() && password.isEmpty())
+            message = tr("아이디와 비밀번호를 입력해 주세요.");
+        else if (ID.isEmpty())
+            message = tr("아이디를 입력해 주세요.");
+        else if (password.isEmpty())
+            message = tr("비밀번호를 입력해 주세요.");
+        else if (INVALID_ID)
+            message = tr("아이디는 UTF-8 기준 1–%1바이트이며 널 문자를 포함할 수 없습니다.").arg(MEM_ID_SIZE);
+        else
+            message = tr("비밀번호는 UTF-8 기준 1–%1바이트이며 널 문자를 포함할 수 없습니다.").arg(MEM_PW_SIZE);
+        accessPanel->ShowLoginError(message, INVALID_ID, INVALID_PASSWORD);
+        ClearLoginMemory(password.data(), static_cast<size_t>(password.size()));
+        return false;
     }
 
-    MemData memData{};
-    std::memcpy(memData.id, ID.constData(), static_cast<size_t>(ID.size()));
-    std::memcpy(memData.pw, PASSWORD.constData(), static_cast<size_t>(PASSWORD.size()));
-    uint8_t frame[HEADER_SIZE + MEM_DATA_SIZE]{};
-    const size_t FRAME_LENGTH = MakeLoginPacket(frame, sizeof(frame), &memData);
-    if (FRAME_LENGTH == 0)
-    {
-        accessPanel->SetLoginFeedback( tr("로그인 요청 패킷을 만들지 못했습니다."), true);
-        return;
-    }
-    const QByteArray PACKET(reinterpret_cast<const char *>(frame), static_cast<qsizetype>(FRAME_LENGTH));
+    member = {};
+    std::memcpy(member.id, ID.constData(), static_cast<size_t>(ID.size()));
+    std::memcpy(member.pw, password.constData(), static_cast<size_t>(password.size()));
+    ClearLoginMemory(password.data(), static_cast<size_t>(password.size()));
+    return true;
+}
 
+void MainWindow::SaveLoginUsername()
+{
     QSettings settings;
     settings.setValue(QStringLiteral("login/rememberUsername"), accessPanel->ReadRememberUsername());
     if (accessPanel->ReadRememberUsername())
-        settings.setValue(QStringLiteral("login/username"), QString::fromUtf8(ID));
+        settings.setValue(QStringLiteral("login/username"), accessPanel->ReadUsername().trimmed());
     else
         settings.remove(QStringLiteral("login/username"));
+}
 
-    // REQ_LOGIN 프레임을 송신부에 전달합니다. 인증 성공 처리는 ACK_LOGIN 수신
-    // 후 수행합니다.
-    emit LoginRequested(PACKET);
+void MainWindow::HandleLoginResult(LoginResult result)
+{
+    accessPanel->SetLoginBusy(false);
+    accessPanel->ResetPassword();
+    switch (result)
+    {
+    case LOGIN_SUCCESS:
+        HandleLoginSuccess();
+        break;
+    case LOGIN_REJECTED:
+        accessPanel->ShowLoginError(tr("로그인이 거절되었습니다. 아이디와 비밀번호를 확인해 주세요."), false, true);
+        break;
+    case LOGIN_NO_SERVER:
+        ShowServerConnection();
+        accessPanel->SetServerFeedback(tr("로그인 요청을 전송하지 못했습니다. 다시 접속해 주세요."));
+        break;
+    case LOGIN_TIMEOUT:
+        ShowServerConnection();
+        accessPanel->SetServerFeedback(tr("로그인 응답 시간이 초과되었습니다. 다시 접속해 주세요. (5초)"));
+        break;
+    default:
+        ShowServerConnection();
+        accessPanel->SetServerFeedback(tr("로그인 응답 패킷이 올바르지 않습니다. 다시 접속해 주세요."));
+        break;
+    }
+}
+
+void MainWindow::HandleLoginSuccess()
+{
+    accessPanel->ClearLoginFeedback();
+    authenticated = true;
+    ShowDashboard();
+    dashboard->DisplayDhtRecords({});
+    LoadAllDht();
+    if (authenticated && serverConnection->IsConnected())
+        dhtPollTimer->start();
 }

@@ -8,3 +8,7 @@ IndentWidth: 4
 ContinuationIndentWidth: 4
 TabWidth: 4
 UseTab: Never
+
+# Keep declarations, calls, and expressions on one line regardless of length.
+ColumnLimit: 0
+BreakStringLiterals: false

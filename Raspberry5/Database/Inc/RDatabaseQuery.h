@@ -66,6 +66,10 @@
 // ? = temp
 #define QUERY_UPDATE_CON "UPDATE con SET temp = ? WHERE singleton_id = 1"
 
+// 사용자 제공 최신값 테이블 dht(id PK, temp, humi, updated_at) 전체 조회.
+#define QUERY_SELECT_DHT_ALL "SELECT d.id, d.temp, d.humi, d.updated_at, m.type FROM dht AS d LEFT JOIN member AS m ON m.id = d.id ORDER BY d.id"
+
+
 /* ============================================================================
    위 QUERY_* 실행 (prepared statement)
    ============================================================================ */
@@ -102,3 +106,4 @@ int ExecuteDatabaseQuery(const char *query, const DatabaseValue *params, unsigne
 // 결과 첫 행의 첫 열을 value에 문자열로 복사 (예: ID로 MAC, 비밀번호 해시 조회)
 // 1: 값 복사, 0: 행 없음 또는 SQL NULL, -1: 실패 (값이 valueSize보다 길어도 실패)
 int QueryDatabaseValue(const char *query, const DatabaseValue *params, unsigned int paramCount, char *value, size_t valueSize);
+
