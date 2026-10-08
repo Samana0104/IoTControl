@@ -28,6 +28,7 @@ class AccessPanel final : public QObject
     void RestoreUsername(bool remember, const QString &username);
     void SetServerSummary(const QString &host, int port);
     void SetLoginEnabled(bool enabled);
+    void SetServerConnecting(bool connecting);
     void ResetPassword();
     void ClearServerFeedback();
     void ShowServerError(const QString &message, bool invalidHost);
@@ -41,8 +42,9 @@ class AccessPanel final : public QObject
     void FinishAccessTransition();
 
   signals:
-    void ServerPreviewRequested();
+    void ServerConnectRequested();
     void ServerChangeRequested();
+    void ServerDisconnectRequested();
     void LoginSubmitted();
     void DashboardPreviewRequested();
     void RememberUsernameChanged(bool remember);

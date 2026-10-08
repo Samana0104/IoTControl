@@ -2,6 +2,7 @@
 
 #include <QElapsedTimer>
 #include <QWidget>
+#include <QtTypes>
 
 class QTimer;
 class QVariantAnimation;

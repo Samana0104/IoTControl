@@ -1,11 +1,14 @@
 #include "Pmainwindow.h"
+
 #include "Paccesspanel.h"
 #include "Pdashboardwidget.h"
+#include "Pserverconnection.h"
 
 #include <QStackedWidget>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), accessPanel(new AccessPanel(this))
+    : QMainWindow(parent), accessPanel(new AccessPanel(this)),
+      serverConnection(new ServerConnection(this))
 {
     pages = new QStackedWidget(this);
     pages->setObjectName(QStringLiteral("pageStack"));
@@ -23,15 +26,18 @@ MainWindow::MainWindow(QWidget *parent)
     ShowServerConnection();
 }
 
-MainWindow::~MainWindow() { delete accessPanel; }
+MainWindow::~MainWindow()
+{
+    serverConnection->DisconnectFromServer();
+    delete accessPanel;
+}
 
 void MainWindow::ShowDashboard()
 {
-    if (!serverPreviewReady)
+    if (!serverConnection->IsConnected())
     {
         ShowServerConnection();
-        accessPanel->SetServerFeedback(
-            tr("먼저 서버 주소와 포트를 확인해 주세요."));
+        accessPanel->SetServerFeedback(tr("먼저 서버에 접속해 주세요."));
         return;
     }
     if (pages->currentWidget() == dashboard)
@@ -48,7 +54,8 @@ void MainWindow::ShowServerConnection()
     const bool FROM_DASHBOARD = pages->currentWidget() == dashboard;
     const bool ANIMATE =
         !FROM_DASHBOARD && accessPanel->IsAccessVisible() && !isMinimized();
-    serverPreviewReady = false;
+    serverConnection->DisconnectFromServer();
+    accessPanel->SetServerConnecting(false);
     pages->setCurrentIndex(0);
     if (FROM_DASHBOARD)
         resize(loginWindowSize);
@@ -62,7 +69,7 @@ void MainWindow::ShowServerConnection()
 
 void MainWindow::ShowLogin()
 {
-    if (!serverPreviewReady)
+    if (!serverConnection->IsConnected())
     {
         ShowServerConnection();
         return;

@@ -3,6 +3,7 @@
 #include <QRect>
 #include <QStringList>
 #include <QWidget>
+#include <QtTypes>
 #include <array>
 
 class QPushButton;

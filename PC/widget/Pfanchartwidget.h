@@ -1,6 +1,9 @@
 #pragma once
 
+#include <QPointF>
+#include <QRectF>
 #include <QWidget>
+#include <QtTypes>
 
 class QVariantAnimation;
 

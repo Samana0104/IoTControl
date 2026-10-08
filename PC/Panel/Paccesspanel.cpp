@@ -93,9 +93,11 @@ void AccessPanel::InitializeInputEvents()
 {
     // 화면은 클릭을 신호로 전달하고 Core에서 실행 함수를 연결합니다.
     connect(ui->connectServerButton, &QPushButton::clicked, this,
-            &AccessPanel::ServerPreviewRequested);
+            &AccessPanel::ServerConnectRequested);
     connect(ui->changeServerButton, &QPushButton::clicked, this,
             &AccessPanel::ServerChangeRequested);
+    connect(ui->disconnectServerButton, &QPushButton::clicked, this,
+            &AccessPanel::ServerDisconnectRequested);
     connect(ui->loginButton, &QPushButton::clicked, this,
             &AccessPanel::LoginSubmitted);
     connect(ui->previewDashboardButton, &QPushButton::clicked, this,
@@ -107,7 +109,7 @@ void AccessPanel::InitializeInputEvents()
         connect(input, &QLineEdit::textChanged, this,
                 &AccessPanel::ClearServerFeedback);
         connect(input, &QLineEdit::returnPressed, this,
-                &AccessPanel::ServerPreviewRequested);
+                &AccessPanel::ServerConnectRequested);
     }
     for (auto *input : {ui->usernameInput, ui->passwordInput})
     {
@@ -168,6 +170,16 @@ void AccessPanel::SetLoginEnabled(bool enabled)
 {
     ui->loginButton->setEnabled(enabled);
     ui->previewDashboardButton->setEnabled(enabled);
+    ui->disconnectServerButton->setEnabled(enabled);
+}
+
+void AccessPanel::SetServerConnecting(bool connecting)
+{
+    ui->serverHostInput->setEnabled(!connecting);
+    ui->serverPortInput->setEnabled(!connecting);
+    ui->connectServerButton->setEnabled(!connecting);
+    ui->connectServerButton->setText(connecting ? tr("서버에 연결 중…")
+                                                : tr("서버 연결  →"));
 }
 
 void AccessPanel::ResetPassword()

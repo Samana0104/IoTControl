@@ -1,6 +1,10 @@
 #include "Pdashboardwidget.h"
+
 #include "Pbluetoothdialog.h"
 #include "Pdashboardpanel.h"
+
+#include <QList>
+#include <QStringList>
 
 namespace
 {
@@ -14,6 +18,8 @@ DashboardWidget::DashboardWidget(QWidget *parent)
             &DashboardWidget::ReturnToLogin);
     connect(panel, &DashboardPanel::ServerChangeRequested, this,
             &DashboardWidget::ServerChangeRequested);
+    connect(panel, &DashboardPanel::ServerDisconnectRequested, this,
+            &DashboardWidget::ServerDisconnectRequested);
     connect(panel, &DashboardPanel::BluetoothRequested, this,
             &DashboardWidget::ShowBluetoothDialog);
     connect(panel, &DashboardPanel::TargetChanged, this,
@@ -31,9 +37,9 @@ DashboardWidget::DashboardWidget(QWidget *parent)
 
 DashboardWidget::~DashboardWidget() { delete panel; }
 
-void DashboardWidget::SetServerPreview(const QString &host, int port)
+void DashboardWidget::SetServerEndpoint(const QString &host, int port)
 {
-    panel->SetServerPreview(host, port);
+    panel->SetServerEndpoint(host, port);
 }
 
 void DashboardWidget::PopulateSampleClients()

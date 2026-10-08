@@ -1,8 +1,11 @@
 #include "Paccesspanel.h"
-#include "ui_Pmainwindow.h"
-#include <QMainWindow>
 
+#include "ui_Pmainwindow.h"
+
+#include <QLayout>
+#include <QMainWindow>
 #include <QPainter>
+#include <QPixmap>
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QVariantAnimation>

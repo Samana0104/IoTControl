@@ -77,6 +77,8 @@ DashboardPanel::DashboardPanel(QWidget *host)
             &DashboardPanel::ReturnToLogin);
     connect(ui->dashboardChangeServerButton, &QPushButton::clicked, this,
             &DashboardPanel::ServerChangeRequested);
+    connect(ui->dashboardDisconnectServerButton, &QPushButton::clicked, this,
+            &DashboardPanel::ServerDisconnectRequested);
     connect(ui->sidebarBluetoothButton, &QPushButton::clicked, this,
             &DashboardPanel::BluetoothRequested);
     connect(ui->fanSpeedSlider, &QSlider::valueChanged, this,
@@ -171,7 +173,7 @@ void DashboardPanel::SetClients(const QList<QStringList> &rows)
     }
 }
 
-void DashboardPanel::SetServerPreview(const QString &host, int port)
+void DashboardPanel::SetServerEndpoint(const QString &host, int port)
 {
     const QString ENDPOINT = tr("%1:%2").arg(host).arg(port);
     ui->serverEndpoint->setText(ENDPOINT);

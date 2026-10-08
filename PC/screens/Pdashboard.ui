@@ -26,6 +26,9 @@ QPushButton#sidebarBluetoothButton:hover { background: #39232e; border-color: #d
 QFrame#sidebarPreview { background: #14161c; border: 1px solid #343743; border-radius: 3px; }
 QLabel#sidebarPreviewTitle { color: #c6cbd6; font-weight: 600; }
 QLabel#sidebarPreviewNote { color: #959dab; font-size: 10px; }
+QPushButton[role="disconnect"] { background: #241820; color: #ff8ba0; border: 1px solid #773447; border-radius: 3px; padding: 6px 5px; font-size: 11px; }
+QPushButton[role="disconnect"]:hover { background: #3b202c; border-color: #ff526b; color: #fff0f4; }
+QPushButton[role="disconnect"]:focus { border-color: #ff9bac; }
 QPushButton#returnToLoginButton { background: transparent; color: #a2aab9; border: 1px solid transparent; text-align: left; padding: 10px 0; }
 QPushButton#returnToLoginButton:hover { color: #ff8599; }
 QLabel#dashboardTitle { color: #f5f5f7; font-family: "Bahnschrift", "Segoe UI"; font-size: 29px; font-weight: 700; }
@@ -303,7 +306,7 @@ QLabel#serverEndpoint { color: #9acde5; font-size: 11px; }
          <item>
           <widget class="QLabel" name="sidebarPreviewTitle">
            <property name="text">
-            <string>SERVER / PREVIEW</string>
+            <string>SERVER / CONNECTED</string>
            </property>
           </widget>
          </item>
@@ -326,8 +329,9 @@ QLabel#serverEndpoint { color: #9acde5; font-size: 11px; }
          <item>
           <widget class="QLabel" name="sidebarPreviewNote">
            <property name="text">
-            <string>샘플 데이터와 연결 설정을
-미리 확인하는 화면입니다.</string>
+            <string>서버에 연결되었습니다.
+데이터와 장치 제어는
+미리보기입니다.</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -338,20 +342,49 @@ QLabel#serverEndpoint { color: #9acde5; font-size: 11px; }
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="dashboardChangeServerButton">
-        <property name="text">
-         <string>서버 변경</string>
+       <layout class="QHBoxLayout" name="dashboardServerActionsLayout" stretch="1,1">
+        <property name="spacing">
+         <number>6</number>
         </property>
-        <property name="cursor">
-         <cursorShape>PointingHandCursor</cursorShape>
-        </property>
-        <property name="autoDefault">
-         <bool>false</bool>
-        </property>
-        <property name="role" stdset="0">
-         <string notr="true">subtle</string>
-        </property>
-       </widget>
+        <item>
+         <widget class="QPushButton" name="dashboardChangeServerButton">
+          <property name="text">
+           <string>서버 변경</string>
+          </property>
+          <property name="cursor">
+           <cursorShape>PointingHandCursor</cursorShape>
+          </property>
+          <property name="autoDefault">
+           <bool>false</bool>
+          </property>
+          <property name="role" stdset="0">
+           <string notr="true">subtle</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="dashboardDisconnectServerButton">
+          <property name="text">
+           <string>연결 해제</string>
+          </property>
+          <property name="toolTip">
+           <string>서버 연결을 해제하고 접속 화면으로 돌아갑니다.</string>
+          </property>
+          <property name="accessibleName">
+           <string>서버 연결 해제</string>
+          </property>
+          <property name="cursor">
+           <cursorShape>PointingHandCursor</cursorShape>
+          </property>
+          <property name="autoDefault">
+           <bool>false</bool>
+          </property>
+          <property name="role" stdset="0">
+           <string notr="true">disconnect</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
       <item>
        <widget class="QPushButton" name="returnToLoginButton">

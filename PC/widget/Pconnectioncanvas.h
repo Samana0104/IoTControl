@@ -2,7 +2,10 @@
 
 #include <QElapsedTimer>
 #include <QFont>
+#include <QRectF>
+#include <QString>
 #include <QWidget>
+#include <QtTypes>
 
 class QPainter;
 class QPainterPath;

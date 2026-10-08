@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QString>
 #include <QWidget>
 
 class DashboardPanel;
@@ -11,11 +12,12 @@ class DashboardWidget final : public QWidget
   public:
     explicit DashboardWidget(QWidget *parent = nullptr);
     ~DashboardWidget() override;
-    void SetServerPreview(const QString &host, int port);
+    void SetServerEndpoint(const QString &host, int port);
 
   signals:
     void ReturnToLogin();
     void ServerChangeRequested();
+    void ServerDisconnectRequested();
 
   private:
     void ShowBluetoothDialog();

@@ -1,4 +1,5 @@
 #include "Pbluetoothdialog.h"
+
 #include "Pbluetoothpanel.h"
 
 BluetoothDialog::BluetoothDialog(QWidget *parent)

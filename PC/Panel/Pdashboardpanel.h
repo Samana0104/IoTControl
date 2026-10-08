@@ -1,7 +1,9 @@
 #pragma once
 
+#include <QList>
 #include <QObject>
 #include <QPointer>
+#include <QString>
 #include <QStringList>
 
 namespace Ui
@@ -25,13 +27,14 @@ class DashboardPanel final : public QObject
     int ReadTarget() const;
     void SetTarget(int percent);
     void DisplayTarget(int percent, int rotorSpeed);
-    void SetServerPreview(const QString &host, int port);
+    void SetServerEndpoint(const QString &host, int port);
     void SetFeedback(const QString &message);
     void SetClients(const QList<QStringList> &rows);
 
   signals:
     void ReturnToLogin();
     void ServerChangeRequested();
+    void ServerDisconnectRequested();
     void BluetoothRequested();
     void TargetChanged(int percent);
     void ApplyFanRequested();
