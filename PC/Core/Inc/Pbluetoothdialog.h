@@ -2,10 +2,7 @@
 
 #include <QDialog>
 
-namespace Ui
-{
-class BluetoothDialog;
-}
+class BluetoothPanel;
 
 class BluetoothDialog final : public QDialog
 {
@@ -20,7 +17,5 @@ class BluetoothDialog final : public QDialog
 
   private:
     void ValidateRequest();
-    void ClearFeedback();
-
-    Ui::BluetoothDialog *ui;
+    BluetoothPanel *panel;
 };

@@ -1,5 +1,6 @@
-#include "Pmainwindow.h"
+#include "Paccesspanel.h"
 #include "ui_Pmainwindow.h"
+#include <QMainWindow>
 
 #include <QPainter>
 #include <QSignalBlocker>
@@ -64,7 +65,7 @@ class AccessTransitionOverlay final : public QWidget
 };
 } // namespace
 
-void MainWindow::InitializeAccessTransition()
+void AccessPanel::InitializeAccessTransition()
 {
     accessTransition = new AccessTransitionOverlay(ui->accessStack);
     accessAnimation = new QVariantAnimation(accessTransition);
@@ -78,12 +79,12 @@ void MainWindow::InitializeAccessTransition()
                     ->SetProgress(value.toReal());
             });
     connect(accessAnimation, &QVariantAnimation::finished, this,
-            &MainWindow::FinishAccessTransition);
+            &AccessPanel::FinishAccessTransition);
     ui->accessStack->installEventFilter(this);
-    installEventFilter(this);
+    window->installEventFilter(this);
 }
 
-void MainWindow::ShowAccessPage(QWidget *page, bool animate)
+void AccessPanel::ShowAccessPage(QWidget *page, bool animate)
 {
     FinishAccessTransition();
     auto *sourcePage = ui->accessStack->currentWidget();
@@ -116,7 +117,7 @@ void MainWindow::ShowAccessPage(QWidget *page, bool animate)
     accessAnimation->start();
 }
 
-void MainWindow::FinishAccessTransition()
+void AccessPanel::FinishAccessTransition()
 {
     const bool WAS_ACTIVE = accessTransition->isVisible();
     accessAnimation->stop();
@@ -127,9 +128,9 @@ void MainWindow::FinishAccessTransition()
         FocusAccessPage();
 }
 
-void MainWindow::FocusAccessPage()
+void AccessPanel::FocusAccessPage()
 {
-    if (pages->currentIndex() != 0 || isMinimized())
+    if (!accessRoot->isVisible() || window->isMinimized())
         return;
     if (ui->accessStack->currentWidget() == ui->serverPage)
         ui->serverHostInput->setFocus();

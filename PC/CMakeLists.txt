@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(IoTControl_PC VERSION 0.1 LANGUAGES CXX)
+project(IoTControl_PC VERSION 0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,28 +14,41 @@ qt_add_executable(IoTControl_PC
     Core/Src/Pmainwindow.cpp
     Core/Src/Pmainwindowserver.cpp
     Core/Src/Pmainwindowlogin.cpp
-    Core/Src/Pmainwindowtransition.cpp
-    Core/Src/Pconnectioncanvas.cpp
-    Core/Src/Pfeaturedetailswidget.cpp
+    Panel/Paccesspaneltransition.cpp
+    Panel/Paccesspanel.cpp
+    Panel/Paccesspanel.h
+    Panel/Pdashboardpanel.cpp
+    Panel/Pdashboardpanel.h
+    Panel/Pbluetoothpanel.cpp
+    Panel/Pbluetoothpanel.h
+    widget/Pconnectioncanvas.cpp
+    widget/Pfeaturedetailswidget.cpp
     Core/Src/Pdashboardwidget.cpp
-    Core/Src/Pfanchartwidget.cpp
-    Core/Src/Pfanrotorwidget.cpp
+    widget/Pfanchartwidget.cpp
+    widget/Pfanrotorwidget.cpp
     Core/Src/Pbluetoothdialog.cpp
-    Core/Src/Pgamingtheme.cpp
+    widget/Pgamingtheme.cpp
     Core/Inc/Pmainwindow.h
-    Core/Inc/Pconnectioncanvas.h
-    Core/Inc/Pfeaturedetailswidget.h
+    widget/Pconnectioncanvas.h
+    widget/Pfeaturedetailswidget.h
     Core/Inc/Pdashboardwidget.h
-    Core/Inc/Pfanchartwidget.h
-    Core/Inc/Pfanrotorwidget.h
+    widget/Pfanchartwidget.h
+    widget/Pfanrotorwidget.h
     Core/Inc/Pbluetoothdialog.h
-    Core/Inc/Pgamingtheme.h
+    widget/Pgamingtheme.h
     screens/Pmainwindow.ui
     screens/Pdashboard.ui
     screens/Pbluetoothdialog.ui
+    ../common/IoTPacketCodec.c
+    ../common/IoTPacketStream.c
 )
 
-target_include_directories(IoTControl_PC PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc")
+target_include_directories(IoTControl_PC PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Panel"
+    "${CMAKE_CURRENT_SOURCE_DIR}/widget"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../common"
+)
 target_link_libraries(IoTControl_PC PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 if(WIN32)

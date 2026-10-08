@@ -1,46 +1,48 @@
 # 서버 연결 미리보기 버튼에 함수 연결하기
 
-현재 프로그램에서 실행되는 버튼 연결 예제입니다. UI 파일은 `screens`, 함수 선언은 `Core/Inc`, 함수 구현은 `Core/Src`에 있습니다.
+화면은 `Panel`, 실행 함수의 선언은 `Core/Inc`, 구현은 `Core/Src`에 있습니다. Qt Designer 파일은 `screens`에 유지합니다.
 
-## 1. 버튼 이름 확인
+## 1. 디자인에서 클릭 신호 전달
 
-`screens/Pmainwindow.ui`의 서버 연결 미리보기 버튼은 `objectName`이 `connectServerButton`입니다. Qt Designer에서 이 이름을 확인할 수 있습니다.
+`screens/Pmainwindow.ui`의 버튼 이름은 `connectServerButton`입니다.
+`Panel/Paccesspanel.cpp`의 `AccessPanel::InitializeInputEvents()`는 버튼 클릭을 화면의 요청 신호로 전달합니다.
 
-## 2. 헤더에 함수 선언
+```cpp
+connect(ui->connectServerButton, &QPushButton::clicked,
+        this, &AccessPanel::ServerPreviewRequested);
+```
 
-`Core/Inc/Pmainwindow.h`의 `MainWindow` 클래스 `private` 영역:
+주소·포트 입력칸에서 Enter를 눌러도 같은 신호가 발생합니다. 디자인 클래스에서는 소켓 연결이나 로그인 패킷을 처리하지 않습니다.
+
+## 2. Core에서 실행 함수 연결
+
+`Core/Inc/Pmainwindow.h`의 `MainWindow` 클래스에 실행 함수를 선언합니다.
 
 ```cpp
 void ConfirmServerPreview();
 ```
 
-## 3. 버튼 클릭과 함수 연결
-
-`Core/Src/Pmainwindow.cpp`의 생성자는 `ui->setupUi(this)` 이후 `InitializeServerControls()`를 호출합니다. 버튼 연결 코드는 `Core/Src/Pmainwindowserver.cpp`의 `MainWindow::InitializeServerControls()`에 있습니다.
+`Core/Src/Pmainwindowserver.cpp`의 `MainWindow::InitializeServerControls()`에서 화면 신호를 함수에 연결합니다.
 
 ```cpp
-connect(ui->connectServerButton, &QPushButton::clicked,
+connect(accessPanel, &AccessPanel::ServerPreviewRequested,
         this, &MainWindow::ConfirmServerPreview);
 ```
 
-- `ui->connectServerButton`: 클릭을 받는 버튼
-- `&QPushButton::clicked`: 버튼을 누르면 발생하는 신호
-- `this`: 함수를 실행할 현재 `MainWindow` 객체
-- `&MainWindow::ConfirmServerPreview`: 클릭할 때 실행할 함수
+`MainWindow` 생성자는 화면을 만든 뒤 `InitializeServerControls()`를 호출합니다. 실행 함수는 일반 `private` 멤버 함수여도 됩니다.
 
-함수 포인터로 연결하므로 `ConfirmServerPreview()`는 일반 `private` 멤버 함수로 선언할 수 있습니다. 현재 프로그램에는 위 연결이 이미 적용되어 있습니다.
+## 3. 입력 읽기와 결과 표시
 
-## 4. 호출되는 함수 구현
-
-`Core/Src/Pmainwindowserver.cpp`의 `void MainWindow::ConfirmServerPreview()`가 실행됩니다. 실제 함수의 입력값 읽기 부분은 다음과 같습니다.
+같은 파일의 `MainWindow::ConfirmServerPreview()`가 입력을 읽고 서버 주소와 포트를 검증합니다.
 
 ```cpp
-const QString HOST = ui->serverHostInput->text().trimmed();
-const int PORT = ui->serverPortInput->text().toInt();
+const QString HOST = accessPanel->ReadServerHost().trimmed();
+bool validPort = false;
+const int PORT = accessPanel->ReadServerPort().toInt(&validPort);
 ```
 
-현재 함수는 서버 주소가 비어 있는지, 포트가 1–65535 범위인지 검사합니다. 잘못된 입력이면 `serverFeedback`에 안내하고 입력칸으로 포커스를 이동합니다. 검증에 통과하면 서버 설정을 화면에 반영하고 `ShowLogin()`으로 로그인 화면을 엽니다.
+잘못된 입력은 `accessPanel->ShowServerError(...)`로 표시하고, 검증된 값은 `accessPanel->SetServerSummary(HOST, PORT)`로 반영합니다. 이후 `ShowLogin()`으로 로그인 화면을 엽니다.
 
-주소·포트 입력칸에서 Enter를 눌러도 같은 `ConfirmServerPreview()` 함수를 호출합니다. 이 예제는 서버 설정을 검토하는 UI 목업이며 실제 소켓 연결은 하지 않습니다.
+현재는 서버 설정을 검토하는 UI 목업이며 실제 소켓 연결은 하지 않습니다. 통신을 구현할 때는 이 실행 함수에서 연결 서비스를 호출하고, 연결 성공 결과를 받은 뒤 로그인 화면을 열면 됩니다.
 
-다른 버튼에도 같은 방식으로 적용할 수 있습니다. 헤더에 새 함수(예: `HandleButtonClick()`)를 선언하고, 해당 기능의 `.cpp`에 `void MainWindow::HandleButtonClick()`을 구현한 다음, 위 `connect()`의 버튼과 함수 이름을 바꾸면 됩니다. 여러 `.cpp` 파일로 나뉘어도 선언과 구현은 같은 `MainWindow` 클래스에 속합니다.
+다른 기능도 **버튼 → Panel 요청 신호 → Core 실행 함수 → Panel 결과 표시** 순서로 연결합니다. 로그인은 `AccessPanel::LoginSubmitted`가 `MainWindow::SubmitLogin()`에 연결되어 있으며, 기존 공용 규격의 패킷은 `MainWindow::LoginRequested(QByteArray)`로 송신부에 전달됩니다.

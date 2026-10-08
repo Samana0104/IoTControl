@@ -1,47 +1,22 @@
+#include "IoTPacketCodec.h"
+#include "Paccesspanel.h"
 #include "Pmainwindow.h"
-#include "ui_Pmainwindow.h"
 
 #include <QMetaMethod>
 #include <QSettings>
+#include <cstring>
 
 void MainWindow::InitializeLoginControls()
 {
-    for (auto *input : {ui->usernameInput, ui->passwordInput})
-    {
-        QPalette palette = input->palette();
-        palette.setColor(QPalette::PlaceholderText, QColor("#878d9a"));
-        input->setPalette(palette);
-        connect(input, &QLineEdit::textChanged, this,
-                &MainWindow::ClearFeedback);
-        connect(input, &QLineEdit::returnPressed, this,
-                &MainWindow::SubmitLogin);
-    }
-    ui->passwordInput->installEventFilter(this);
-
-    connect(ui->passwordToggleButton, &QToolButton::toggled, this,
-            [this](bool visible)
-            {
-                ui->passwordInput->setEchoMode(visible ? QLineEdit::Normal
-                                                       : QLineEdit::Password);
-                ui->passwordToggleButton->setText(visible ? tr("숨김")
-                                                          : tr("표시"));
-                const QString DESCRIPTION =
-                    visible ? tr("비밀번호 숨기기") : tr("비밀번호 표시");
-                ui->passwordToggleButton->setToolTip(DESCRIPTION);
-                ui->passwordToggleButton->setAccessibleName(DESCRIPTION);
-            });
-    connect(ui->loginButton, &QPushButton::clicked, this,
+    connect(accessPanel, &AccessPanel::LoginSubmitted, this,
             &MainWindow::SubmitLogin);
-
     QSettings settings;
     const bool REMEMBER =
         settings.value(QStringLiteral("login/rememberUsername"), false)
             .toBool();
-    ui->rememberUsername->setChecked(REMEMBER);
-    if (REMEMBER)
-        ui->usernameInput->setText(
-            settings.value(QStringLiteral("login/username")).toString());
-    connect(ui->rememberUsername, &QCheckBox::toggled, this,
+    accessPanel->RestoreUsername(
+        REMEMBER, settings.value(QStringLiteral("login/username")).toString());
+    connect(accessPanel, &AccessPanel::RememberUsernameChanged, this,
             [](bool checked)
             {
                 if (!checked)
@@ -54,63 +29,72 @@ void MainWindow::InitializeLoginControls()
             });
 }
 
-void MainWindow::ClearFeedback()
-{
-    ui->feedbackLabel->clear();
-    ui->usernameInput->setProperty("invalid", false);
-    ui->passwordField->setProperty("invalid", false);
-    RefreshStyle(ui->usernameInput);
-    RefreshStyle(ui->passwordField);
-}
-
 void MainWindow::SubmitLogin()
 {
     if (!serverPreviewReady)
     {
         ShowServerConnection();
-        ui->serverFeedback->setText(tr("서버 연결 단계를 먼저 진행해 주세요."));
+        accessPanel->SetServerFeedback(
+            tr("서버 연결 단계를 먼저 진행해 주세요."));
         return;
     }
-    const QString USERNAME = ui->usernameInput->text().trimmed();
-    const QString PASSWORD = ui->passwordInput->text();
-    const bool MISSING_USERNAME = USERNAME.isEmpty();
-    const bool MISSING_PASSWORD = PASSWORD.isEmpty();
-    ClearFeedback();
+    const QByteArray ID = accessPanel->ReadUsername().trimmed().toUtf8();
+    const QByteArray PASSWORD = accessPanel->ReadPassword().toUtf8();
+    const bool INVALID_ID =
+        ID.isEmpty() || ID.size() > MEM_ID_SIZE || ID.contains('\0');
+    const bool INVALID_PASSWORD = PASSWORD.isEmpty() ||
+                                  PASSWORD.size() > MEM_PW_SIZE ||
+                                  PASSWORD.contains('\0');
+    accessPanel->ClearLoginFeedback();
 
-    if (MISSING_USERNAME || MISSING_PASSWORD)
+    if (INVALID_ID || INVALID_PASSWORD)
     {
-        ui->usernameInput->setProperty("invalid", MISSING_USERNAME);
-        ui->passwordField->setProperty("invalid", MISSING_PASSWORD);
-        ui->feedbackLabel->setProperty("messageType", "error");
-        ui->feedbackLabel->setText(
-            MISSING_USERNAME && MISSING_PASSWORD
+        accessPanel->ShowLoginError(
+            ID.isEmpty() && PASSWORD.isEmpty()
                 ? tr("아이디와 비밀번호를 입력해 주세요.")
-            : MISSING_USERNAME ? tr("아이디를 입력해 주세요.")
-                               : tr("비밀번호를 입력해 주세요."));
-        RefreshStyle(ui->usernameInput);
-        RefreshStyle(ui->passwordField);
-        RefreshStyle(ui->feedbackLabel);
-        (MISSING_USERNAME ? ui->usernameInput : ui->passwordInput)->setFocus();
+            : ID.isEmpty()       ? tr("아이디를 입력해 주세요.")
+            : PASSWORD.isEmpty() ? tr("비밀번호를 입력해 주세요.")
+            : INVALID_ID ? tr("아이디는 UTF-8 기준 1–%1바이트이며 널 문자를 "
+                              "포함할 수 없습니다.")
+                               .arg(MEM_ID_SIZE)
+                         : tr("비밀번호는 UTF-8 기준 1–%1바이트이며 널 문자를 "
+                              "포함할 수 없습니다.")
+                               .arg(MEM_PW_SIZE),
+            INVALID_ID, INVALID_PASSWORD);
         return;
     }
+
+    MemData memData{};
+    std::memcpy(memData.id, ID.constData(), static_cast<size_t>(ID.size()));
+    std::memcpy(memData.pw, PASSWORD.constData(),
+                static_cast<size_t>(PASSWORD.size()));
+    uint8_t frame[HEADER_SIZE + MEM_DATA_SIZE]{};
+    const size_t FRAME_LENGTH = MakeLoginPacket(frame, sizeof(frame), &memData);
+    if (FRAME_LENGTH == 0)
+    {
+        accessPanel->SetLoginFeedback(
+            tr("로그인 요청 패킷을 만들지 못했습니다."), true);
+        return;
+    }
+    const QByteArray PACKET(reinterpret_cast<const char *>(frame),
+                            static_cast<qsizetype>(FRAME_LENGTH));
 
     QSettings settings;
     settings.setValue(QStringLiteral("login/rememberUsername"),
-                      ui->rememberUsername->isChecked());
-    if (ui->rememberUsername->isChecked())
-        settings.setValue(QStringLiteral("login/username"), USERNAME);
+                      accessPanel->ReadRememberUsername());
+    if (accessPanel->ReadRememberUsername())
+        settings.setValue(QStringLiteral("login/username"),
+                          QString::fromUtf8(ID));
     else
         settings.remove(QStringLiteral("login/username"));
 
-    // Authentication can be connected here; never persist passwords or simulate
-    // a successful login.
+    // REQ_LOGIN 프레임을 송신부에 전달합니다. 인증 성공 처리는 ACK_LOGIN 수신
+    // 후 수행합니다.
     if (isSignalConnected(QMetaMethod::fromSignal(&MainWindow::LoginRequested)))
-        emit LoginRequested(USERNAME, PASSWORD);
+        emit LoginRequested(PACKET);
     else
     {
-        ui->feedbackLabel->setProperty("messageType", "info");
-        ui->feedbackLabel->setText(
-            tr("로그인 서비스가 아직 연결되지 않았어요."));
-        RefreshStyle(ui->feedbackLabel);
+        accessPanel->SetLoginFeedback(
+            tr("로그인 서비스가 아직 연결되지 않았어요."), false);
     }
 }
