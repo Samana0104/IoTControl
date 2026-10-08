@@ -120,6 +120,8 @@ void DashboardWidget::DisplayClientRecords()
     panel->SetFanTargets(fanIds);
 }
 
+void DashboardWidget::AppendPacketLog(const QString &line, bool sent, bool valid) { panel->AppendPacketLog(line, sent, valid); }
+
 void DashboardWidget::SetDataFeedback(const QString &message) { panel->SetFeedback(message); }
 
 void DashboardWidget::SetClientRefreshing(const QString &clientId) { panel->SetClientRefreshing(clientId); }

@@ -9,8 +9,8 @@ BluetoothPanel::BluetoothPanel(QDialog *dialog)
     : QObject(dialog), ui(new Ui::BluetoothDialog)
 {
     ui->setupUi(dialog);
-    ApplyGamingPalette(dialog);
     dialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+    ApplyGamingDialogTheme(dialog);
     for (auto *input : {ui->bluetoothIdInput, ui->bluetoothPasswordInput})
     {
         QPalette palette = input->palette();

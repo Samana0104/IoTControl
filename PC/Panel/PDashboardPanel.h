@@ -28,6 +28,7 @@ class DashboardPanel final : public QObject
     void SetTarget(int percent);
     void DisplayTarget(int percent, int rotorSpeed);
     void SetServerEndpoint(const QString &host, int port);
+    void AppendPacketLog(const QString &line, bool sent, bool valid);
     void SetFeedback(const QString &message);
     void SetClients(const QList<QStringList> &rows);
     void DisplayDhtClients(const QList<QStringList> &rows);
@@ -75,11 +76,13 @@ class DashboardPanel final : public QObject
     QList<QWidget *> entrancePanels;
     QList<QLabel *> metricLabels;
     QStringList metricFinalText;
-    int overviewTableMaximumHeight;
     int overviewChartMaximumHeight;
     bool fanUpdateMode = false;
     bool fanUpdateBusy = false;
     QString fanBusyLabel;
     QString refreshingClientId;
     bool dhtLoading = false;
+    bool packetLogFollow = true;
+    bool packetLogAppending = false;
+    bool packetLogLayoutPending = false;
 };

@@ -8,24 +8,17 @@ namespace
 constexpr int SERVER_CONNECTION_TIMEOUT_MS = 10000;
 } // namespace
 
-ServerConnection::ServerConnection(QObject *parent)
-    : QObject(parent), socket(new QTcpSocket(this)),
-      connectionTimer(new QTimer(this))
+ServerConnection::ServerConnection(QObject *parent) : QObject(parent), socket(new QTcpSocket(this)), connectionTimer(new QTimer(this))
 {
     socket->setObjectName(QStringLiteral("serverSocket"));
     connectionTimer->setObjectName(QStringLiteral("serverConnectionTimer"));
     connectionTimer->setSingleShot(true);
     connectionTimer->setInterval(SERVER_CONNECTION_TIMEOUT_MS);
-    connect(socket, &QTcpSocket::connected, this,
-            &ServerConnection::HandleConnected);
-    connect(socket, &QTcpSocket::disconnected, this,
-            &ServerConnection::HandleDisconnected);
-    connect(socket, &QTcpSocket::errorOccurred, this,
-            &ServerConnection::HandleSocketError);
-    connect(socket, &QTcpSocket::readyRead, this,
-            &ServerConnection::ReadServerData);
-    connect(connectionTimer, &QTimer::timeout, this,
-            &ServerConnection::HandleConnectionTimeout);
+    connect(socket, &QTcpSocket::connected, this, &ServerConnection::HandleConnected);
+    connect(socket, &QTcpSocket::disconnected, this, &ServerConnection::HandleDisconnected);
+    connect(socket, &QTcpSocket::errorOccurred, this, &ServerConnection::HandleSocketError);
+    connect(socket, &QTcpSocket::readyRead, this, &ServerConnection::ReadServerData);
+    connect(connectionTimer, &QTimer::timeout, this, &ServerConnection::HandleConnectionTimeout);
 }
 
 ServerConnection::~ServerConnection() { DisconnectFromServer(); }
@@ -54,11 +47,7 @@ void ServerConnection::DisconnectFromServer()
     socket->abort();
 }
 
-bool ServerConnection::IsConnected() const
-{
-    return active && connected &&
-           socket->state() == QAbstractSocket::ConnectedState;
-}
+bool ServerConnection::IsConnected() const { return active && connected && socket->state() == QAbstractSocket::ConnectedState; }
 
 bool ServerConnection::IsConnecting() const { return active && !connected; }
 
@@ -68,10 +57,10 @@ bool ServerConnection::SendPacket(const QByteArray &packet)
         return false;
     if (socket->write(packet) != packet.size())
     {
-        FailConnection(tr("서버로 요청을 전송하지 못했습니다: %1")
-                           .arg(socket->errorString()));
+        FailConnection(tr("서버로 요청을 전송하지 못했습니다: %1").arg(socket->errorString()));
         return false;
     }
+    emit DataSent(packet);
     // write() 성공은 송신 버퍼 등록을 뜻합니다. 인증 성공 판정은 서버 ACK로
     // 합니다.
     return true;
@@ -98,8 +87,7 @@ void ServerConnection::HandleDisconnected()
 
 void ServerConnection::HandleSocketError()
 {
-    if (active && connected &&
-        socket->error() == QAbstractSocket::RemoteHostClosedError)
+    if (active && connected && socket->error() == QAbstractSocket::RemoteHostClosedError)
     {
         // 종료 직전 도착한 바이트도 수신부에 전달한 뒤 연결 종료를 알립니다.
         ReadServerData();

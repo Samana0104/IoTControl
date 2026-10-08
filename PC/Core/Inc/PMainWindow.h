@@ -17,6 +17,7 @@ class DashboardWidget;
 class QStackedWidget;
 class QTimer;
 class ServerConnection;
+class PacketMonitor;
 class ServerLogin;
 class ServerDhtQuery;
 class ServerBluetooth;
@@ -79,6 +80,7 @@ class MainWindow : public QMainWindow
     DashboardWidget *dashboard;
     QSize loginWindowSize;
     ServerConnection *serverConnection;
+    PacketMonitor *packetMonitor;
     ServerLogin *serverLogin;
     ServerDhtQuery *serverDhtQuery;
     ServerBluetooth *serverBluetooth;

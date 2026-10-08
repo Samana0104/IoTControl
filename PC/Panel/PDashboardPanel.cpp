@@ -9,12 +9,16 @@
 #include <QHeaderView>
 #include <QParallelAnimationGroup>
 #include <QPauseAnimation>
+#include <QPlainTextEdit>
 #include <QPropertyAnimation>
 #include <QScrollBar>
 #include <QSequentialAnimationGroup>
 #include <QShowEvent>
 #include <QSignalBlocker>
 #include <QStyle>
+#include <QTextCharFormat>
+#include <QTextCursor>
+#include <QTimer>
 #include <QVariantAnimation>
 
 namespace
@@ -41,13 +45,21 @@ QString FormatMetricValue(const QString &finalText, qreal progress)
 DashboardPanel::DashboardPanel(QWidget *host) : QObject(host), host(host), ui(new Ui::DashboardWidget), fanChart(new FanChartWidget(host)), fanRotor(new FanRotorWidget(host))
 {
     ui->setupUi(host);
-    overviewTableMaximumHeight = ui->clientsTable->maximumHeight();
+    ui->dashboardVerticalSplitter->setSizes({640, 190});
+    connect(ui->clearPacketLogButton, &QPushButton::clicked, ui->packetTerminal, &QPlainTextEdit::clear);
+    ui->packetTerminal->viewport()->installEventFilter(this);
+    connect(ui->packetTerminal->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int value)
+            {
+                if (!packetLogAppending && !packetLogLayoutPending)
+                    packetLogFollow = value >= ui->packetTerminal->verticalScrollBar()->maximum() - 1; });
     overviewChartMaximumHeight = ui->fanChartHost->maximumHeight();
     ApplyGamingPalette(host);
     new GamingBackdropWidget(ui->dashboardContent);
     fanChart->setObjectName(QStringLiteral("fanChart"));
     ui->fanChartLayout->addWidget(fanChart);
     ui->chartPanelLayout->setStretch(1, 1);
+    ui->clientsPanelLayout->setStretch(1, 1);
+    ui->clientsPanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     fanRotor->setObjectName(QStringLiteral("fanRotor"));
     ui->targetValue->ensurePolished();
     const QFontMetrics TARGET_METRICS(ui->targetValue->font());
@@ -99,6 +111,7 @@ DashboardPanel::DashboardPanel(QWidget *host) : QObject(host), host(host), ui(ne
 DashboardPanel::~DashboardPanel()
 {
     host->removeEventFilter(this);
+    ui->packetTerminal->viewport()->removeEventFilter(this);
     if (entranceAnimation)
         entranceAnimation->stop();
     FinishEntrance();
@@ -107,6 +120,16 @@ DashboardPanel::~DashboardPanel()
 
 bool DashboardPanel::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == ui->packetTerminal->viewport() && event->type() == QEvent::Resize && !packetLogLayoutPending)
+    {
+        // 스크롤 범위가 바뀌기 전에 추적 상태를 보존하고 레이아웃 완료 후 복원합니다.
+        packetLogLayoutPending = true;
+        QTimer::singleShot(0, this, [this]
+                           {
+                               if (packetLogFollow)
+                                   ui->packetTerminal->verticalScrollBar()->setValue(ui->packetTerminal->verticalScrollBar()->maximum());
+                               packetLogLayoutPending = false; });
+    }
     if (watched == host && event->type() == QEvent::Show && !event->spontaneous())
         PlayEntrance();
     else if (watched == host && event->type() == QEvent::Hide)
@@ -368,7 +391,7 @@ void DashboardPanel::SelectSection(QPushButton *navigation)
     ui->chartPanel->setVisible(!IS_CLIENTS);
     ui->fanControlPanel->setVisible(!IS_CLIENTS);
     ui->clientsPanel->setVisible(!IS_FAN);
-    ui->clientsTable->setMaximumHeight(IS_CLIENTS ? QWIDGETSIZE_MAX : overviewTableMaximumHeight);
+    ui->contentBottomSpace->changeSize(0, 0, QSizePolicy::Minimum, QSizePolicy::Minimum);
     ui->fanChartHost->setMaximumHeight(IS_FAN ? QWIDGETSIZE_MAX : overviewChartMaximumHeight);
 
     if (IS_FAN)
@@ -390,9 +413,10 @@ void DashboardPanel::SelectSection(QPushButton *navigation)
     for (int index = 0; index < ui->dashboardContentLayout->count(); ++index)
     {
         auto *item = ui->dashboardContentLayout->itemAt(index);
-        const bool EXPAND = (IS_FAN && item->layout() == ui->chartAndControlLayout) || (IS_CLIENTS && item->widget() == ui->clientsPanel);
+        const bool EXPAND = (IS_FAN && item->layout() == ui->chartAndControlLayout) || (!IS_FAN && item->widget() == ui->clientsPanel);
         ui->dashboardContentLayout->setStretch(index, EXPAND ? 1 : 0);
     }
+    ui->dashboardContentLayout->invalidate();
     ui->dashboardContentLayout->activate();
     ui->contentScroll->verticalScrollBar()->setValue(0);
 }
@@ -435,4 +459,21 @@ void DashboardPanel::RefreshClientButtons()
         button->setToolTip(tr("%1의 새 온습도 측정을 요청하고 DB 저장 후 다시 조회합니다.").arg(ID));
         button->setAccessibleName(tr("%1 현장 갱신 요청").arg(ID));
     }
+}
+
+void DashboardPanel::AppendPacketLog(const QString &line, bool sent, bool valid)
+{
+    auto *log = ui->packetTerminal;
+    packetLogAppending = true;
+    QTextCursor cursor(log->document());
+    cursor.movePosition(QTextCursor::End);
+    if (!log->document()->isEmpty())
+        cursor.insertBlock();
+    QTextCharFormat format;
+    const QColor DIRECTION_COLOR(sent ? "#68ceef" : "#80dcb4");
+    format.setForeground(valid ? DIRECTION_COLOR : QColor("#ff7b96"));
+    cursor.insertText(line, format);
+    if (packetLogFollow)
+        log->verticalScrollBar()->setValue(log->verticalScrollBar()->maximum());
+    packetLogAppending = false;
 }

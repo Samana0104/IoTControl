@@ -20,6 +20,7 @@ class DashboardWidget final : public QWidget
     void DisplaySessionRecords(const SessionRecords &records);
     void SetSessionError(const QString &message);
     void ResetSessionStatus();
+    void AppendPacketLog(const QString &line, bool sent, bool valid);
     void SetDataFeedback(const QString &message);
     void SetClientRefreshing(const QString &clientId);
     void SetDhtLoading(bool loading, bool collecting = false);

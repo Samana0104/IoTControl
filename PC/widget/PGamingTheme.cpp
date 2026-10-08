@@ -4,6 +4,12 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPalette>
+#include <QStyle>
+#include <QStyleFactory>
+#ifdef Q_OS_WIN
+#include <dwmapi.h>
+#include <qt_windows.h>
+#endif
 
 void ApplyGamingPalette(QWidget *widget)
 {
@@ -24,13 +30,11 @@ void ApplyGamingPalette(QWidget *widget)
     palette.setColor(QPalette::Mid, QColor("#30343f"));
     palette.setColor(QPalette::Dark, QColor("#08090c"));
     palette.setColor(QPalette::Disabled, QPalette::Text, QColor("#727784"));
-    palette.setColor(QPalette::Disabled, QPalette::ButtonText,
-                     QColor("#727784"));
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor("#727784"));
     widget->setPalette(palette);
 }
 
-GamingBackdropWidget::GamingBackdropWidget(QWidget *parent, bool prominent)
-    : QWidget(parent), prominent(prominent)
+GamingBackdropWidget::GamingBackdropWidget(QWidget *parent, bool prominent) : QWidget(parent), prominent(prominent)
 {
     setObjectName(QStringLiteral("gamingBackdrop"));
     setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -47,8 +51,7 @@ void GamingBackdropWidget::paintEvent(QPaintEvent *)
     const qreal PANEL_WIDTH = width();
     const qreal PANEL_HEIGHT = height();
 
-    QRadialGradient redGlow(QPointF(PANEL_WIDTH * 0.03, PANEL_HEIGHT * 0.05),
-                            PANEL_WIDTH * 0.85);
+    QRadialGradient redGlow(QPointF(PANEL_WIDTH * 0.03, PANEL_HEIGHT * 0.05), PANEL_WIDTH * 0.85);
     redGlow.setColorAt(0, QColor(255, 51, 79, prominent ? 25 : 9));
     redGlow.setColorAt(1, QColor(255, 51, 79, 0));
     painter.fillRect(rect(), redGlow);
@@ -78,10 +81,8 @@ void GamingBackdropWidget::paintEvent(QPaintEvent *)
         painter.setPen(QPen(QColor(255, 51, 79, 160), 2));
         painter.drawLine(QPointF(28, 19), QPointF(88, 19));
         painter.setPen(QPen(QColor(125, 135, 151, 42), 1));
-        painter.drawLine(QPointF(PANEL_WIDTH - 20, PANEL_HEIGHT - 42),
-                         QPointF(PANEL_WIDTH - 20, PANEL_HEIGHT - 20));
-        painter.drawLine(QPointF(PANEL_WIDTH - 20, PANEL_HEIGHT - 20),
-                         QPointF(PANEL_WIDTH - 66, PANEL_HEIGHT - 20));
+        painter.drawLine(QPointF(PANEL_WIDTH - 20, PANEL_HEIGHT - 42), QPointF(PANEL_WIDTH - 20, PANEL_HEIGHT - 20));
+        painter.drawLine(QPointF(PANEL_WIDTH - 20, PANEL_HEIGHT - 20), QPointF(PANEL_WIDTH - 66, PANEL_HEIGHT - 20));
     }
 }
 
@@ -90,4 +91,35 @@ bool GamingBackdropWidget::eventFilter(QObject *watched, QEvent *event)
     if (watched == parentWidget() && event->type() == QEvent::Resize)
         setGeometry(parentWidget()->rect());
     return QWidget::eventFilter(watched, event);
+}
+
+void ApplyGamingDialogTheme(QWidget *widget)
+{
+    auto *style = QStyleFactory::create(QStringLiteral("Fusion"));
+    if (style)
+    {
+        style->setParent(widget);
+        widget->setStyle(style);
+    }
+    ApplyGamingPalette(widget);
+    widget->setAttribute(Qt::WA_StyledBackground, true);
+    widget->setAutoFillBackground(true);
+    new GamingBackdropWidget(widget, true);
+#ifdef Q_OS_WIN
+    const HWND HANDLE = reinterpret_cast<HWND>(widget->winId());
+    const BOOL DARK = TRUE;
+    const DWORD DARK_MODE_ATTRIBUTE = 20;
+    const DWORD LEGACY_DARK_MODE_ATTRIBUTE = 19;
+    const DWORD BORDER_COLOR_ATTRIBUTE = 34;
+    const DWORD CAPTION_COLOR_ATTRIBUTE = 35;
+    const DWORD TEXT_COLOR_ATTRIBUTE = 36;
+    const COLORREF BORDER_COLOR = RGB(48, 59, 78);
+    const COLORREF CAPTION_COLOR = RGB(16, 18, 25);
+    const COLORREF TEXT_COLOR = RGB(228, 234, 245);
+    if (FAILED(DwmSetWindowAttribute(HANDLE, DARK_MODE_ATTRIBUTE, &DARK, sizeof(DARK))))
+        DwmSetWindowAttribute(HANDLE, LEGACY_DARK_MODE_ATTRIBUTE, &DARK, sizeof(DARK));
+    DwmSetWindowAttribute(HANDLE, BORDER_COLOR_ATTRIBUTE, &BORDER_COLOR, sizeof(BORDER_COLOR));
+    DwmSetWindowAttribute(HANDLE, CAPTION_COLOR_ATTRIBUTE, &CAPTION_COLOR, sizeof(CAPTION_COLOR));
+    DwmSetWindowAttribute(HANDLE, TEXT_COLOR_ATTRIBUTE, &TEXT_COLOR, sizeof(TEXT_COLOR));
+#endif
 }

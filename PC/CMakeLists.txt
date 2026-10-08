@@ -10,6 +10,8 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 qt_standard_project_setup()
 
 set(PC_UI_SOURCES
+    Core/Src/PPacketMonitor.cpp
+    Core/Inc/PPacketMonitor.h
     Core/Src/PMainWindowBluetooth.cpp
     Core/Src/PServerBluetooth.cpp
     Core/Inc/PServerBluetooth.h
@@ -153,6 +155,11 @@ if(IOT_BUILD_TESTS)
 endif()
 
 if(WIN32)
+    foreach(PC_TARGET IoTControl_PC server_connection_tests server_login_tests dht_query_tests bluetooth_operations_tests)
+        if(TARGET ${PC_TARGET})
+            target_link_libraries(${PC_TARGET} PRIVATE dwmapi)
+        endif()
+    endforeach()
     get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
     find_program(WINDEPLOYQT_EXECUTABLE

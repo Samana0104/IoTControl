@@ -1,14 +1,17 @@
 #include "PBluetoothManagerPanel.h"
 #include "PGamingTheme.h"
 #include "ui_PBluetoothManagerDialog.h"
+#include <QColor>
 #include <QDialog>
 #include <QHeaderView>
 BluetoothManagerPanel::BluetoothManagerPanel(QDialog *dialog) : QObject(dialog), ui(new Ui::BluetoothManagerDialog)
 {
     ui->setupUi(dialog);
-    ApplyGamingPalette(dialog);
     dialog->setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+    ApplyGamingDialogTheme(dialog);
     ui->bluetoothResultsTable->verticalHeader()->hide();
+    ui->bluetoothResultsTable->verticalHeader()->setDefaultSectionSize(43);
+    ui->bluetoothResultsTable->setShowGrid(false);
     ui->bluetoothResultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     connect(ui->scanBluetoothButton, &QPushButton::clicked, this, &BluetoothManagerPanel::ScanRequested);
     connect(ui->connectAllBluetoothButton, &QPushButton::clicked, this, &BluetoothManagerPanel::ConnectAllRequested);
@@ -31,5 +34,15 @@ void BluetoothManagerPanel::Display(bool scanning, bool busy, const QList<QStrin
     table->setRowCount(rows.size());
     for (int row = 0; row < rows.size(); ++row)
         for (int column = 0; column < rows[row].size(); ++column)
-            table->setItem(row, column, new QTableWidgetItem(rows[row][column]));
+        {
+            auto *item = new QTableWidgetItem(rows[row][column]);
+            if (scanning && column >= 2)
+                item->setTextAlignment(Qt::AlignCenter);
+            if (!scanning && column == 1)
+            {
+                const bool SUCCESS = rows[row][column] == tr("연결 성공") || rows[row][column] == tr("이미 연결됨");
+                item->setForeground(QColor(SUCCESS ? "#65dbb3" : "#ff829d"));
+            }
+            table->setItem(row, column, item);
+        }
 }

@@ -1,46 +1,189 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<ui version="4.0"><class>BluetoothManagerDialog</class><widget class="QDialog" name="BluetoothManagerDialog">
-<property name="geometry"><rect><x>0</x><y>0</y><width>820</width><height>580</height></rect></property>
-<property name="windowTitle"><string>Bluetooth · 서버 장치 관리</string></property>
-<property name="styleSheet"><string>
-QDialog#BluetoothDialog { background: #17191f; }
-QWidget { font-family: "Segoe UI", "Malgun Gothic", sans-serif; font-size: 13px; color: #e0e4ed; }
-QLabel#bluetoothTitle { font-size: 23px; font-weight: 700; color: #f5f5f8; }
-QLabel#bluetoothSubtitle, QLabel#bluetoothHint { font-size: 12px; color: #a7afbe; }
-QLabel#bluetoothPreviewBadge { background: #2e251c; color: #edc780; border: 1px solid #594933; border-radius: 3px; padding: 5px 8px; font-size: 10px; }
-QLabel[role="field"] { font-size: 12px; font-weight: 600; }
-QLineEdit { background: #101217; color: #f0f1f5; border: 1px solid #3d424e; border-radius: 3px; padding: 10px 12px; selection-background-color: #a6233b; selection-color: #ffffff; }
-QLineEdit:focus { border: 1px solid #ff526b; background: #171a22; }
-QLineEdit[invalid="true"] { border-color: #ff8296; }
-QToolButton#bluetoothPasswordToggle { background: #262a34; color: #c4cede; border: 1px solid #454e5f; border-radius: 3px; padding: 8px; }
-QToolButton#bluetoothPasswordToggle:hover { background: #39232e; color: #ff96a8; border-color: #ac3b53; }
-QToolButton#bluetoothPasswordToggle:focus { border-color: #ff7c94; }
-QLabel#bluetoothFeedback { color: #ff8296; font-size: 12px; }
-QPushButton#bluetoothRequestButton { background: #d92946; color: #ffffff; border: 1px solid #ff536e; border-radius: 3px; padding: 12px; font-weight: 600; }
-QPushButton#bluetoothRequestButton:hover { background: #f13755; }
-QPushButton#bluetoothCancelButton { background: #262a34; color: #b9c2d2; border: 1px solid #454e5f; border-radius: 3px; padding: 12px; }
-QPushButton#bluetoothCancelButton:hover { background: #343b4a; color: #eef4ff; }
-QPushButton:focus { border-color: #ff7c94; }
-
-QTableWidget { background: #11141a; alternate-background-color: #1b1e26; color: #eef2ff; gridline-color: #303642; border: 1px solid #303642; } QHeaderView::section { background: #242936; color: #b8c8e2; border: 0; padding: 10px; } QPushButton:disabled { color: #626b7a; }
-QPushButton { background: #1c222e; color: #eaf1ff; border: 1px solid #424b5e; border-radius: 4px; padding: 10px 16px; }
-QPushButton:hover { background: #293344; border-color: #52bde7; }
-QPushButton:pressed { background: #111720; }
-QPushButton#scanBluetoothButton { border-color: #4baed8; }
-QPushButton#connectAllBluetoothButton { background: #ce2148; border-color: #f13960; font-weight: 600; }
-QPushButton#connectAllBluetoothButton:hover { background: #e02a52; }
-QPushButton:disabled { background: #141820; border-color: #303642; color: #626b7a; }
-</string></property>
-<layout class="QVBoxLayout" name="managerLayout">
-<property name="leftMargin"><number>24</number></property><property name="topMargin"><number>24</number></property><property name="rightMargin"><number>24</number></property><property name="bottomMargin"><number>24</number></property><property name="spacing"><number>16</number></property>
-<item><widget class="QLabel" name="managerTitle"><property name="text"><string>BLUETOOTH COMMAND CENTER</string></property><property name="styleSheet"><string>font-size: 23px; font-weight: 700; color: #ffffff;</string></property></widget></item>
-<item><widget class="QLabel" name="managerSubtitle"><property name="text"><string>Raspberry 서버에서 주변 장치를 검색하고 DB 등록 기기를 연결합니다.</string></property></widget></item>
-<item><layout class="QHBoxLayout" name="managerActions">
-<item><widget class="QPushButton" name="scanBluetoothButton"><property name="text"><string>주변 장치 스캔 · 10초</string></property><property name="minimumHeight"><number>42</number></property></widget></item>
-<item><widget class="QPushButton" name="connectAllBluetoothButton"><property name="text"><string>DB 등록 기기 전체 연결</string></property><property name="minimumHeight"><number>42</number></property></widget></item>
-</layout></item>
-<item><widget class="QLabel" name="managerFeedback"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>작업을 선택해 주세요.</string></property></widget></item>
-<item><widget class="QTableWidget" name="bluetoothResultsTable"><property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property><property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property><property name="alternatingRowColors"><bool>true</bool></property></widget></item>
-<item><widget class="QLabel" name="managerNote"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>스캔은 장치 발견만 수행합니다. 전체 연결은 DB에 등록된 ID·MAC을 사용하며, 등록되지 않은 검색 결과를 자동 연결하지 않습니다. 창을 닫아도 진행 중인 작업은 계속됩니다.</string></property></widget></item>
-<item><widget class="QPushButton" name="closeBluetoothManagerButton"><property name="text"><string>닫기</string></property><property name="minimumHeight"><number>36</number></property></widget></item>
-</layout></widget><resources/><connections/></ui>
+<?xml version='1.0' encoding='utf-8'?>
+<ui version="4.0">
+ <class>BluetoothManagerDialog</class>
+ <widget class="QDialog" name="BluetoothManagerDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>640</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Bluetooth · 서버 장치 관리</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">QDialog#BluetoothManagerDialog { background: #101219; }
+QWidget { font-family: "Segoe UI", "Malgun Gothic"; font-size: 13px; color: #e4eaf5; }
+QLabel { background: transparent; }
+QLabel#managerTitle { font-size: 25px; font-weight: 700; color: #ffffff; }
+QLabel#managerSubtitle, QLabel#managerNote { color: #909eb3; font-size: 12px; }
+QLabel#managerBadge { background: #301c29; color: #ff6b88; border: 1px solid #703047; border-radius: 4px; padding: 7px 12px; font-size: 11px; font-weight: 600; }
+QLabel#managerFeedback { background: #172331; color: #91dbf7; border: 1px solid #29475d; border-left: 3px solid #55bfe8; border-radius: 4px; padding: 12px 14px; }
+QPushButton { background: #1c2230; color: #e8effc; border: 1px solid #3b475d; border-radius: 5px; padding: 12px 18px; font-weight: 600; }
+QPushButton:hover { background: #263347; border-color: #67cbf1; }
+QPushButton:pressed { background: #121c2b; }
+QPushButton:focus { border-color: #88daf8; }
+QPushButton#scanBluetoothButton { background: #142632; color: #9ee5ff; border-color: #367b97; }
+QPushButton#scanBluetoothButton:hover { background: #1d3b4d; border-color: #70d3f8; }
+QPushButton#connectAllBluetoothButton { background: #cc224b; color: #ffffff; border-color: #f4416b; }
+QPushButton#connectAllBluetoothButton:hover { background: #e42b57; border-color: #ff7998; }
+QPushButton#connectAllBluetoothButton:pressed { background: #a2193b; }
+QPushButton:disabled { background: #171c26; color: #667489; border-color: #303847; }
+QTableWidget { background: #141923; alternate-background-color: #191f2b; color: #e6efff; border: 1px solid #303b4e; border-radius: 5px; selection-background-color: #273f56; selection-color: #ffffff; }
+QTableWidget::item { padding: 9px; border-bottom: 1px solid #252f40; }
+QTableWidget::item:selected { background: #273f56; color: #ffffff; }
+QHeaderView { background: #202938; }
+QHeaderView::section { background: #202938; color: #a7bcd6; border: 0; border-bottom: 1px solid #3b4d64; padding: 12px 9px; font-weight: 600; }
+QTableCornerButton::section { background: #202938; border: 0; }
+QScrollBar:vertical { background: #111722; width: 9px; margin: 0; }
+QScrollBar::handle:vertical { background: #3d526c; border-radius: 4px; min-height: 24px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: #111722; }
+QScrollBar:horizontal { background: #111722; height: 9px; margin: 0; }
+QScrollBar::handle:horizontal { background: #3d526c; border-radius: 4px; min-width: 24px; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: #111722; }
+</string>
+  </property>
+  <layout class="QVBoxLayout" name="managerLayout">
+   <property name="leftMargin">
+    <number>24</number>
+   </property>
+   <property name="topMargin">
+    <number>24</number>
+   </property>
+   <property name="rightMargin">
+    <number>24</number>
+   </property>
+   <property name="bottomMargin">
+    <number>24</number>
+   </property>
+   <property name="spacing">
+    <number>16</number>
+   </property>
+   <item>
+    <layout class="QHBoxLayout" name="managerHeaderLayout">
+     <item>
+      <widget class="QLabel" name="managerTitle">
+       <property name="text">
+        <string>BLUETOOTH COMMAND CENTER</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="managerHeaderSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QLabel" name="managerBadge">
+       <property name="text">
+        <string>SERVER / BLUETOOTH</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="managerSubtitle">
+     <property name="text">
+      <string>Raspberry 서버에서 주변 장치를 검색하고 DB 등록 기기를 연결합니다.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="managerActions">
+     <item>
+      <widget class="QPushButton" name="scanBluetoothButton">
+       <property name="text">
+        <string>주변 장치 스캔 · 10초</string>
+       </property>
+       <property name="minimumHeight">
+        <number>52</number>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="connectAllBluetoothButton">
+       <property name="text">
+        <string>DB 등록 기기 전체 연결</string>
+       </property>
+       <property name="minimumHeight">
+        <number>52</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="managerFeedback">
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+     <property name="text">
+      <string>작업을 선택해 주세요.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="bluetoothResultsTable">
+     <property name="editTriggers">
+      <set>QAbstractItemView::NoEditTriggers</set>
+     </property>
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectRows</enum>
+     </property>
+     <property name="alternatingRowColors">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="managerNote">
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+     <property name="text">
+      <string>스캔은 장치 발견만 수행합니다. 전체 연결은 DB에 등록된 ID·MAC을 사용하며, 등록되지 않은 검색 결과를 자동 연결하지 않습니다. 창을 닫아도 진행 중인 작업은 계속됩니다.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="managerFooterLayout">
+     <item>
+      <spacer name="managerFooterSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="closeBluetoothManagerButton">
+       <property name="text">
+        <string>닫기</string>
+       </property>
+       <property name="minimumHeight">
+        <number>36</number>
+       </property>
+       <property name="minimumWidth">
+        <number>130</number>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+  <property name="minimumSize">
+   <size>
+    <width>780</width>
+    <height>560</height>
+   </size>
+  </property>
+ </widget>
+ <resources />
+ <connections />
+</ui>

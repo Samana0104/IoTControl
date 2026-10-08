@@ -3,6 +3,7 @@
 #include <QWidget>
 
 void ApplyGamingPalette(QWidget *widget);
+void ApplyGamingDialogTheme(QWidget *widget);
 
 class GamingBackdropWidget final : public QWidget
 {

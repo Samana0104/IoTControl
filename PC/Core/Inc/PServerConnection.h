@@ -26,6 +26,8 @@ class ServerConnection final : public QObject
     void Connected();
     void Disconnected();
     void ConnectionFailed(const QString &message);
+    // 소켓 송신 버퍼에 등록된 데이터이며 서버 수신 확인은 ACK로 판단합니다.
+    void DataSent(const QByteArray &data);
     // TCP 청크입니다. 수신부에서 공용 헤더 기준으로 프레임을 조립해야 합니다.
     void DataReceived(const QByteArray &data);
 

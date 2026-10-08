@@ -2,6 +2,7 @@
 
 #include "PAccessPanel.h"
 #include "PDashboardWidget.h"
+#include "PPacketMonitor.h"
 #include "PServerBluetooth.h"
 #include "PServerConnection.h"
 #include "PServerDhtQuery.h"
@@ -12,12 +13,13 @@
 #include <QStackedWidget>
 #include <QTimer>
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new AccessPanel(this)), serverConnection(new ServerConnection(this)), serverLogin(new ServerLogin(serverConnection, this)), serverDhtQuery(new ServerDhtQuery(serverConnection, this)), serverBluetooth(new ServerBluetooth(serverConnection, this)), serverFanQuery(new ServerFanQuery(serverConnection, this)), serverSessionQuery(new ServerSessionQuery(serverConnection, this)), dhtPollTimer(new QTimer(this)), sessionPollTimer(new QTimer(this))
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), accessPanel(new AccessPanel(this)), serverConnection(new ServerConnection(this)), packetMonitor(new PacketMonitor(serverConnection, this)), serverLogin(new ServerLogin(serverConnection, this)), serverDhtQuery(new ServerDhtQuery(serverConnection, this)), serverBluetooth(new ServerBluetooth(serverConnection, this)), serverFanQuery(new ServerFanQuery(serverConnection, this)), serverSessionQuery(new ServerSessionQuery(serverConnection, this)), dhtPollTimer(new QTimer(this)), sessionPollTimer(new QTimer(this))
 {
     pages = new QStackedWidget(this);
     pages->setObjectName(QStringLiteral("pageStack"));
     pages->addWidget(takeCentralWidget());
     dashboard = new DashboardWidget(pages);
+    connect(packetMonitor, &PacketMonitor::LineReady, dashboard, &DashboardWidget::AppendPacketLog);
     pages->addWidget(dashboard);
     setCentralWidget(pages);
     connect(accessPanel, &AccessPanel::DashboardPreviewRequested, this, &MainWindow::ShowDashboard);
