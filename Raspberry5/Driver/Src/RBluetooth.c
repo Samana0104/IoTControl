@@ -42,6 +42,15 @@ typedef struct _PairResult
     int error; // 0: 성공, 그 외 errno
 } PairResult;
 
+// 검색 결과를 모으는 상태
+typedef struct _ScanList
+{
+    const char *nameFilter;
+    BluetoothScanDevice *devices;
+    size_t maxDevices;
+    size_t count;
+} ScanList;
+
 static int DiscoverRfcommChannel(const bdaddr_t *bluetoothAddress);
 static int SearchRfcommChannel(sdp_session_t *session);
 static int ReadRfcommChannel(sdp_list_t *responseList);
@@ -59,6 +68,11 @@ static int FindDevicePath(sd_bus *bus, const char *bluetoothMac, char devicePath
 static int DiscoverDevice(sd_bus *bus, const char *bluetoothMac, int timeoutSeconds, char devicePath[BLUEZ_PATH_SIZE]);
 static int ReceivePairReply(sd_bus_message *reply, void *userData, sd_bus_error *error);
 static int PairDevice(sd_bus *bus, const char *devicePath, int timeoutSeconds);
+static int ScanWithDiscovery(sd_bus *bus, ScanList *scanList, int scanSeconds);
+static int ReadScanObjects(sd_bus_message *reply, ScanList *scanList);
+static int ReadScanInterfaces(sd_bus_message *reply, ScanList *scanList);
+static int ReadScanDevice(sd_bus_message *reply, ScanList *scanList);
+static int MatchesNameFilter(const char *name, const char *nameFilter);
 
 // org.bluez.Agent1: PIN/패스키 요청에만 답하고 나머지는 빈 응답
 static const sd_bus_vtable PAIR_AGENT_VTABLE[] =
@@ -205,6 +219,32 @@ int PairBluetoothDevice(const char *bluetoothMac, const char *pin, int timeoutSe
         return -1;
     }
     return 0;
+}
+
+int ScanBluetoothDevices(const char *nameFilter, int scanSeconds, BluetoothScanDevice *devices, size_t maxDevices)
+{
+    ScanList scanList = {nameFilter, devices, maxDevices, 0};
+    sd_bus *bus = NULL;
+    int busResult;
+
+    if(devices == NULL || maxDevices == 0 || scanSeconds <= 0)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    busResult = sd_bus_open_system(&bus);
+    if(busResult >= 0)
+    {
+        busResult = ScanWithDiscovery(bus, &scanList, scanSeconds);
+    }
+    sd_bus_flush_close_unref(bus);
+    if(busResult < 0)
+    {
+        errno = -busResult;
+        return -1;
+    }
+    return (int)scanList.count;
 }
 
 // SDP로 장치의 Serial Port 서비스 RFCOMM 채널을 찾음. 실패하면 -1 (errno 설정)
@@ -648,6 +688,201 @@ static int PairDevice(sd_bus *bus, const char *devicePath, int timeoutSeconds)
     busResult = sd_bus_set_property(bus, BLUEZ_SERVICE, devicePath, BLUEZ_DEVICE_INTERFACE, "Trusted", &error, "b", 1);
     sd_bus_error_free(&error);
     return busResult < 0 ? busResult : 0;
+}
+
+// 검색을 켜고 scanSeconds 동안 기다린 뒤 BlueZ 객체 목록에서 장치를 모음. 0 또는 -errno
+static int ScanWithDiscovery(sd_bus *bus, ScanList *scanList, int scanSeconds)
+{
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+    char devicePath[BLUEZ_PATH_SIZE];
+    char adapterPath[BLUEZ_PATH_SIZE];
+    struct timespec scanTime = {scanSeconds, 0};
+    int discoveryStarted = 0;
+    int busResult;
+
+    // 빈 MAC은 어떤 장치와도 맞지 않으므로 어댑터 경로만 얻음
+    busResult = FindDevicePath(bus, "", devicePath, adapterPath);
+    if(busResult < 0)
+    {
+        return busResult;
+    }
+    if(adapterPath[0] == '\0')
+    {
+        return -ENODEV;
+    }
+
+    // HC-05는 클래식 BT라 BLE 장치는 제외. 필터는 이 버스 연결의 검색에만 적용되고 실패해도 검색은 진행
+    sd_bus_call_method(bus, BLUEZ_SERVICE, adapterPath, BLUEZ_ADAPTER_INTERFACE, "SetDiscoveryFilter", &error, NULL, "a{sv}", 1, "Transport", "s", "bredr");
+    sd_bus_error_free(&error);
+
+    busResult = sd_bus_call_method(bus, BLUEZ_SERVICE, adapterPath, BLUEZ_ADAPTER_INTERFACE, "StartDiscovery", &error, NULL, "");
+    if(busResult >= 0)
+    {
+        discoveryStarted = 1;
+    }
+    else if(!sd_bus_error_has_name(&error, "org.bluez.Error.InProgress"))
+    {
+        sd_bus_error_free(&error);
+        return busResult;
+    }
+    sd_bus_error_free(&error);
+
+    while(nanosleep(&scanTime, &scanTime) != 0 && errno == EINTR)
+    {
+    }
+
+    busResult = sd_bus_call_method(bus, BLUEZ_SERVICE, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", &error, &reply, "");
+    if(busResult >= 0)
+    {
+        busResult = ReadScanObjects(reply, scanList);
+    }
+    sd_bus_message_unref(reply);
+    sd_bus_error_free(&error);
+
+    if(discoveryStarted)
+    {
+        sd_bus_call_method(bus, BLUEZ_SERVICE, adapterPath, BLUEZ_ADAPTER_INTERFACE, "StopDiscovery", &error, NULL, "");
+        sd_bus_error_free(&error);
+    }
+    return busResult < 0 ? busResult : 0;
+}
+
+// GetManagedObjects 응답(a{oa{sa{sv}}})의 모든 객체를 훑음. 0 이상 또는 -errno
+static int ReadScanObjects(sd_bus_message *reply, ScanList *scanList)
+{
+    int busResult = sd_bus_message_enter_container(reply, 'a', "{oa{sa{sv}}}");
+
+    while(busResult >= 0 && (busResult = sd_bus_message_enter_container(reply, 'e', "oa{sa{sv}}")) > 0)
+    {
+        busResult = sd_bus_message_skip(reply, "o");
+        if(busResult >= 0)
+        {
+            busResult = ReadScanInterfaces(reply, scanList);
+        }
+        if(busResult >= 0)
+        {
+            busResult = sd_bus_message_exit_container(reply);
+        }
+    }
+    if(busResult >= 0)
+    {
+        busResult = sd_bus_message_exit_container(reply);
+    }
+    return busResult;
+}
+
+// 객체 하나의 인터페이스 목록(a{sa{sv}})에서 Device1만 읽음. 0 이상 또는 -errno
+static int ReadScanInterfaces(sd_bus_message *reply, ScanList *scanList)
+{
+    int busResult = sd_bus_message_enter_container(reply, 'a', "{sa{sv}}");
+
+    while(busResult >= 0 && (busResult = sd_bus_message_enter_container(reply, 'e', "sa{sv}")) > 0)
+    {
+        const char *interfaceName;
+
+        busResult = sd_bus_message_read(reply, "s", &interfaceName);
+        if(busResult >= 0 && strcmp(interfaceName, BLUEZ_DEVICE_INTERFACE) == 0)
+        {
+            busResult = ReadScanDevice(reply, scanList);
+        }
+        else if(busResult >= 0)
+        {
+            busResult = sd_bus_message_skip(reply, "a{sv}");
+        }
+        if(busResult >= 0)
+        {
+            busResult = sd_bus_message_exit_container(reply);
+        }
+    }
+    if(busResult >= 0)
+    {
+        busResult = sd_bus_message_exit_container(reply);
+    }
+    return busResult;
+}
+
+// Device1 속성(a{sv})을 읽어 이번 검색에서 보였고(RSSI 있음) 이름 필터에 맞으면 목록에 추가
+// 예전에 페어링만 해 두고 지금 근처에 없는 장치는 RSSI가 없어서 빠짐
+static int ReadScanDevice(sd_bus_message *reply, ScanList *scanList)
+{
+    BluetoothScanDevice device;
+    int hasAddress = 0;
+    int hasRssi = 0;
+    int busResult;
+
+    memset(&device, 0, sizeof(device));
+    busResult = sd_bus_message_enter_container(reply, 'a', "{sv}");
+    while(busResult >= 0 && (busResult = sd_bus_message_enter_container(reply, 'e', "sv")) > 0)
+    {
+        const char *propertyName;
+        const char *text;
+
+        busResult = sd_bus_message_read(reply, "s", &propertyName);
+        if(busResult >= 0 && strcmp(propertyName, "Address") == 0)
+        {
+            busResult = sd_bus_message_read(reply, "v", "s", &text);
+            if(busResult >= 0 && strlen(text) == BLUETOOTH_MAC_SIZE)
+            {
+                memcpy(device.mac, text, BLUETOOTH_MAC_TEXT_SIZE);
+                hasAddress = 1;
+            }
+        }
+        else if(busResult >= 0 && strcmp(propertyName, "Name") == 0)
+        {
+            busResult = sd_bus_message_read(reply, "v", "s", &text);
+            if(busResult >= 0)
+            {
+                snprintf(device.name, sizeof(device.name), "%s", text);
+            }
+        }
+        else if(busResult >= 0 && strcmp(propertyName, "RSSI") == 0)
+        {
+            busResult = sd_bus_message_read(reply, "v", "n", &device.rssi);
+            hasRssi = busResult >= 0;
+        }
+        else if(busResult >= 0 && strcmp(propertyName, "Paired") == 0)
+        {
+            busResult = sd_bus_message_read(reply, "v", "b", &device.paired);
+        }
+        else if(busResult >= 0)
+        {
+            busResult = sd_bus_message_skip(reply, "v");
+        }
+        if(busResult >= 0)
+        {
+            busResult = sd_bus_message_exit_container(reply);
+        }
+    }
+    if(busResult >= 0)
+    {
+        busResult = sd_bus_message_exit_container(reply);
+    }
+    if(busResult >= 0 && hasAddress && hasRssi && scanList->count < scanList->maxDevices && MatchesNameFilter(device.name, scanList->nameFilter))
+    {
+        scanList->devices[scanList->count++] = device;
+    }
+    return busResult;
+}
+
+// 대소문자 무시 부분 일치. 필터가 없으면 항상 1
+static int MatchesNameFilter(const char *name, const char *nameFilter)
+{
+    size_t filterLength;
+
+    if(nameFilter == NULL || nameFilter[0] == '\0')
+    {
+        return 1;
+    }
+    filterLength = strlen(nameFilter);
+    for(const char *start = name; *start != '\0'; ++start)
+    {
+        if(strncasecmp(start, nameFilter, filterLength) == 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 void DisconnectBluetoothDevice(int bluetoothFd)
