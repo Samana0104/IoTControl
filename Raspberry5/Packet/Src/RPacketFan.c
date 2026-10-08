@@ -4,9 +4,13 @@
 #include "RLog.h"
 #include "RNetwork.h"
 
+#include <errno.h>
 #include <inttypes.h>
+#include <stdlib.h>
 
 #define FAN_MAX_PERCENT 100
+// fan.speed INT 문자열 최대 길이 (부호 + 10자리)
+#define FAN_SPEED_TEXT_SIZE 16
 
 int RPacketFanReceive(RSession *session, const uint8_t *payload, size_t length)
 {
@@ -55,6 +59,60 @@ int RPacketFanReceiveAck(RSession *session, const uint8_t *payload, size_t lengt
         return 0;
     }
     RLOG_INFO("[%s] FAN control applied: id=%s, fd=%d", session->label, session->memberId, session->fd);
+    return 0;
+}
+
+int RPacketFanQueryReceive(RSession *session, const uint8_t *payload, size_t length)
+{
+    FanQueryAckData ack = {.result = RESULT_FAIL};
+    uint8_t frame[HEADER_SIZE + FAN_QUERY_ACK_DATA_SIZE];
+    char speedText[FAN_SPEED_TEXT_SIZE];
+    size_t frameLength;
+    int queryResult;
+
+    (void)payload;
+    (void)length;
+    if(session == NULL)
+    {
+        RLOG_ERROR("RPacketFanQueryReceive: NULL session");
+        return -1;
+    }
+
+    queryResult = QueryDatabaseValue(QUERY_SELECT_FAN, NULL, 0, speedText, sizeof(speedText));
+    if(queryResult == 1)
+    {
+        char *end;
+        long speed;
+
+        errno = 0;
+        speed = strtol(speedText, &end, 10);
+        if(errno == 0 && end != speedText && *end == '\0' && speed >= 0 && speed <= FAN_MAX_PERCENT)
+        {
+            ack.result = RESULT_SUCCESS;
+            ack.fan.fanSpeed = (uint16_t)speed;
+        }
+        else
+        {
+            RLOG_WARN("[%s] FAN query: invalid speed in DB: %s", session->label, speedText);
+        }
+    }
+    else
+    {
+        RLOG_WARN("[%s] FAN query failed: reason=%s", session->label, queryResult == 0 ? "no fan row (singleton_id=1)" : "database error");
+    }
+
+    frameLength = MakeFanQueryAckPacket(frame, sizeof(frame), &ack);
+    if(frameLength == 0)
+    {
+        RLOG_ERROR("[%s] ACK_FAN_QUERY frame build failed", session->label);
+        return -1;
+    }
+    if(RNetSend(session->fd, frame, frameLength) != 0)
+    {
+        RLOG_WARN("[%s] ACK_FAN_QUERY send failed", session->label);
+        return -1;
+    }
+    RLOG_INFO("[%s] FAN query: result=%s, speed=%u", session->label, ack.result == RESULT_SUCCESS ? "success" : "fail", (unsigned int)ack.fan.fanSpeed);
     return 0;
 }
 
