@@ -3,6 +3,7 @@
 #include "RDatabase.h"
 #include "RCommand.h"
 #include "RPacket.h"
+#include "RPacketFanControl.h"
 #include "RNetwork.h"
 #include "RLog.h"
 
@@ -48,6 +49,13 @@ int InitServer(TCPServer *server, const char *ip, int port)
     strcpy(server->ip, ip);
     server->port = port;
 
+    if(RPacketValidateProtocol() != 0)
+    {
+        return -1;
+    }
+    RPacketFanResetControl();
+    if(RNetSetMaintenanceHandler(RPacketFanControlTick) != 0)
+        return -1;
     if(RNetStart(RPacketProcess, RConfigGet()->server.workerCount) != 0)
     {
         RLOG_ERROR("Network start failed: %s", strerror(errno));
@@ -235,6 +243,7 @@ void CloseServer(TCPServer *server)
         server->socket = -1;
     }
     RNetStop();
+    RPacketFanResetControl();
     // 워커 스레드의 DB 연결은 스레드가 끝날 때 닫히고, 메인 스레드(콘솔) 연결은 여기서 닫음
     ResetDatabaseConnection();
     if(server->signalHandlersInstalled)

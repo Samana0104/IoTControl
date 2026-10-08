@@ -37,9 +37,13 @@ class DashboardPanel final : public QObject
     void ResetDhtLabels();
     void DisplayFanSpeed(int percent, bool sample = false);
     void DisplayFanSaved(int percent);
+    void SetFanTargets(const QStringList &ids);
+    QString ReadFanClientId() const;
+    void DisplayFanApplied(const QString &clientId, int percent);
+    void SetFanApplyError(const QString &message);
     void SetFanStatus(const QString &status, const QString &detail = QString());
     void SetFanUpdateMode(bool enabled);
-    void SetFanUpdateBusy(bool busy);
+    void SetFanUpdateBusy(bool busy, const QString &stage = QString());
 
   signals:
     void ReturnToLogin();
@@ -72,4 +76,6 @@ class DashboardPanel final : public QObject
     int overviewTableMaximumHeight;
     int overviewChartMaximumHeight;
     bool fanUpdateMode = false;
+    bool fanUpdateBusy = false;
+    QString fanBusyLabel;
 };

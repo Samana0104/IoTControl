@@ -67,6 +67,7 @@ static uint64_t lastTimeoutCheckMs;
 static pthread_mutex_t tableMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t idleCond = PTHREAD_COND_INITIALIZER;
 static RNetFrameHandler frameHandler;
+static RNetMaintenanceHandler maintenanceHandler;
 static int epollFd = -1;
 static pthread_t workers[NET_MAX_WORKERS];
 static int workerCount;
@@ -88,7 +89,74 @@ static int FlushConnection(RNetConnection *connection);
 static int ReadSocket(RNetConnection *connection);
 static void CloseSocket(RSessionType type, int fd);
 static void CheckTimeouts(void);
+static int SendFrame(int fd, const RNetReference *reference, const void *frame, size_t frameLength);
+static int CloseReferencedConnection(int fd, const RNetReference *reference);
 static int IsConnectionTimedOut(RNetConnection *connection, uint64_t now);
+
+int RNetSetMaintenanceHandler(RNetMaintenanceHandler handler)
+{
+    if(epollFd >= 0)
+    {
+        errno = EBUSY;
+        return -1;
+    }
+    maintenanceHandler = handler;
+    return 0;
+}
+
+int RNetGetSessionReference(const RSessionSnapshot *snapshot, RNetReference *reference)
+{
+    RNetConnection *connection;
+    RSessionSnapshot current;
+    int result = 1;
+
+    if(snapshot == NULL || reference == NULL)
+        return -1;
+    pthread_mutex_lock(&tableMutex);
+    connection = FindConnection(snapshot->fd);
+    if(connection != NULL)
+    {
+        pthread_mutex_lock(&connection->lock);
+        if(connection->state == NET_STATE_OPEN && !connection->closeRequested && RSessionFindByFd(snapshot->fd, &current) == 0 && current.type == snapshot->type && current.memberType == snapshot->memberType && current.authenticated == snapshot->authenticated && strcmp(current.memberId, snapshot->memberId) == 0)
+        {
+            reference->fd = connection->fd;
+            reference->token = MakeEventData(connection);
+            result = 0;
+        }
+        pthread_mutex_unlock(&connection->lock);
+    }
+    pthread_mutex_unlock(&tableMutex);
+    return result;
+}
+
+int RNetIsReferenceOpen(const RNetReference *reference)
+{
+    RNetConnection *connection;
+    int open = 0;
+
+    if(reference == NULL)
+        return 0;
+    pthread_mutex_lock(&tableMutex);
+    connection = FindConnection(reference->fd);
+    if(connection != NULL)
+    {
+        pthread_mutex_lock(&connection->lock);
+        open = reference->token == MakeEventData(connection) && connection->state == NET_STATE_OPEN && !connection->closeRequested;
+        pthread_mutex_unlock(&connection->lock);
+    }
+    pthread_mutex_unlock(&tableMutex);
+    return open;
+}
+
+int RNetSendReferenced(const RNetReference *reference, const void *frame, size_t frameLength)
+{
+    return reference == NULL ? -1 : SendFrame(reference->fd, reference, frame, frameLength);
+}
+
+int RNetCloseReferenced(const RNetReference *reference)
+{
+    return reference == NULL ? -1 : CloseReferencedConnection(reference->fd, reference);
+}
 
 int RNetStart(RNetFrameHandler handler, int count)
 {
@@ -252,6 +320,11 @@ int RNetOpenBt(int fd, const char *memberId, const char *mac, RMemberType member
 
 int RNetSend(int fd, const void *frame, size_t frameLength)
 {
+    return SendFrame(fd, NULL, frame, frameLength);
+}
+
+static int SendFrame(int fd, const RNetReference *reference, const void *frame, size_t frameLength)
+{
     RNetConnection *connection;
     int result = 0;
 
@@ -272,7 +345,7 @@ int RNetSend(int fd, const void *frame, size_t frameLength)
         return 1;
     }
 
-    if(connection->state != NET_STATE_OPEN || connection->closeRequested)
+    if((reference != NULL && reference->token != MakeEventData(connection)) || connection->state != NET_STATE_OPEN || connection->closeRequested)
     {
         result = 1;
     }
@@ -308,19 +381,29 @@ int RNetSend(int fd, const void *frame, size_t frameLength)
 
 int RNetClose(int fd)
 {
+    return CloseReferencedConnection(fd, NULL);
+}
+
+static int CloseReferencedConnection(int fd, const RNetReference *reference)
+{
     RNetConnection *connection;
+    int result = 1;
 
     pthread_mutex_lock(&tableMutex);
     connection = FindConnection(fd);
     if(connection != NULL)
     {
         pthread_mutex_lock(&connection->lock);
-        connection->closeRequested = 1;
-        shutdown(connection->fd, SHUT_RDWR);
+        if(reference == NULL || reference->token == MakeEventData(connection))
+        {
+            connection->closeRequested = 1;
+            shutdown(connection->fd, SHUT_RDWR);
+            result = 0;
+        }
         pthread_mutex_unlock(&connection->lock);
     }
     pthread_mutex_unlock(&tableMutex);
-    return connection != NULL ? 0 : 1;
+    return result;
 }
 
 static uint64_t GetMonotonicMs(void)
@@ -737,6 +820,10 @@ static void CheckTimeouts(void)
         pthread_mutex_unlock(&connection->lock);
     }
     pthread_mutex_unlock(&tableMutex);
+    if(maintenanceHandler != NULL)
+    {
+        maintenanceHandler(now);
+    }
 }
 
 static int IsConnectionTimedOut(RNetConnection *connection, uint64_t now)

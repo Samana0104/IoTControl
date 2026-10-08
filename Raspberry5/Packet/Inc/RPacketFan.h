@@ -20,7 +20,7 @@ int RPacketFanReceiveAck(RSession *session, const uint8_t *payload, size_t lengt
 int RPacketFanQueryReceive(RSession *session, const uint8_t *payload, size_t length);
 
 // 서버 → 장치 REQ_FAN: fd 세션의 장치 팬 속도를 0..100%로 설정
-// 0: 보냄 (결과는 ACK_FAN으로 도착), 1: 그 fd의 연결된 세션 없음, -1: 잘못된 값 또는 전송 실패
+// 0: 보냄 (결과는 ACK_FAN으로 도착), -1/EBUSY: 다른 팬 요청 대기 중, 1: 그 fd의 연결된 세션 없음, -1: 잘못된 값 또는 전송 실패
 int RPacketFanSetSpeed(int fd, uint8_t percent);
 
 // PC -> 서버 REQ_FAN_UPDATE: 인증된 PC가 fan(singleton_id=1)의 speed를 0..100%로 저장

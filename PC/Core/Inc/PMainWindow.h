@@ -64,6 +64,8 @@ class MainWindow : public QMainWindow
     void UpdateFanSpeed(int percent);
     void HandleFanUpdated(int percent);
     void HandleFanUpdateFailed(const QString &message);
+    void HandleFanApplied(const QString &clientId, int percent);
+    void HandleFanApplyFailed(const QString &clientId, const QString &message);
     void InitializeSessionControls();
     void LoadSessionStatus();
     void HandleSessionsLoaded(const SessionRecords &records);
@@ -84,5 +86,6 @@ class MainWindow : public QMainWindow
     bool backgroundDhtQuery = false;
     QString serverHost;
     QString serverFailureMessage;
+    QString pendingFanClientId;
     quint16 serverPort = 0;
 };

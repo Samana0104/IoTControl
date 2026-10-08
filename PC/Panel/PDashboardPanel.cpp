@@ -13,6 +13,7 @@
 #include <QScrollBar>
 #include <QSequentialAnimationGroup>
 #include <QShowEvent>
+#include <QSignalBlocker>
 #include <QStyle>
 #include <QVariantAnimation>
 
@@ -73,6 +74,8 @@ DashboardPanel::DashboardPanel(QWidget *host) : QObject(host), host(host), ui(ne
     connect(ui->fanSpeedSlider, &QSlider::valueChanged, this, &DashboardPanel::TargetChanged);
     connect(fanChart, &FanChartWidget::TargetPreviewChanged, ui->fanSpeedSlider, &QSlider::setValue);
     connect(ui->applyFanButton, &QPushButton::clicked, this, &DashboardPanel::ApplyFanRequested);
+    connect(ui->fanTargetInput, &QComboBox::currentIndexChanged, this, [this]
+            { SetFanUpdateBusy(fanUpdateBusy); });
     connect(ui->stopFanButton, &QPushButton::clicked, this, [this]
             { SetTarget(0); });
     connect(ui->fan25Button, &QPushButton::clicked, this, [this]
@@ -217,22 +220,60 @@ void DashboardPanel::DisplayFanSaved(int percent)
     ui->fanTag->setText(tr("DB 저장 · 장치 적용 대기"));
 }
 
+void DashboardPanel::SetFanTargets(const QStringList &ids)
+{
+    const QString PREVIOUS = ReadFanClientId();
+    const QSignalBlocker BLOCKER(ui->fanTargetInput);
+    ui->fanTargetInput->clear();
+    ui->fanTargetInput->addItem(ids.isEmpty() ? tr("접속한 STM32(BT) 없음 · DB 저장만") : tr("팬이 연결된 STM32(BT) 선택 · DB 저장만"), QString());
+    for (const QString &ID : ids)
+        ui->fanTargetInput->addItem(tr("%1 · BT 접속").arg(ID), ID);
+    const int INDEX = ui->fanTargetInput->findData(PREVIOUS);
+    const int DEFAULT_INDEX = ids.size() == 1 ? 1 : 0;
+    ui->fanTargetInput->setCurrentIndex(!PREVIOUS.isEmpty() && INDEX > 0 ? INDEX : DEFAULT_INDEX);
+    SetFanUpdateBusy(fanUpdateBusy);
+}
+
+QString DashboardPanel::ReadFanClientId() const { return ui->fanTargetInput->currentData().toString(); }
+
+void DashboardPanel::DisplayFanApplied(const QString &clientId, int percent)
+{
+    DisplayFanSpeed(percent);
+    ui->fanTag->setText(tr("DB 저장 · %1 장치 적용 완료").arg(clientId));
+    ui->fanTag->setToolTip(tr("STM32가 PWM 적용 성공으로 응답했습니다. 표시한 값은 설정 비율이며 RPM 측정값이 아닙니다."));
+}
+
+void DashboardPanel::SetFanApplyError(const QString &message)
+{
+    ui->fanTag->setText(tr("DB 저장 완료 · 장치 적용 미확인"));
+    ui->fanTag->setToolTip(message);
+}
+
 void DashboardPanel::SetFanUpdateMode(bool enabled)
 {
     fanUpdateMode = enabled;
     ui->previewBadge->setText(enabled ? tr("서버 DB 연결") : tr("UI 미리보기 · 샘플 데이터"));
-    ui->sidebarPreviewNote->setText(enabled ? tr("서버 DB 조회·팬 값 저장.\n장치 제어는 준비 중입니다.") : tr("로그인 후 DB 자동 조회.\n팬·장치 제어는\n미리보기입니다."));
+    ui->sidebarPreviewNote->setText(enabled ? tr("서버 DB 자동 조회.\n팬 저장 후 선택한\nSTM32(BT)에 적용합니다.") : tr("로그인 후 DB 자동 조회.\n팬·장치 제어는\n미리보기입니다."));
     ui->fanPreviewNote->setWordWrap(true);
-    ui->fanPreviewNote->setText(enabled ? tr("서버 DB에 저장합니다. 실제 팬 제어는 다음 단계입니다.") : tr("미리보기에서만 적용됩니다."));
+    ui->fanPreviewNote->setText(enabled ? tr("대상을 선택하면 DB 저장 성공 후 STM32에 적용하고 장치 응답을 확인합니다. 대상이 없으면 DB만 저장합니다.") : tr("미리보기에서만 적용됩니다."));
     ui->fanRangeNote->setText(enabled ? tr("DB 저장 범위: 0–100%") : tr("0% 정지 · 25% 미만은 정지 구간"));
     SetFanUpdateBusy(false);
 }
 
-void DashboardPanel::SetFanUpdateBusy(bool busy)
+void DashboardPanel::SetFanUpdateBusy(bool busy, const QString &stage)
 {
+    fanUpdateBusy = busy;
+    if (!busy)
+        fanBusyLabel.clear();
+    else if (!stage.isEmpty())
+        fanBusyLabel = stage;
     ui->applyFanButton->setEnabled(!busy);
-    const QString LABEL = fanUpdateMode ? tr("팬 속도 DB 저장") : tr("목표 속도 적용");
-    ui->applyFanButton->setText(busy ? tr("팬 DB 저장 대기 중…") : LABEL);
+    ui->returnToLoginButton->setEnabled(!busy || fanBusyLabel.isEmpty());
+    ui->fanTargetInput->setEnabled(fanUpdateMode && !busy && ui->fanTargetInput->count() > 1);
+    const QString SERVER_LABEL = ReadFanClientId().isEmpty() ? tr("팬 속도 DB 저장") : tr("DB 저장 후 팬 적용");
+    const QString LABEL = fanUpdateMode ? SERVER_LABEL : tr("목표 속도 적용");
+    const QString BUSY_LABEL = fanBusyLabel.isEmpty() ? tr("팬 DB 응답 대기 중…") : fanBusyLabel;
+    ui->applyFanButton->setText(busy ? BUSY_LABEL : LABEL);
 }
 
 void DashboardPanel::SetFanStatus(const QString &status, const QString &detail)

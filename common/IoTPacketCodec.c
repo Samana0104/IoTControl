@@ -9,6 +9,8 @@ int CheckPacketLength(uint16_t cmd, size_t length)
 {
     switch(cmd)
     {
+        case REQ_FAN_APPLY: return length == FAN_APPLY_DATA_SIZE ? 0 : -1;
+        case ACK_FAN_APPLY: return length == FAN_APPLY_ACK_DATA_SIZE ? 0 : -1;
         case REQ_LOGIN: return length == MEM_DATA_SIZE ? 0 : -1;
         case REQ_SESSION_ALL:
         case REQ_DHT_ALL:
@@ -453,5 +455,51 @@ int ReadSessionRowData(const uint8_t *payload, size_t length, SessionRowData *da
     IoTPacketPopBytes(&reader, data->id, MEM_ID_SIZE);
     data->memberType = IoTPacketPopUint8(&reader);
     data->links = IoTPacketPopUint8(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+size_t MakeFanApplyPacket(uint8_t *buffer, size_t size, const FanApplyData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL)
+        return 0;
+    IoTPacketBegin(&writer, buffer, size, REQ_FAN_APPLY);
+    IoTPacketPushBytes(&writer, data->id, MEM_ID_SIZE);
+    IoTPacketPushUint16(&writer, data->fan.fanSpeed);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeFanApplyAckPacket(uint8_t *buffer, size_t size, const FanApplyAckData *data)
+{
+    IoTPacketWriter writer;
+    if(buffer == NULL || data == NULL)
+        return 0;
+    IoTPacketBegin(&writer, buffer, size, ACK_FAN_APPLY);
+    IoTPacketPushUint8(&writer, data->result);
+    IoTPacketPushUint8(&writer, data->reason);
+    IoTPacketPushUint16(&writer, data->fan.fanSpeed);
+    return IoTPacketEnd(&writer);
+}
+
+int ReadFanApplyData(const uint8_t *payload, size_t length, FanApplyData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != FAN_APPLY_DATA_SIZE)
+        return -1;
+    IoTPacketOpen(&reader, payload, length);
+    IoTPacketPopBytes(&reader, data->id, MEM_ID_SIZE);
+    data->fan.fanSpeed = IoTPacketPopUint16(&reader);
+    return IoTPacketCheckRead(&reader);
+}
+
+int ReadFanApplyAckData(const uint8_t *payload, size_t length, FanApplyAckData *data)
+{
+    IoTPacketReader reader;
+    if(payload == NULL || data == NULL || length != FAN_APPLY_ACK_DATA_SIZE)
+        return -1;
+    IoTPacketOpen(&reader, payload, length);
+    data->result = IoTPacketPopUint8(&reader);
+    data->reason = IoTPacketPopUint8(&reader);
+    data->fan.fanSpeed = IoTPacketPopUint16(&reader);
     return IoTPacketCheckRead(&reader);
 }

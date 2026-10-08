@@ -83,6 +83,37 @@ typedef struct _FanQueryAckData
     FanData fan;
 } FanQueryAckData;
 
+#define FAN_APPLY_DATA_SIZE (MEM_ID_SIZE + FAN_DATA_SIZE)
+#define FAN_APPLY_ACK_DATA_SIZE (RESULT_DATA_SIZE + 1 + FAN_DATA_SIZE)
+
+typedef enum
+{
+    FAN_APPLY_OK = 0,
+    FAN_APPLY_INVALID_TARGET,
+    FAN_APPLY_NOT_CONNECTED,
+    FAN_APPLY_DB_ERROR,
+    FAN_APPLY_DB_CHANGED,
+    FAN_APPLY_BUSY,
+    FAN_APPLY_SEND_FAILED,
+    FAN_APPLY_REJECTED,
+    FAN_APPLY_TIMEOUT,
+    FAN_APPLY_DISCONNECTED,
+    FAN_APPLY_NOT_ALLOWED
+} FanApplyReason;
+
+typedef struct _FanApplyData
+{
+    char id[MEM_ID_SIZE];
+    FanData fan; /* Expected saved value; server SELECT must still match. */
+} FanApplyData;
+
+typedef struct _FanApplyAckData
+{
+    uint8_t result;
+    uint8_t reason;
+    FanData fan; /* DB percent used for this attempt, not a measured RPM. */
+} FanApplyAckData;
+
 typedef struct _ConData
 {
     uint16_t tempData;

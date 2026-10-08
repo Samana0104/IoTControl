@@ -1210,11 +1210,26 @@ QLabel#serverEndpoint { color: #9acde5; font-size: 11px; }
                </size>
               </property>
               <property name="text">
-               <string>단일 팬  /  STM32-01</string>
+               <string>단일 팬  /  STM32 · Bluetooth</string>
               </property>
               <property name="accessibleName">
-               <string>제어 대상: STM32-01의 팬 1개</string>
+               <string>블루투스로 접속한 STM32의 팬 1개</string>
               </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="fanTargetInput">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="accessibleName">
+               <string>팬이 연결된 STM32 블루투스 제어 대상</string>
+              </property>
+              <item>
+               <property name="text">
+                <string>접속 상태 확인 후 제어 대상 선택</string>
+               </property>
+              </item>
              </widget>
             </item>
             <item>

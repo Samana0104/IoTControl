@@ -28,6 +28,8 @@ size_t MakeDhtRowPacket(uint8_t *buffer, size_t size, const DhtRowData *data);
 size_t MakeFanPacket(uint8_t *buffer, size_t size, const FanData *data);
 /* Read the server DB fan value; this never changes the device speed. */
 size_t MakeFanQueryPacket(uint8_t *buffer, size_t size);
+size_t MakeFanApplyPacket(uint8_t *buffer, size_t size, const FanApplyData *data);
+size_t MakeFanApplyAckPacket(uint8_t *buffer, size_t size, const FanApplyAckData *data);
 /* UPDATE the existing server DB fan row; never sends REQ_FAN to a device. */
 size_t MakeFanUpdatePacket(uint8_t *buffer, size_t size, const FanData *data);
 size_t MakeFanQueryAckPacket(uint8_t *buffer, size_t size, const FanQueryAckData *data);
@@ -58,6 +60,8 @@ int ReadSessionRowData(const uint8_t *payload, size_t length, SessionRowData *da
 int ReadDhtData(const uint8_t *payload, size_t length, DhtData *data);
 int ReadDhtRowData(const uint8_t *payload, size_t length, DhtRowData *data);
 int ReadFanData(const uint8_t *payload, size_t length, FanData *data);
+int ReadFanApplyData(const uint8_t *payload, size_t length, FanApplyData *data);
+int ReadFanApplyAckData(const uint8_t *payload, size_t length, FanApplyAckData *data);
 int ReadFanQueryAckData(const uint8_t *payload, size_t length, FanQueryAckData *data);
 int ReadConData(const uint8_t *payload, size_t length, ConData *data);
 int ReadMemData(const uint8_t *payload, size_t length, MemData *data);

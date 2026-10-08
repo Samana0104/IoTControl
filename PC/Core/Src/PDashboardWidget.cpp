@@ -113,6 +113,12 @@ void DashboardWidget::DisplayClientRecords()
     // 측정값이 있는 기존 1번 클라이언트를 유지하고, 기록 없는 접속 기기는 뒤에 추가합니다.
     panel->DisplayDhtClients(rows);
     panel->DisplaySessionSummary(sessionStatusKnown ? sessionRecords.size() : -1, dhtRecords.size(), sessionError);
+    QStringList fanIds;
+    if (sessionStatusKnown)
+        for (const SessionRecord &RECORD : sessionRecords)
+            if (RECORD.memberType == QStringLiteral("STM32") && (RECORD.links & SESSION_LINK_BT) != 0)
+                fanIds.append(RECORD.id);
+    panel->SetFanTargets(fanIds);
 }
 
 void DashboardWidget::SetDataFeedback(const QString &message) { panel->SetFeedback(message); }
@@ -122,6 +128,12 @@ void DashboardWidget::SetDhtLoading(bool loading, bool collecting) { panel->SetD
 void DashboardWidget::DisplayFanSpeed(int percent) { panel->DisplayFanSpeed(percent); }
 
 void DashboardWidget::DisplayFanSaved(int percent) { panel->DisplayFanSaved(percent); }
+
+QString DashboardWidget::ReadFanClientId() const { return panel->ReadFanClientId(); }
+
+void DashboardWidget::DisplayFanApplied(const QString &clientId, int percent) { panel->DisplayFanApplied(clientId, percent); }
+
+void DashboardWidget::SetFanApplyError(const QString &message) { panel->SetFanApplyError(message); }
 
 void DashboardWidget::SetFanLoading() { panel->SetFanStatus(tr("팬 속도 조회 중…")); }
 
@@ -133,7 +145,7 @@ void DashboardWidget::SetFanUpdateMode(bool enabled)
     panel->SetFanUpdateMode(enabled);
 }
 
-void DashboardWidget::SetFanUpdateBusy(bool busy) { panel->SetFanUpdateBusy(busy); }
+void DashboardWidget::SetFanUpdateBusy(bool busy, const QString &stage) { panel->SetFanUpdateBusy(busy, stage); }
 
 void DashboardWidget::ResetDhtView()
 {
@@ -142,6 +154,7 @@ void DashboardWidget::ResetDhtView()
     sessionStatusKnown = false;
     sessionError.clear();
     SetFanUpdateMode(false);
+    panel->SetFanTargets({});
     PopulateSampleClients();
     panel->ResetDhtLabels();
     panel->DisplayFanSpeed(65, true);

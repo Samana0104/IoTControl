@@ -5,6 +5,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// 서버 시작 전에 링크된 common의 세션 조회 규격을 검사. 0: 일치, -1: 재빌드 필요
+int RPacketValidateProtocol(void);
+
 // RNetFrameHandler: RNetwork 워커가 CRC 검사를 마친 프레임 하나를 넘김.
 // 길이/권한을 확인하고 cmd별 RPacket* 함수로 분배. -1이면 남은 송신 후 연결을 닫음.
 int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size_t length);

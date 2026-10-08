@@ -92,6 +92,11 @@ void MainWindow::ShowServerConnection()
 
 void MainWindow::ShowLogin()
 {
+    if (serverFanQuery->IsApplying())
+    {
+        dashboard->SetDataFeedback(tr("팬 적용 응답을 기다리고 있습니다. 완료 후 로그인 화면으로 이동할 수 있습니다."));
+        return;
+    }
     if (!serverConnection->IsConnected())
     {
         ShowServerConnection();

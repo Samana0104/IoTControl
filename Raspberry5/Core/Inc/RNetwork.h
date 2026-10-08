@@ -12,6 +12,21 @@
 // payload는 호출 동안만 유효. 0: 계속, -1: 이미 보낸(큐에 넣은) 데이터를 내보낸 뒤 연결 닫기
 typedef int (*RNetFrameHandler)(RSession *session, uint16_t cmd, const uint8_t *payload, size_t length);
 
+// 서버 내부 연결 참조. fd 재사용 후 다른 연결에 송신/종료하지 않도록 generation을 함께 확인.
+typedef struct _RNetReference
+{
+    int fd;
+    uint64_t token;
+} RNetReference;
+
+typedef void (*RNetMaintenanceHandler)(uint64_t nowMs);
+// RNetStart 전에만 설정. 네트워크 잠금을 풀고 약 500ms마다 워커 하나에서 호출.
+int RNetSetMaintenanceHandler(RNetMaintenanceHandler handler);
+int RNetGetSessionReference(const RSessionSnapshot *snapshot, RNetReference *reference);
+int RNetIsReferenceOpen(const RNetReference *reference);
+int RNetSendReferenced(const RNetReference *reference, const void *frame, size_t frameLength);
+int RNetCloseReferenced(const RNetReference *reference);
+
 // epoll 워커 workerCount개 시작. 워커가 송수신과 handler 호출을 모두 담당.
 int RNetStart(RNetFrameHandler handler, int workerCount);
 // 모든 연결을 닫고 워커 종료까지 대기 (처리 중인 handler는 끝날 때까지 기다림)

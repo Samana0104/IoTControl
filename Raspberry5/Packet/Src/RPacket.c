@@ -8,6 +8,7 @@
 #include "RPacketDht.h"
 #include "RPacketDhtQuery.h"
 #include "RPacketFan.h"
+#include "RPacketFanControl.h"
 #include "RPacketFirmware.h"
 #include "RPacketMember.h"
 #include "RPacketSession.h"
@@ -43,6 +44,7 @@ static const RPacketEntry PACKET_TABLE[] =
     {REQ_DHT_ALL, PACKET_FLAG_TCP, RPacketDhtAllReceive},
     {REQ_DHT_COLLECT, PACKET_FLAG_TCP, RPacketDhtCollectReceive},
     {REQ_FAN_QUERY, PACKET_FLAG_TCP, RPacketFanQueryReceive},
+    {REQ_FAN_APPLY, PACKET_FLAG_TCP, RPacketFanApplyReceive},
     {NFY_CHAT, PACKET_FLAG_TCP | PACKET_FLAG_BT, ReceiveChat},
     {NFY_DHT, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketDhtReceive},
     {NFY_FAN, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketFanReceive},
@@ -59,6 +61,23 @@ static const RPacketEntry PACKET_TABLE[] =
 #define MEMBER_TYPE_TEXT_SIZE 16
 
 #define PACKET_TABLE_COUNT (sizeof(PACKET_TABLE) / sizeof(PACKET_TABLE[0]))
+
+int RPacketValidateProtocol(void)
+{
+    if(CheckPacketLength(REQ_SESSION_ALL, 0) != 0 || CheckPacketLength(NFY_SESSION_ROW, SESSION_ROW_DATA_SIZE) != 0 || CheckPacketLength(ACK_SESSION_ALL, RESULT_DATA_SIZE) != 0)
+    {
+        RLOG_ERROR("Session protocol mismatch: linked common rejects REQ_SESSION_ALL=0x%04X (0 bytes), NFY_SESSION_ROW=0x%04X (%u bytes), or ACK_SESSION_ALL=0x%04X (%u bytes). Rebuild Raspberry5 and ../common together.", (unsigned int)REQ_SESSION_ALL, (unsigned int)NFY_SESSION_ROW, (unsigned int)SESSION_ROW_DATA_SIZE, (unsigned int)ACK_SESSION_ALL, (unsigned int)RESULT_DATA_SIZE);
+        return -1;
+    }
+    if(CheckPacketLength(REQ_FAN_APPLY, FAN_APPLY_DATA_SIZE) != 0 || CheckPacketLength(ACK_FAN_APPLY, FAN_APPLY_ACK_DATA_SIZE) != 0)
+    {
+        RLOG_ERROR("Fan apply protocol mismatch: rebuild Raspberry5 and ../common together (REQ_FAN_APPLY=0x%04X, ACK_FAN_APPLY=0x%04X)", (unsigned int)REQ_FAN_APPLY, (unsigned int)ACK_FAN_APPLY);
+        return -1;
+    }
+    RLOG_INFO("Fan apply protocol ready: REQ_FAN_APPLY=0x%04X (%u bytes), ACK_FAN_APPLY=0x%04X (%u bytes)", (unsigned int)REQ_FAN_APPLY, (unsigned int)FAN_APPLY_DATA_SIZE, (unsigned int)ACK_FAN_APPLY, (unsigned int)FAN_APPLY_ACK_DATA_SIZE);
+    RLOG_INFO("Session protocol ready: REQ_SESSION_ALL=0x%04X (0 bytes), NFY_SESSION_ROW=0x%04X (%u bytes), ACK_SESSION_ALL=0x%04X (%u bytes); packet build=%s %s", (unsigned int)REQ_SESSION_ALL, (unsigned int)NFY_SESSION_ROW, (unsigned int)SESSION_ROW_DATA_SIZE, (unsigned int)ACK_SESSION_ALL, (unsigned int)RESULT_DATA_SIZE, __DATE__, __TIME__);
+    return 0;
+}
 
 int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size_t length)
 {

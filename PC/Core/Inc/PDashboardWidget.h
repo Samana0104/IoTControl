@@ -24,10 +24,13 @@ class DashboardWidget final : public QWidget
     void SetDhtLoading(bool loading, bool collecting = false);
     void DisplayFanSpeed(int percent);
     void DisplayFanSaved(int percent);
+    QString ReadFanClientId() const;
+    void DisplayFanApplied(const QString &clientId, int percent);
+    void SetFanApplyError(const QString &message);
     void SetFanLoading();
     void SetFanError(const QString &message);
     void SetFanUpdateMode(bool enabled);
-    void SetFanUpdateBusy(bool busy);
+    void SetFanUpdateBusy(bool busy, const QString &stage = QString());
     void ResetDhtView();
 
   signals:

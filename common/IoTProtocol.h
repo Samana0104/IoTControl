@@ -62,6 +62,7 @@ typedef struct _HeaderData
 #define MSG_FW_END 0x000D
 #define MSG_FAN_UPDATE 0x000E
 #define MSG_SESSION_ALL 0x000F
+#define MSG_FAN_APPLY 0x0010
 
 /* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
@@ -112,3 +113,8 @@ typedef struct _HeaderData
 #define REQ_SESSION_ALL MSG_SESSION_ALL /* no payload */
 #define NFY_SESSION_ROW MAKE_NOTIFY(MSG_SESSION_ALL) /* SessionRowData */
 #define ACK_SESSION_ALL REQ_TO_ACK(REQ_SESSION_ALL) /* ResultData */
+
+/* Authenticated PC -> server: apply the verified DB speed to one STM32 BT ID.
+   Existing device REQ_FAN/ACK_FAN remain unchanged. */
+#define REQ_FAN_APPLY MSG_FAN_APPLY /* FanApplyData: ID + expected DB percent */
+#define ACK_FAN_APPLY REQ_TO_ACK(REQ_FAN_APPLY) /* FanApplyAckData, sent after device ACK or failure */
