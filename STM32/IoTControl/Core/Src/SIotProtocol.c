@@ -2,6 +2,9 @@
 #include "IoTPacket.h"
 #include "IoTPacketCodec.h"
 #include "IoTPacketStream.h"
+#include "SLog.h"
+#include "SPacketDht.h"
+#include "SPacketFan.h"
 #include "SZS040.h"
 #include <string.h>
 
@@ -10,10 +13,28 @@
 // 깨진 프레임 뒤에는 줄이 이 시간 동안 조용해질 때까지 바이트를 버림 (매직 바이트 대신 재동기화).
 #define SIOT_RESYNC_IDLE_MS 50U
 
+// 서버 → 장치 패킷 처리 함수 (CRC/길이 검사를 마친 프레임, payload는 호출 동안만 유효)
+typedef void (*SPacketHandler)(const uint8_t *payload, uint16_t length);
+
+typedef struct _SPacketEntry
+{
+    uint16_t cmd;
+    SPacketHandler handler;
+} SPacketEntry;
+
+static void ReceiveChat(const uint8_t *payload, uint16_t length);
+
+// 수신 cmd → 처리 함수 (Arduino APacket.cpp, Raspberry5 RPacket.c의 PACKET_TABLE과 같은 방식)
+static const SPacketEntry PACKET_TABLE[] = {
+    {REQ_FAN, SPacketFanRequestReceive},
+    {REQ_DHT, SPacketDhtRequestReceive},
+    {NFY_CHAT, ReceiveChat},
+};
+
+#define PACKET_TABLE_COUNT (sizeof(PACKET_TABLE) / sizeof(PACKET_TABLE[0]))
+
 typedef struct _SIotProtocol
 {
-    SIotPacketHandler packetHandler;
-    SIotSendHandler sendHandler;
     bool initialized;
 
     uint8_t header[HEADER_SIZE];
@@ -34,6 +55,36 @@ static bool IsValidPacket(uint16_t cmd, uint16_t length)
 {
     // 수신 버퍼(MAX_PAYLOAD_SIZE)보다 긴 프레임은 공용 규칙상 맞아도 받지 않음
     return length <= MAX_PAYLOAD_SIZE && CheckPacketLength(cmd, length) == 0;
+}
+
+static void ReceiveChat(const uint8_t *payload, uint16_t length)
+{
+    SLOG_INFO("bt chat rx (%u bytes): %.*s", (unsigned int)length, (int)length, (const char *)payload);
+}
+
+static const SPacketEntry *FindPacketEntry(uint16_t cmd)
+{
+    for (uint8_t i = 0; i < PACKET_TABLE_COUNT; ++i)
+    {
+        if (PACKET_TABLE[i].cmd == cmd)
+        {
+            return &PACKET_TABLE[i];
+        }
+    }
+    return NULL;
+}
+
+static void DispatchPacket(uint16_t cmd, const uint8_t *payload, uint16_t length)
+{
+    SLOG_INFO("bt packet rx: cmd=0x%04X, length=%u", (unsigned int)cmd, (unsigned int)length);
+
+    const SPacketEntry *entry = FindPacketEntry(cmd);
+    if (entry == NULL)
+    {
+        SLOG_WARN("bt packet unhandled: cmd=0x%04X", (unsigned int)cmd);
+        return;
+    }
+    entry->handler(payload, length);
 }
 
 static void ResetReceive(void)
@@ -60,10 +111,7 @@ static void FinishReceive(void)
         StartResync();
         return;
     }
-    if (protocol.packetHandler != NULL)
-    {
-        protocol.packetHandler(protocol.receiveHeader.cmd, protocol.receiveData, protocol.receiveHeader.length);
-    }
+    DispatchPacket(protocol.receiveHeader.cmd, protocol.receiveData, protocol.receiveHeader.length);
 }
 
 static void ProcessHeader(void)
@@ -105,11 +153,9 @@ static void ProcessByte(uint8_t byte)
     }
 }
 
-void SIotProtocolInit(SIotPacketHandler packetHandler, SIotSendHandler sendHandler)
+void SIotProtocolInit(void)
 {
     memset(&protocol, 0, sizeof(protocol));
-    protocol.packetHandler = packetHandler;
-    protocol.sendHandler = sendHandler;
     protocol.initialized = true;
 }
 
@@ -137,9 +183,13 @@ bool SIotProtocolSendPacket(uint16_t cmd, const void *data, uint16_t length)
     }
     frameLength = IoTPacketEnd(&writer);
     success = frameLength > 0 && SZS040Write(protocol.sendFrame, (uint16_t)frameLength);
-    if (protocol.sendHandler != NULL)
+    if (success)
     {
-        protocol.sendHandler(cmd, success);
+        SLOG_INFO("bt frame transmitted: cmd=0x%04X", (unsigned int)cmd);
+    }
+    else
+    {
+        SLOG_ERROR("bt send failed: cmd=0x%04X (invalid length or UART error)", (unsigned int)cmd);
     }
     return success;
 }
