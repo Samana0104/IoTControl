@@ -9,10 +9,47 @@
 #include "RPacketFan.h"
 #include "RPacketMember.h"
 
-static int ValidatePacketPermission(RSession *session, uint16_t cmd);
+// 패킷을 받을 수 있는 세션 (PACKET_FLAG_*를 OR로 조합)
+#define PACKET_FLAG_TCP 0x01      // TCP 클라이언트에서 받음
+#define PACKET_FLAG_BT 0x02       // BT 장치에서 받음
+#define PACKET_FLAG_NO_LOGIN 0x04 // TCP 로그인 전에도 받음 (BT는 등록 시점부터 인증됨)
+
+typedef int (*RPacketHandler)(RSession *session, const uint8_t *payload, size_t length);
+
+typedef struct _RPacketEntry
+{
+    uint16_t cmd;
+    uint8_t flags;
+    RPacketHandler handler;
+} RPacketEntry;
+
+static int ReceiveChat(RSession *session, const uint8_t *payload, size_t length);
+static const RPacketEntry *FindPacketEntry(uint16_t cmd);
+static int ValidatePacketPermission(const RSession *session, const RPacketEntry *entry);
+
+// 수신 cmd → 처리 함수. 길이 검사는 CheckPacketLength가 먼저 함.
+// 서버가 REQ를 보내는 곳은 BT 장치(REQ_FAN, REQ_DHT)와 Wi-Fi 장치(REQ_DHT)뿐이므로 ACK도 그 경로만 허용
+static const RPacketEntry PACKET_TABLE[] =
+{
+    {REQ_LOGIN, PACKET_FLAG_TCP | PACKET_FLAG_NO_LOGIN, RPacketLoginReceive},
+    {REQ_BT_CONNECT, PACKET_FLAG_TCP | PACKET_FLAG_NO_LOGIN, RPacketBtConnectReceive},
+    {REQ_BT_REGISTER, PACKET_FLAG_TCP, RPacketBtRegisterReceive},
+    {REQ_DHT_ALL, PACKET_FLAG_TCP, RPacketDhtAllReceive},
+    {REQ_DHT_COLLECT, PACKET_FLAG_TCP, RPacketDhtCollectReceive},
+    {NFY_CHAT, PACKET_FLAG_TCP | PACKET_FLAG_BT, ReceiveChat},
+    {NFY_DHT, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketDhtReceive},
+    {NFY_FAN, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketFanReceive},
+    {NFY_CON, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketConReceive},
+    {ACK_FAN, PACKET_FLAG_BT, RPacketFanReceiveAck},
+    {ACK_DHT, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketDhtReceiveAck}
+};
+
+#define PACKET_TABLE_COUNT (sizeof(PACKET_TABLE) / sizeof(PACKET_TABLE[0]))
 
 int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size_t length)
 {
+    const RPacketEntry *entry;
+
     if(session == NULL || (payload == NULL && length > 0))
     {
         RLOG_ERROR("RPacketProcess: NULL argument: cmd=0x%04X", (unsigned int)cmd);
@@ -23,30 +60,17 @@ int RPacketProcess(RSession *session, uint16_t cmd, const uint8_t *payload, size
         RLOG_WARN("Unknown command or invalid length from %s: cmd=0x%04X, length=%zu", session->label, (unsigned int)cmd, length);
         return -1;
     }
-    if(ValidatePacketPermission(session, cmd) != 0)
+    entry = FindPacketEntry(cmd);
+    if(entry == NULL)
+    {
+        RLOG_WARN("Unsupported command from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
+        return -1;
+    }
+    if(ValidatePacketPermission(session, entry) != 0)
     {
         return -1;
     }
-
-    switch(cmd)
-    {
-        case REQ_LOGIN: return RPacketLoginReceive(session, payload, length);
-        case REQ_DHT_ALL: return RPacketDhtAllReceive(session, payload, length);
-        case REQ_BT_REGISTER: return RPacketBtRegisterReceive(session, payload, length);
-        case REQ_BT_CONNECT: return RPacketBtConnectReceive(session, payload, length);
-        case REQ_DHT_COLLECT: return RPacketDhtCollectReceive(session, payload, length);
-        case NFY_CHAT:
-            RLOG_INFO("[%s] %.*s", session->label, (int)length, (const char *)payload);
-            return 0;
-        case NFY_DHT: return RPacketDhtReceive(session, payload, length);
-        case NFY_FAN: return RPacketFanReceive(session, payload, length);
-        case NFY_CON: return RPacketConReceive(session, payload, length);
-        case ACK_FAN: return RPacketFanReceiveAck(session, payload, length);
-        case ACK_DHT: return RPacketDhtReceiveAck(session, payload, length);
-        default:
-            RLOG_WARN("Unsupported command from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
-            return -1;
-    }
+    return entry->handler(session, payload, length);
 }
 
 int RPacketSendAck(RSession *session, uint16_t reqCmd, int succeeded)
@@ -73,27 +97,36 @@ int RPacketSendAck(RSession *session, uint16_t reqCmd, int succeeded)
     return 0;
 }
 
-static int ValidatePacketPermission(RSession *session, uint16_t cmd)
+static int ReceiveChat(RSession *session, const uint8_t *payload, size_t length)
 {
-    if(session->type == SESSION_BLUETOOTH)
+    RLOG_INFO("[%s] %.*s", session->label, (int)length, (const char *)payload);
+    return 0;
+}
+
+static const RPacketEntry *FindPacketEntry(uint16_t cmd)
+{
+    for(size_t index = 0; index < PACKET_TABLE_COUNT; ++index)
     {
-        // BT 링크는 이미 등록된 회원/MAC에 묶여 있으므로 관리 명령을 받지 않음
-        if(cmd == REQ_LOGIN || cmd == REQ_BT_REGISTER || cmd == REQ_BT_CONNECT || cmd == REQ_DHT_ALL || cmd == REQ_DHT_COLLECT)
+        if(PACKET_TABLE[index].cmd == cmd)
         {
-            RLOG_WARN("Management command not allowed from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
-            return -1;
+            return &PACKET_TABLE[index];
         }
-        return 0;
     }
-    if(cmd != REQ_LOGIN && cmd != REQ_BT_CONNECT && !session->authenticated)
+    return NULL;
+}
+
+static int ValidatePacketPermission(const RSession *session, const RPacketEntry *entry)
+{
+    uint8_t sessionFlag = session->type == SESSION_BLUETOOTH ? PACKET_FLAG_BT : PACKET_FLAG_TCP;
+
+    if((entry->flags & sessionFlag) == 0)
     {
-        RLOG_WARN("Unauthenticated command from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
+        RLOG_WARN("Command not allowed from %s: cmd=0x%04X", session->label, (unsigned int)entry->cmd);
         return -1;
     }
-    // 서버가 TCP 클라이언트에 보내는 REQ는 REQ_DHT뿐 (Wi-Fi 장치)
-    if(IS_ACK(cmd) && cmd != ACK_DHT)
+    if(session->type == SESSION_TCP && !session->authenticated && (entry->flags & PACKET_FLAG_NO_LOGIN) == 0)
     {
-        RLOG_WARN("Unexpected ACK from %s: cmd=0x%04X", session->label, (unsigned int)cmd);
+        RLOG_WARN("Unauthenticated command from %s: cmd=0x%04X", session->label, (unsigned int)entry->cmd);
         return -1;
     }
     return 0;
