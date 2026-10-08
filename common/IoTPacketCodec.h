@@ -25,6 +25,8 @@ size_t MakeDhtRowPacket(uint8_t *buffer, size_t size, const DhtRowData *data);
 size_t MakeFanPacket(uint8_t *buffer, size_t size, const FanData *data);
 /* Read the server DB fan value; this never changes the device speed. */
 size_t MakeFanQueryPacket(uint8_t *buffer, size_t size);
+/* UPDATE the existing server DB fan row; never sends REQ_FAN to a device. */
+size_t MakeFanUpdatePacket(uint8_t *buffer, size_t size, const FanData *data);
 size_t MakeFanQueryAckPacket(uint8_t *buffer, size_t size, const FanQueryAckData *data);
 /* REQ_FAN: server -> device, fanSpeed is a 0..100 percent. */
 size_t MakeFanControlPacket(uint8_t *buffer, size_t size, const FanData *data);

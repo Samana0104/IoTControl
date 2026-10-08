@@ -58,6 +58,9 @@ class MainWindow : public QMainWindow
     void LoadFanSpeed();
     void HandleFanLoaded(int percent);
     void HandleFanQueryFailed(const QString &message);
+    void UpdateFanSpeed(int percent);
+    void HandleFanUpdated(int percent);
+    void HandleFanUpdateFailed(const QString &message);
 
     AccessPanel *accessPanel;
     QStackedWidget *pages;

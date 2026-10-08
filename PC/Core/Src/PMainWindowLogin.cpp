@@ -136,6 +136,7 @@ void MainWindow::HandleLoginSuccess()
 {
     accessPanel->ClearLoginFeedback();
     authenticated = true;
+    dashboard->SetFanUpdateMode(true);
     ShowDashboard();
     dashboard->DisplayDhtRecords({});
     LoadFanSpeed();

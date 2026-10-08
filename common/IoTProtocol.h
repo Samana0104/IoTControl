@@ -57,6 +57,7 @@ typedef struct _HeaderData
 #define MSG_DHT_ALL 0x0008
 #define MSG_DHT_COLLECT 0x0009
 #define MSG_FAN_QUERY 0x000A
+#define MSG_FAN_UPDATE 0x000B
 
 /* Client -> server, TCP */
 #define REQ_LOGIN MSG_LOGIN                 /* MemData */
@@ -71,6 +72,10 @@ typedef struct _HeaderData
 /* Authenticated PC -> server: read fan singleton_id=1, no device control. */
 #define REQ_FAN_QUERY MSG_FAN_QUERY /* no payload */
 #define ACK_FAN_QUERY REQ_TO_ACK(REQ_FAN_QUERY) /* FanQueryAckData */
+
+/* Authenticated PC -> server: UPDATE fan singleton_id=1 only, no device control. */
+#define REQ_FAN_UPDATE MSG_FAN_UPDATE /* FanData, 0..100 percent */
+#define ACK_FAN_UPDATE REQ_TO_ACK(REQ_FAN_UPDATE) /* ResultData, DB value verified after UPDATE */
 
 /* Server -> device control (BT) */
 #define REQ_FAN MSG_FAN                     /* FanData, fanSpeed = 0..100 percent */

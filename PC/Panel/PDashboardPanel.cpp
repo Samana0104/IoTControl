@@ -199,6 +199,30 @@ void DashboardPanel::DisplayFanSpeed(int percent, bool sample)
     ui->fanTag->setToolTip(QString());
 }
 
+void DashboardPanel::DisplayFanSaved(int percent)
+{
+    DisplayFanSpeed(percent);
+    ui->fanTag->setText(tr("DB 저장 · 장치 적용 대기"));
+}
+
+void DashboardPanel::SetFanUpdateMode(bool enabled)
+{
+    fanUpdateMode = enabled;
+    ui->previewBadge->setText(enabled ? tr("서버 DB 연결") : tr("UI 미리보기 · 샘플 데이터"));
+    ui->sidebarPreviewNote->setText(enabled ? tr("서버 DB 조회·팬 값 저장.\n장치 제어는 준비 중입니다.") : tr("로그인 후 DB 자동 조회.\n팬·장치 제어는\n미리보기입니다."));
+    ui->fanPreviewNote->setWordWrap(true);
+    ui->fanPreviewNote->setText(enabled ? tr("서버 DB에 저장합니다. 실제 팬 제어는 다음 단계입니다.") : tr("미리보기에서만 적용됩니다."));
+    ui->fanRangeNote->setText(enabled ? tr("DB 저장 범위: 0–100%") : tr("0% 정지 · 25% 미만은 정지 구간"));
+    SetFanUpdateBusy(false);
+}
+
+void DashboardPanel::SetFanUpdateBusy(bool busy)
+{
+    ui->applyFanButton->setEnabled(!busy);
+    const QString LABEL = fanUpdateMode ? tr("팬 속도 DB 저장") : tr("목표 속도 적용");
+    ui->applyFanButton->setText(busy ? tr("팬 DB 저장 대기 중…") : LABEL);
+}
+
 void DashboardPanel::SetFanStatus(const QString &status, const QString &detail)
 {
     SetMetricValue(ui->fanValue, QStringLiteral("—"));

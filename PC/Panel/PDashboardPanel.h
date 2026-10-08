@@ -35,7 +35,10 @@ class DashboardPanel final : public QObject
     void SetDhtLoading(bool loading, bool collecting = false);
     void ResetDhtLabels();
     void DisplayFanSpeed(int percent, bool sample = false);
+    void DisplayFanSaved(int percent);
     void SetFanStatus(const QString &status, const QString &detail = QString());
+    void SetFanUpdateMode(bool enabled);
+    void SetFanUpdateBusy(bool busy);
 
   signals:
     void ReturnToLogin();
@@ -67,4 +70,5 @@ class DashboardPanel final : public QObject
     QStringList metricFinalText;
     int overviewTableMaximumHeight;
     int overviewChartMaximumHeight;
+    bool fanUpdateMode = false;
 };

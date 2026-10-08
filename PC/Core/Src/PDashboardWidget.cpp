@@ -63,12 +63,23 @@ void DashboardWidget::SetDhtLoading(bool loading, bool collecting) { panel->SetD
 
 void DashboardWidget::DisplayFanSpeed(int percent) { panel->DisplayFanSpeed(percent); }
 
+void DashboardWidget::DisplayFanSaved(int percent) { panel->DisplayFanSaved(percent); }
+
 void DashboardWidget::SetFanLoading() { panel->SetFanStatus(tr("팬 속도 조회 중…")); }
 
 void DashboardWidget::SetFanError(const QString &message) { panel->SetFanStatus(tr("팬 조회 실패"), message); }
 
+void DashboardWidget::SetFanUpdateMode(bool enabled)
+{
+    fanUpdateMode = enabled;
+    panel->SetFanUpdateMode(enabled);
+}
+
+void DashboardWidget::SetFanUpdateBusy(bool busy) { panel->SetFanUpdateBusy(busy); }
+
 void DashboardWidget::ResetDhtView()
 {
+    SetFanUpdateMode(false);
     PopulateSampleClients();
     panel->ResetDhtLabels();
     panel->DisplayFanSpeed(65, true);
@@ -79,6 +90,11 @@ void DashboardWidget::SetTargetPreview(int percent) { panel->DisplayTarget(perce
 
 void DashboardWidget::ApplyFanPreview()
 {
+    if (fanUpdateMode)
+    {
+        emit FanUpdateRequested(panel->ReadTarget());
+        return;
+    }
     const int PERCENT = panel->ReadTarget() < MIN_FAN_PERCENT ? 0 : panel->ReadTarget();
     panel->SetTarget(PERCENT);
     panel->SetFeedback(tr("미리보기 목표 팬 속도: %1%. 실제 장치에는 명령을 전송하지 않습니다.").arg(PERCENT));

@@ -16,7 +16,8 @@ int CheckPacketLength(uint16_t cmd, size_t length)
         case NFY_DHT_ROW: return length == DHT_ROW_DATA_SIZE ? 0 : -1;
         case REQ_BT_REGISTER: return length == BLUETOOTH_REGISTER_DATA_SIZE ? 0 : -1;
         case REQ_BT_CONNECT: return length == BLUETOOTH_CONNECT_DATA_SIZE ? 0 : -1;
-        case REQ_FAN: return length == FAN_DATA_SIZE ? 0 : -1;
+        case REQ_FAN:
+        case REQ_FAN_UPDATE: return length == FAN_DATA_SIZE ? 0 : -1;
         case REQ_DHT:
         case REQ_DHT_COLLECT: return length == 0 ? 0 : -1;
         case ACK_DHT: return length == DHT_ACK_DATA_SIZE ? 0 : -1;
@@ -25,6 +26,7 @@ int CheckPacketLength(uint16_t cmd, size_t length)
         case ACK_BT_REGISTER:
         case ACK_BT_CONNECT:
         case ACK_FAN:
+        case ACK_FAN_UPDATE:
         case ACK_DHT_COLLECT: return length == RESULT_DATA_SIZE ? 0 : -1;
         case NFY_CHAT: return length <= MAX_CHAT_SIZE ? 0 : -1;
         case NFY_DHT: return length == DHT_DATA_SIZE ? 0 : -1;
@@ -58,6 +60,19 @@ size_t MakeFanQueryPacket(uint8_t *buffer, size_t size)
     IoTPacketWriter writer;
 
     IoTPacketBegin(&writer, buffer, size, REQ_FAN_QUERY);
+    return IoTPacketEnd(&writer);
+}
+
+size_t MakeFanUpdatePacket(uint8_t *buffer, size_t size, const FanData *data)
+{
+    IoTPacketWriter writer;
+
+    if(data == NULL || data->fanSpeed > 100)
+    {
+        return 0;
+    }
+    IoTPacketBegin(&writer, buffer, size, REQ_FAN_UPDATE);
+    IoTPacketPushUint16(&writer, data->fanSpeed);
     return IoTPacketEnd(&writer);
 }
 

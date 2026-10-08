@@ -19,8 +19,11 @@ class DashboardWidget final : public QWidget
     void SetDataFeedback(const QString &message);
     void SetDhtLoading(bool loading, bool collecting = false);
     void DisplayFanSpeed(int percent);
+    void DisplayFanSaved(int percent);
     void SetFanLoading();
     void SetFanError(const QString &message);
+    void SetFanUpdateMode(bool enabled);
+    void SetFanUpdateBusy(bool busy);
     void ResetDhtView();
 
   signals:
@@ -29,6 +32,7 @@ class DashboardWidget final : public QWidget
     void ServerDisconnectRequested();
     void ReloadDhtRequested();
     void FieldDataUpdateRequested(const QString &clientId);
+    void FanUpdateRequested(int percent);
 
   private:
     void ShowBluetoothDialog();
@@ -40,4 +44,5 @@ class DashboardWidget final : public QWidget
     void RequestClientUpdate(const QString &clientId);
 
     DashboardPanel *panel;
+    bool fanUpdateMode = false;
 };

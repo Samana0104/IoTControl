@@ -95,6 +95,7 @@ void MainWindow::ShowLogin()
     dhtPollTimer->stop();
     serverDhtQuery->PauseQuery();
     serverFanQuery->PauseQuery();
+    dashboard->SetFanUpdateMode(false);
     dashboard->SetDhtLoading(false);
     const bool FROM_DASHBOARD = pages->currentWidget() == dashboard;
     const bool ANIMATE = !FROM_DASHBOARD && accessPanel->IsAccessVisible() && !isMinimized();
