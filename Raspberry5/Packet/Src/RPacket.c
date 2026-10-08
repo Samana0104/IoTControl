@@ -36,6 +36,7 @@ static const RPacketEntry PACKET_TABLE[] =
     {REQ_BT_REGISTER, PACKET_FLAG_TCP, RPacketBtRegisterReceive},
     {REQ_DHT_ALL, PACKET_FLAG_TCP, RPacketDhtAllReceive},
     {REQ_DHT_COLLECT, PACKET_FLAG_TCP, RPacketDhtCollectReceive},
+    {REQ_FAN_QUERY, PACKET_FLAG_TCP, RPacketFanQueryReceive},
     {NFY_CHAT, PACKET_FLAG_TCP | PACKET_FLAG_BT, ReceiveChat},
     {NFY_DHT, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketDhtReceive},
     {NFY_FAN, PACKET_FLAG_TCP | PACKET_FLAG_BT, RPacketFanReceive},
