@@ -4,8 +4,6 @@
 #include "RCommand.h"
 #include "RPacket.h"
 #include "RPacketBtOperations.h"
-#include "RPacketFanControl.h"
-#include "RPacketDhtRefresh.h"
 #include "RNetwork.h"
 #include "RLog.h"
 
@@ -51,20 +49,7 @@ int InitServer(TCPServer *server, const char *ip, int port)
     strcpy(server->ip, ip);
     server->port = port;
 
-    if(RPacketValidateProtocol() != 0)
-    {
-        return -1;
-    }
-    RPacketFanResetControl();
-    RPacketDhtRefreshReset();
-    if(RNetSetMaintenanceHandler(RPacketMaintenance) != 0)
-        return -1;
-    RPacketBtOperationsStart();
-    if(RNetStart(RPacketProcess, RConfigGet()->server.workerCount) != 0)
-    {
-        RLOG_ERROR("Network start failed: %s", strerror(errno));
-        return -1;
-    }
+    RPacketReset();
 
     signal(SIGPIPE, SIG_IGN);
     serverStopRequested = 0;
@@ -139,6 +124,13 @@ int OpenServer(TCPServer *server)
     if(listen(serverSocket, LISTEN_BACKLOG) < 0)
     {
         RLOG_ERROR("listen(): %s", strerror(errno));
+        close(serverSocket);
+        return -1;
+    }
+    // 연결은 listen 이후(TCP accept, CLI의 bt connect)에만 생기므로 워커도 여기서 시작
+    if(RNetSetMaintenanceHandler(RPacketMaintenance) != 0 || RNetStart(RPacketProcess, RConfigGet()->server.workerCount) != 0)
+    {
+        RLOG_ERROR("Network start failed: %s", strerror(errno));
         close(serverSocket);
         return -1;
     }
@@ -248,8 +240,7 @@ void CloseServer(TCPServer *server)
     }
     RPacketBtOperationsStop();
     RNetStop();
-    RPacketFanResetControl();
-    RPacketDhtRefreshReset();
+    RPacketReset();
     // 워커 스레드의 DB 연결은 스레드가 끝날 때 닫히고, 메인 스레드(콘솔) 연결은 여기서 닫음
     ResetDatabaseConnection();
     if(server->signalHandlersInstalled)

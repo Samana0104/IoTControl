@@ -38,13 +38,6 @@ static int CanContinue(const BtOperationJob *operation);
 static void CopyScanName(char destination[BT_SCAN_NAME_SIZE], const char *source);
 static uint8_t ConnectMemberStatus(const char *id);
 
-void RPacketBtOperationsStart(void)
-{
-    pthread_mutex_lock(&operationMutex);
-    stopping = 0;
-    pthread_mutex_unlock(&operationMutex);
-}
-
 void RPacketBtOperationsStop(void)
 {
     pthread_mutex_lock(&operationMutex);

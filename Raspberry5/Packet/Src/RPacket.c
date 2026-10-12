@@ -219,3 +219,9 @@ void RPacketMaintenance(uint64_t nowMs)
     RPacketFanControlTick(nowMs);
     RPacketDhtRefreshTick(nowMs);
 }
+
+void RPacketReset(void)
+{
+    RPacketFanResetControl();
+    RPacketDhtRefreshReset();
+}
