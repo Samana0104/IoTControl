@@ -1,5 +1,7 @@
 # IoTControl
 
+📄 **[발표 자료 PDF 보기](ppt/IoTControl.pdf)**
+
 Raspberry Pi 5, STM32, Arduino와 Qt PC 앱을 연결하는 **IoT 환경 모니터링 및 팬 제어 시스템**입니다. 현장 장치의 온도·습도를 서버 DB에 저장하고, PC 대시보드에서 측정 데이터와 접속 상태를 조회하거나 STM32 팬 속도를 제어합니다.
 
 ## 시스템 구성
